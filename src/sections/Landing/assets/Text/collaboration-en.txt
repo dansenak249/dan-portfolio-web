@@ -1,0 +1,17 @@
+<h1>Let's work together!</h1>
+
+<p>I'm available for <b>freelance projects</b> and <i>collaborations</i>.</p>
+
+<h2>What I can help with:</h2>
+<ul>
+  <li>Character design and illustration</li>
+  <li>2D animation and visual effects</li>
+  <li>Game development with Unity</li>
+  <li>UI/UX design for games</li>
+</ul>
+
+<p>Feel free to <strong>reach out</strong> through any of my social channels!</p>
+
+<br>
+
+<p style="color: #ff69b4;">Looking forward to working with you! ✨</p>

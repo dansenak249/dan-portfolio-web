@@ -1,0 +1,548 @@
+{
+"skeleton": {
+	"hash": "RQd4OkyB+hX8LOTH4dlGgFCyB6c",
+	"spine": "3.8",
+	"x": -256,
+	"y": -283.39,
+	"width": 527.47,
+	"height": 539.39,
+	"fps": 24,
+	"images": "./images/",
+	"audio": "D:/OneDrive/Storage/Jobs/1 Minutes/Madletics/Visual/Concept Art/live2d vui ve"
+},
+"bones": [
+	{ "name": "root" },
+	{ "name": "Body", "parent": "root", "length": 135.43, "rotation": 83.93, "x": 9.55, "y": -214.9 },
+	{ "name": "shoulder", "parent": "Body", "x": 124.6, "y": 8.27 },
+	{ "name": "Hand Left", "parent": "shoulder", "length": 128.5, "rotation": -111.91, "x": 12.74, "y": -32.46 },
+	{ "name": "Hand Right", "parent": "shoulder", "length": 110.42, "rotation": 162.2, "x": -10.69, "y": 18.11 },
+	{ "name": "Hand Right2", "parent": "Hand Right", "length": 92.28, "rotation": -123.87, "x": 110.42 },
+	{ "name": "Head", "parent": "Body", "length": 170.54, "rotation": 27.49, "x": 139.85, "y": 1.05 },
+	{ "name": "Face", "parent": "Head", "x": 46.65, "y": 28.52 },
+	{ "name": "Hair Main", "parent": "Head", "x": 165.62, "y": -24.69 },
+	{ "name": "Hair Front 3", "parent": "Hair Main", "length": 141.11, "rotation": -179.51, "x": -9.56, "y": -33.41 },
+	{ "name": "Hair Front 1", "parent": "Hair Main", "length": 181.25, "rotation": 155.78, "x": 10.93, "y": 54.6 },
+	{ "name": "Hair Front 2", "parent": "Hair Main", "length": 108.2, "rotation": 172.66, "x": 4.19, "y": 35.74 },
+	{ "name": "Glass", "parent": "Face", "length": 43.42, "rotation": -85.88, "x": -12.32, "y": 55.33 },
+	{ "name": "Glass Shade", "parent": "Glass", "x": 43.71, "y": 0.13 },
+	{ "name": "Brown Left", "parent": "Face", "length": 47.08, "rotation": 101.42, "x": 19.68, "y": -75.63 },
+	{ "name": "Brown Right", "parent": "Face", "length": 46.97, "rotation": -101.27, "x": 20.31, "y": 53.83 },
+	{ "name": "Lash Left", "parent": "Face", "length": 51.48, "rotation": 101.92, "x": 45.07, "y": -78.92 },
+	{ "name": "Lash Right", "parent": "Face", "length": 42.27, "rotation": -99.8, "x": 40.17, "y": 47.77 },
+	{ "name": "Eye Right", "parent": "Face", "x": 13.04, "y": 47.03 },
+	{ "name": "Eye Left", "parent": "Face", "x": 11.85, "y": -72 },
+	{ "name": "Mouths", "parent": "Face", "x": -24.66, "y": 1.66 },
+	{ "name": "Ahoge", "parent": "Hair Main", "length": 88.33, "rotation": 24.37, "x": 3.85, "y": 13.52 },
+	{ "name": "Ahoge2", "parent": "Ahoge", "length": 58.19, "rotation": -128.96, "x": 88.33 },
+	{ "name": "cursor", "parent": "root", "color": "abe323ff" },
+	{ "name": "canvas", "parent": "root" }
+],
+"slots": [
+	{ "name": "Paper", "bone": "root", "attachment": "Paper" },
+	{ "name": "canvas", "bone": "canvas", "attachment": "canvas" },
+	{ "name": "Hand Right", "bone": "Hand Right", "attachment": "Hand Right" },
+	{ "name": "Body", "bone": "Body", "attachment": "Body" },
+	{ "name": "Belt", "bone": "Body", "attachment": "Belt" },
+	{ "name": "Hand Left", "bone": "Hand Left", "attachment": "Hand Left" },
+	{ "name": "Head", "bone": "Head", "attachment": "Head" },
+	{ "name": "Blush", "bone": "Face", "attachment": "Blush" },
+	{ "name": "Mouths", "bone": "Mouths", "attachment": "Mouth Idle" },
+	{ "name": "Nose", "bone": "Face", "attachment": "Nose" },
+	{ "name": "Eye Left", "bone": "Eye Left", "attachment": "Eye Left" },
+	{ "name": "Tear Left", "bone": "Eye Right", "attachment": "Tear Left" },
+	{ "name": "Eye Right", "bone": "Eye Right", "attachment": "Eye Right" },
+	{ "name": "Tear Right", "bone": "Eye Left", "attachment": "Tear Right" },
+	{ "name": "Brown Left", "bone": "Brown Left", "attachment": "Brown Left" },
+	{ "name": "Brown Right", "bone": "Brown Right", "attachment": "Brown Right" },
+	{ "name": "Glass Shade Clip", "bone": "Glass", "attachment": "Glass Shade Clip" },
+	{ "name": "Glass Shade", "bone": "Glass Shade", "attachment": "Glass Shade" },
+	{ "name": "Glass", "bone": "Glass", "attachment": "Glass" },
+	{ "name": "Ahoge", "bone": "Ahoge", "attachment": "Ahoge" },
+	{ "name": "Hair Main", "bone": "Hair Main", "attachment": "Hair Main" },
+	{ "name": "Hair Front 2", "bone": "Hair Front 2", "attachment": "Hair Front 2" },
+	{ "name": "Lash Left", "bone": "Lash Left", "attachment": "Lash Left Meme" },
+	{ "name": "Lash Right", "bone": "Lash Right", "attachment": "Lash Right" },
+	{ "name": "Hair Front 3", "bone": "Hair Front 3", "attachment": "Hair Front 3" },
+	{ "name": "Hair Front 1", "bone": "Hair Front 1", "attachment": "Hair Front 1" }
+],
+"transform": [
+	{
+		"name": "glass-cursor",
+		"order": 1,
+		"bones": [ "Glass Shade" ],
+		"target": "cursor",
+		"rotateMix": 0,
+		"translateMix": 0.05,
+		"scaleMix": 0,
+		"shearMix": 0
+	},
+	{
+		"name": "left-eye-cursor",
+		"order": 2,
+		"bones": [ "Eye Left" ],
+		"target": "cursor",
+		"rotateMix": 0,
+		"translateMix": 0.02,
+		"scaleMix": 0,
+		"shearMix": 0
+	},
+	{
+		"name": "right-eye-cursor",
+		"bones": [ "Eye Right" ],
+		"target": "cursor",
+		"rotateMix": 0,
+		"translateMix": 0.01,
+		"scaleMix": 0,
+		"shearMix": 0
+	}
+],
+"skins": [
+	{
+		"name": "default",
+		"attachments": {
+			"Head": {
+				"Head": { "x": 82.05, "y": -1.22, "rotation": -111.42, "width": 182, "height": 187 }
+			},
+			"Body": {
+				"Body": { "x": 47.64, "y": -12.95, "rotation": -83.93, "width": 170, "height": 229 }
+			},
+			"Tear Left": {
+				"Tear Left": { "x": -24.36, "y": -19.23, "rotation": -111.42, "width": 39, "height": 20 }
+			},
+			"Lash Right": {
+				"Lash Right": { "x": 20.47, "y": 0.75, "rotation": -11.62, "width": 52, "height": 19 }
+			},
+			"Glass Shade": {
+				"Glass Shade": { "x": 11.05, "y": -10.24, "rotation": -25.54, "width": 204, "height": 143 }
+			},
+			"Belt": {
+				"Belt": { "x": 38.87, "y": 12.77, "rotation": -83.93, "width": 47, "height": 131 }
+			},
+			"Eye Left": {
+				"Eye Left": { "x": -4.07, "y": 19.8, "rotation": -111.42, "width": 44, "height": 52 },
+				"Eye Left Hurt": { "x": -4.07, "y": 19.8, "rotation": -111.42, "width": 55, "height": 46 }
+			},
+			"canvas": {
+				"canvas": { "width": 296, "height": 296 }
+			},
+			"Hand Left": {
+				"Hand Left": { "x": 116.15, "y": 10.16, "rotation": 27.98, "width": 232, "height": 152 }
+			},
+			"Glass": {
+				"Glass": { "x": 76.43, "y": -8.83, "rotation": -25.54, "width": 154, "height": 100 }
+			},
+			"Lash Left": {
+				"Lash Left": { "x": 26.4, "y": 0.55, "rotation": 146.66, "width": 51, "height": 35 },
+				"Lash Left Meme": { "x": 26.4, "y": 0.55, "rotation": 146.66, "width": 54, "height": 28 }
+			},
+			"Tear Right": {
+				"Tear Right": { "x": -26.09, "y": 22.53, "rotation": -111.42, "width": 39, "height": 19 }
+			},
+			"Blush": {
+				"Blush": { "x": -17.39, "y": -9.57, "rotation": -111.42, "width": 113, "height": 50 }
+			},
+			"Ahoge": {
+				"Ahoge": { "x": 48.96, "y": -4.67, "rotation": -135.79, "width": 75, "height": 84 }
+			},
+			"Glass Shade Clip": {
+				"Glass Shade Clip": {
+					"type": "clipping",
+					"end": "Glass Shade",
+					"vertexCount": 21,
+					"vertices": [ 66.27, -3.47, 55.72, 0.49, 42.93, -1.25, 41.26, -18.68, 20.05, -32, 1.72, -22.99, -1.26, -6.6, 5.86, 8.28, 17.21, 14.36, 32.3, 11.72, 42.67, 0.95, 56.45, 2.54, 67.57, -0.56, 77.29, 8.67, 94.47, 10.38, 109.05, 0.47, 111.99, -18.91, 99.32, -36.72, 78.58, -38.88, 66.65, -28.76, 62.66, -11.29 ],
+					"color": "ce3a3a00"
+				}
+			},
+			"Hand Right": {
+				"Hand Right": {
+					"type": "mesh",
+					"uvs": [ 0.81584, 0.16419, 0.60746, 0.44737, 0.59624, 0.45409, 0.58139, 0.45778, 0.57017, 0.44301, 0.56713, 0.42052, 0.51745, 0, 0.12692, 0, 0, 0.85792, 0.57459, 0.99379, 0.58796, 0.99559, 0.60603, 0.99699, 0.62337, 0.99479, 0.64342, 0.98759, 1, 0.13285 ],
+					"triangles": [ 7, 6, 5, 8, 7, 5, 3, 8, 4, 8, 5, 4, 3, 9, 8, 14, 13, 1, 2, 1, 13, 3, 2, 13, 14, 1, 0, 9, 3, 13, 13, 10, 9, 13, 11, 10, 12, 11, 13 ],
+					"vertices": [ 1, 4, -0.15, -8.2, 1, 2, 4, 49.17, -21.7, 0.72882, 5, 52.15, -38.77, 0.27118, 2, 4, 50.73, -22.91, 0.64614, 5, 52.28, -36.79, 0.35386, 2, 4, 52.14, -24.81, 0.52009, 5, 53.08, -34.57, 0.47991, 2, 4, 50.95, -27.23, 0.40019, 5, 55.75, -34.2, 0.59981, 2, 4, 48.26, -28.94, 0.29916, 5, 58.67, -35.49, 0.70084, 2, 4, -2.46, -59.8, 5.0E-5, 5, 112.56, -60.41, 0.99995, 1, 5, 144.88, -9.22, 1, 1, 5, 53.82, 71.54, 1, 2, 4, 121.19, 4.59, 0.33925, 5, -9.81, 6.38, 0.66075, 2, 4, 120.58, 6.59, 0.44293, 5, -11.13, 4.77, 0.55707, 2, 4, 119.63, 9.23, 0.56052, 5, -12.79, 2.5, 0.43948, 2, 4, 118.26, 11.56, 0.65414, 5, -13.97, 0.07, 0.34586, 2, 4, 116.08, 14, 0.72306, 5, -14.77, -3.1, 0.27694, 1, 4, -15.71, 16.13, 1 ],
+					"hull": 15,
+					"edges": [ 0, 2, 2, 4, 4, 6, 6, 8, 8, 10, 10, 12, 12, 14, 14, 16, 16, 18, 18, 20, 20, 22, 22, 24, 24, 26, 26, 28, 0, 28 ],
+					"width": 155,
+					"height": 140
+				}
+			},
+			"Paper": {
+				"Paper": { "width": 512, "height": 512 }
+			},
+			"Eye Right": {
+				"Eye Right": { "x": -7.11, "y": -16.33, "rotation": -111.42, "width": 47, "height": 34 },
+				"Eye Right Hurt": { "x": -7.11, "y": -16.33, "rotation": -111.42, "width": 48, "height": 42 }
+			},
+			"Brown Left": {
+				"Brown Left": { "x": 18.94, "y": -12.07, "rotation": 147.16, "width": 56, "height": 57 }
+			},
+			"Brown Right": {
+				"Brown Right": { "x": 21.6, "y": 8.38, "rotation": -10.15, "width": 57, "height": 40 }
+			},
+			"Nose": {
+				"Nose": { "x": -8.47, "y": 3.58, "rotation": -111.42, "width": 10, "height": 19 }
+			},
+			"Mouths": {
+				"Mouth Angry": { "x": -2.35, "y": -1.55, "rotation": -111.42, "width": 22, "height": 21 },
+				"Mouth Hurt": { "x": -1.52, "y": -0.8, "rotation": -111.42, "width": 52, "height": 24 },
+				"Mouth Idle": { "x": -8.57, "y": -2.33, "rotation": -111.42, "width": 14, "height": 14 }
+			},
+			"Hair Main": {
+				"Hair Main": { "x": -61.06, "y": -51.96, "rotation": -111.42, "width": 304, "height": 188 }
+			},
+			"Hair Front 1": {
+				"Hair Front 1": { "x": 109.84, "y": -22.68, "rotation": 92.8, "width": 149, "height": 251 }
+			},
+			"Hair Front 2": {
+				"Hair Front 2": { "x": 60.35, "y": -6.92, "rotation": 75.92, "width": 87, "height": 125 }
+			},
+			"Hair Front 3": {
+				"Hair Front 3": { "x": 107.11, "y": -18.2, "rotation": 68.09, "width": 102, "height": 226 }
+			}
+		}
+	}
+],
+"animations": {
+	"idle": {
+		"slots": {
+			"Tear Left": {
+				"color": [
+					{ "color": "ffffff00" }
+				]
+			},
+			"Tear Right": {
+				"color": [
+					{ "color": "ffffff00" }
+				]
+			}
+		},
+		"bones": {
+			"Body": {
+				"translate": [
+					{ "curve": 0.25, "c3": 0.75 },
+					{ "time": 1, "x": -0.71, "y": -6.66, "curve": 0.25, "c3": 0.75 },
+					{ "time": 2 }
+				]
+			},
+			"Head": {
+				"rotate": [
+					{ "curve": 0.25, "c3": 0.75 },
+					{ "time": 1, "angle": -2.19, "curve": 0.25, "c3": 0.75 },
+					{ "time": 2 }
+				]
+			},
+			"Face": {
+				"translate": [
+					{ "curve": 0.25, "c3": 0.75 },
+					{ "time": 1, "x": -3.91, "curve": 0.25, "c3": 0.75 },
+					{ "time": 2 }
+				]
+			},
+			"Glass": {
+				"rotate": [
+					{ "curve": 0.25, "c3": 0.75 },
+					{ "time": 0.4167, "angle": -2.04, "curve": 0.25, "c3": 0.75 },
+					{ "time": 2 }
+				]
+			},
+			"Lash Left": {
+				"rotate": [
+					{ "curve": 0.25, "c3": 0.75 },
+					{ "time": 1, "angle": -6.5, "curve": 0.25, "c3": 0.75 },
+					{ "time": 2 }
+				],
+				"translate": [
+					{ "x": -3.94, "y": -0.83, "curve": 0.25, "c3": 0.75 },
+					{ "time": 1, "curve": 0.25, "c3": 0.75 },
+					{ "time": 2, "x": -3.94, "y": -0.83 }
+				]
+			},
+			"Lash Right": {
+				"rotate": [
+					{ "angle": -2.16 }
+				],
+				"translate": [
+					{ "x": -3.14, "y": 0.67 }
+				]
+			},
+			"Hair Front 1": {
+				"rotate": [
+					{ "curve": 0.25, "c3": 0.75 },
+					{ "time": 0.8333, "angle": 4.19, "curve": 0.25, "c3": 0.75 },
+					{ "time": 2 }
+				]
+			},
+			"Hair Front 3": {
+				"rotate": [
+					{ "angle": -3.02, "curve": 0.25, "c3": 0.75 },
+					{ "time": 1.1667, "curve": 0.25, "c3": 0.75 },
+					{ "time": 2, "angle": -3.02 }
+				]
+			},
+			"Hair Front 2": {
+				"rotate": [
+					{ "curve": 0.25, "c3": 0.75 },
+					{ "time": 1, "angle": 2.74, "curve": 0.25, "c3": 0.75 },
+					{ "time": 2 }
+				]
+			},
+			"Hair Main": {
+				"translate": [
+					{ "curve": 0.25, "c3": 0.75 },
+					{ "time": 1, "x": -5.58, "y": 3.41, "curve": 0.25, "c3": 0.75 },
+					{ "time": 2 }
+				]
+			},
+			"Hand Left": {
+				"rotate": [
+					{ "curve": 0.25, "c3": 0.75 },
+					{ "time": 1, "angle": 5.05, "curve": 0.25, "c3": 0.75 },
+					{ "time": 2 }
+				]
+			},
+			"Brown Left": {
+				"translate": [
+					{ "curve": 0.25, "c3": 0.75 },
+					{ "time": 1, "x": 4.07, "y": 0.82, "curve": 0.25, "c3": 0.75 },
+					{ "time": 2 }
+				]
+			}
+		}
+	},
+	"interact": {
+		"slots": {
+			"Tear Right": {
+				"color": [
+					{ "color": "ffffff00", "curve": "stepped" },
+					{ "time": 1.625, "color": "ffffff00" },
+					{ "time": 1.6667, "color": "ffffffff", "curve": "stepped" },
+					{ "time": 2.5, "color": "ffffffff" },
+					{ "time": 3, "color": "ffffff00" }
+				]
+			},
+			"Mouths": {
+				"attachment": [
+					{ "time": 1.6667, "name": "Mouth Angry" }
+				]
+			},
+			"Tear Left": {
+				"color": [
+					{ "color": "ffffff00", "curve": "stepped" },
+					{ "time": 1.625, "color": "ffffff00" },
+					{ "time": 1.6667, "color": "ffffffff", "curve": "stepped" },
+					{ "time": 2.5, "color": "ffffffff" },
+					{ "time": 3, "color": "ffffff00" }
+				]
+			},
+			"Lash Left": {
+				"attachment": [
+					{ "name": "Lash Left" },
+					{ "time": 2.5, "name": "Lash Left Meme" }
+				]
+			},
+			"Blush": {
+				"color": [
+					{ "color": "ffffff00", "curve": "stepped" },
+					{ "time": 1.4583, "color": "ffffff00" },
+					{ "time": 1.6667, "color": "ffffffff" }
+				]
+			},
+			"Eye Left": {
+				"attachment": [
+					{ "name": "Eye Left Hurt" },
+					{ "time": 1.6667, "name": "Eye Left" }
+				]
+			},
+			"Eye Right": {
+				"attachment": [
+					{ "name": "Eye Right Hurt" },
+					{ "time": 1.6667, "name": "Eye Right" }
+				]
+			}
+		},
+		"bones": {
+			"Body": {
+				"rotate": [
+					{ "curve": 0.25, "c3": 0.75 },
+					{ "time": 0.125, "angle": -16.23, "curve": 0.25, "c3": 0.75 },
+					{ "time": 0.4167, "angle": 26.82, "curve": 0.25, "c3": 0.75 },
+					{ "time": 0.8333, "angle": 30.58, "curve": 0.25, "c3": 0.75 },
+					{ "time": 1.25 }
+				],
+				"translate": [
+					{ "curve": 0.283, "c3": 0.624, "c4": 0.39 },
+					{ "time": 0.125, "x": 53.62, "y": -16.87, "curve": 0.323, "c2": 0.29, "c3": 0.757 },
+					{ "time": 0.2083, "x": 32.68, "y": -8.28, "curve": 0.323, "c2": 0.29, "c3": 0.757 },
+					{ "time": 0.625, "x": -71.62, "y": -8.28, "curve": "stepped" },
+					{ "time": 2, "x": -71.62, "y": -8.28, "curve": 0.323, "c2": 0.29, "c3": 0.757 },
+					{ "time": 2.5, "x": -0.98, "y": -9.21, "curve": 0.25, "c3": 0.75 },
+					{ "time": 3 }
+				]
+			},
+			"Head": {
+				"rotate": [
+					{ "curve": 0.25, "c3": 0.75 },
+					{ "time": 0.125, "angle": -46.48, "curve": 0.25, "c3": 0.75 },
+					{ "time": 0.4167, "angle": 15.14, "curve": "stepped" },
+					{ "time": 1.0417, "angle": 15.14, "curve": 0.25, "c3": 0.75 },
+					{ "time": 1.25, "angle": 4.09, "curve": 0.25, "c3": 0.75 },
+					{ "time": 2, "angle": 6.98, "curve": "stepped" },
+					{ "time": 2.5, "angle": 6.98, "curve": 0.25, "c3": 0.75 },
+					{ "time": 3 }
+				]
+			},
+			"Face": {
+				"translate": [
+					{ "curve": 0.25, "c3": 0.75 },
+					{ "time": 1, "x": -3.91, "curve": 0.25, "c3": 0.75 },
+					{ "time": 2 }
+				]
+			},
+			"Glass": {
+				"rotate": [
+					{ "curve": 0.25, "c3": 0.75 },
+					{ "time": 0.4167, "angle": -2.04, "curve": 0.25, "c3": 0.75 },
+					{ "time": 2 }
+				],
+				"translate": [
+					{},
+					{ "time": 0.1667, "x": -117.14, "y": -0.83 },
+					{ "time": 0.4167, "x": -121.62, "y": 41.44, "curve": "stepped" },
+					{ "time": 2.5, "x": -121.62, "y": 41.44 },
+					{ "time": 3 }
+				]
+			},
+			"Lash Left": {
+				"rotate": [
+					{ "curve": 0.29, "c3": 0.629, "c4": 0.38 },
+					{ "time": 0.1667, "angle": 12.06, "curve": "stepped" },
+					{ "time": 2.5, "angle": 12.06 },
+					{ "time": 3 }
+				],
+				"translate": [
+					{ "x": -3.94, "y": -0.83 }
+				]
+			},
+			"Lash Right": {
+				"rotate": [
+					{ "angle": -2.16, "curve": 0.25, "c3": 0.75 },
+					{ "time": 0.1667, "angle": -18.72, "curve": "stepped" },
+					{ "time": 2.5, "angle": -18.72 },
+					{ "time": 3, "angle": -2.16 }
+				],
+				"translate": [
+					{ "x": -3.14, "y": 0.67 }
+				]
+			},
+			"Hair Front 1": {
+				"rotate": [
+					{ "curve": 0.25, "c3": 0.75 },
+					{ "time": 0.2083, "angle": 0.77, "curve": 0.25, "c3": 0.75 },
+					{ "time": 0.4167, "angle": -22.53, "curve": "stepped" },
+					{ "time": 0.8333, "angle": -22.53, "curve": 0.25, "c3": 0.75 },
+					{ "time": 1.25, "angle": 5.36, "curve": 0.25, "c3": 0.75 },
+					{ "time": 2 }
+				]
+			},
+			"Hair Front 3": {
+				"rotate": [
+					{ "angle": -3.02, "curve": 0.25, "c3": 0.75 },
+					{ "time": 0.2083, "angle": -30.06, "curve": 0.25, "c3": 0.75 },
+					{ "time": 0.4167, "angle": -31.4, "curve": "stepped" },
+					{ "time": 0.8333, "angle": -31.4, "curve": 0.25, "c3": 0.75 },
+					{ "time": 1.1667, "curve": 0.25, "c3": 0.75 },
+					{ "time": 2, "angle": -3.02 }
+				]
+			},
+			"Hair Front 2": {
+				"rotate": [
+					{ "curve": 0.25, "c3": 0.75 },
+					{ "time": 0.2083, "angle": 10.71, "curve": 0.25, "c3": 0.75 },
+					{ "time": 0.4167, "angle": -7.98, "curve": "stepped" },
+					{ "time": 0.8333, "angle": -7.98, "curve": 0.25, "c3": 0.75 },
+					{ "time": 1.25, "angle": 2.74, "curve": 0.25, "c3": 0.75 },
+					{ "time": 2 }
+				]
+			},
+			"Hair Main": {
+				"translate": [
+					{ "curve": 0.25, "c3": 0.75 },
+					{ "time": 1, "x": -5.58, "y": 3.41, "curve": 0.25, "c3": 0.75 },
+					{ "time": 2 }
+				]
+			},
+			"Hand Left": {
+				"rotate": [
+					{ "angle": 139.28 },
+					{ "time": 0.2083, "angle": 72.14 },
+					{ "time": 0.25, "angle": 120.19, "curve": "stepped" },
+					{ "time": 0.2917, "angle": -62.9, "curve": "stepped" },
+					{ "time": 1.6667, "angle": -62.9 },
+					{ "time": 2.0833, "angle": 5.97 },
+					{ "time": 2.2917, "angle": -79.71, "curve": "stepped" },
+					{ "time": 2.5, "angle": -79.71 },
+					{ "time": 3 }
+				],
+				"scale": [
+					{ "x": -1, "curve": "stepped" },
+					{ "time": 0.2083, "x": -1, "curve": "stepped" },
+					{ "time": 0.25 }
+				]
+			},
+			"Brown Left": {
+				"rotate": [
+					{ "time": 1.4583, "curve": 0.25, "c3": 0.75 },
+					{ "time": 1.6667, "angle": 3.77, "curve": "stepped" },
+					{ "time": 2.5, "angle": 3.77, "curve": 0.25, "c3": 0.75 },
+					{ "time": 3 }
+				],
+				"translate": [
+					{ "time": 1.4583, "curve": 0.25, "c3": 0.75 },
+					{ "time": 1.6667, "x": -7.51, "y": 6.29, "curve": "stepped" },
+					{ "time": 2.5, "x": -7.51, "y": 6.29, "curve": 0.25, "c3": 0.75 },
+					{ "time": 3 }
+				]
+			},
+			"Glass Shade": {
+				"translate": [
+					{ "curve": 0.25, "c3": 0.75 },
+					{ "time": 0.2083, "x": -42.3, "curve": "stepped" },
+					{ "time": 2.5, "x": -42.3, "curve": 0.25, "c3": 0.75 },
+					{ "time": 3 }
+				]
+			},
+			"Hand Right": {
+				"rotate": [
+					{ "curve": 0.25, "c3": 0.75 },
+					{ "time": 0.1667, "angle": 33.55, "curve": 0.25, "c3": 0.75 },
+					{ "time": 0.3333, "angle": -49.26, "curve": 0.25, "c3": 0.75 },
+					{ "time": 1.0417, "angle": -41.77, "curve": 0.25, "c3": 0.75 },
+					{ "time": 2, "curve": 0.25, "c3": 0.75 },
+					{ "time": 2.5, "angle": 87.31, "curve": 0.25, "c3": 0.75 },
+					{ "time": 3 }
+				]
+			},
+			"Ahoge": {
+				"rotate": [
+					{ "curve": 0.25, "c3": 0.75 },
+					{ "time": 0.2083, "angle": 37, "curve": 0.25, "c3": 0.75 },
+					{ "time": 1.0417 }
+				]
+			},
+			"Brown Right": {
+				"rotate": [
+					{ "time": 1.4583, "curve": 0.25, "c3": 0.75 },
+					{ "time": 1.6667, "angle": -7.49, "curve": "stepped" },
+					{ "time": 2.5, "angle": -7.49, "curve": 0.25, "c3": 0.75 },
+					{ "time": 3 }
+				],
+				"translate": [
+					{ "time": 1.4583, "curve": 0.25, "c3": 0.75 },
+					{ "time": 1.6667, "x": -1.99, "y": -3.46, "curve": "stepped" },
+					{ "time": 2.5, "x": -1.99, "y": -3.46, "curve": 0.25, "c3": 0.75 },
+					{ "time": 3 }
+				]
+			}
+		}
+	}
+}
+}

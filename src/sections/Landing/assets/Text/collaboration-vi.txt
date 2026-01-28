@@ -1,0 +1,17 @@
+<h1>Hãy cùng làm việc nhé!</h1>
+
+<p>Tớ sẵn sàng nhận <b>dự án freelance</b> và <i>hợp tác</i>.</p>
+
+<h2>Tớ có thể giúp cậu với:</h2>
+<ul>
+  <li>Thiết kế nhân vật và minh họa</li>
+  <li>Animation 2D và hiệu ứng hình ảnh</li>
+  <li>Phát triển game với Unity</li>
+  <li>Thiết kế UI/UX cho game</li>
+</ul>
+
+<p>Cứ <strong>liên hệ</strong> với tớ qua bất kỳ kênh nào nhé!</p>
+
+<br>
+
+<p style="color: #ff69b4;">Mong được làm việc cùng cậu! ✨</p>
