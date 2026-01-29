@@ -1,22 +1,26 @@
 import { useEffect, useRef, useState } from 'react'
 import { gsap } from 'gsap'
 import PortfolioGrid from './PortfolioGrid'
-import serviceImg1 from '../assets/service-1.png'
-import serviceGif1 from '../assets/service-1.gif'
-import serviceImg2 from '../assets/service-2.png'
-import serviceGif2 from '../assets/service-2.gif'
-import serviceImg3 from '../assets/service-3.png'
-import serviceGif3 from '../assets/service-3.gif'
-import serviceHeaderEnTxt from '../assets/Text/service-header-en.txt?raw'
-import serviceHeaderViTxt from '../assets/Text/service-header-vi.txt?raw'
-import serviceIllustrationEnTxt from '../assets/Text/service-illustration-en.txt?raw'
-import serviceIllustrationViTxt from '../assets/Text/service-illustration-vi.txt?raw'
-import serviceGamedevEnTxt from '../assets/Text/service-gamedev-en.txt?raw'
-import serviceGamedevViTxt from '../assets/Text/service-gamedev-vi.txt?raw'
-import serviceComingsoonEnTxt from '../assets/Text/service-comingsoon-en.txt?raw'
-import serviceComingsoonViTxt from '../assets/Text/service-comingsoon-vi.txt?raw'
-import collaborationEnTxt from '../assets/Text/collaboration-en.txt?raw'
-import collaborationViTxt from '../assets/Text/collaboration-vi.txt?raw'
+
+// Service images
+import serviceImg1 from '../assets/Services/service-1.png'
+import serviceGif1 from '../assets/Services/service-1.gif'
+import serviceImg2 from '../assets/Services/service-2.png'
+import serviceGif2 from '../assets/Services/service-2.gif'
+import serviceImg3 from '../assets/Services/service-3.png'
+import serviceGif3 from '../assets/Services/service-3.gif'
+
+// Service texts
+import serviceHeaderEnTxt from '../assets/Services/Texts/service-header-en.txt?raw'
+import serviceHeaderViTxt from '../assets/Services/Texts/service-header-vi.txt?raw'
+import serviceIllustrationEnTxt from '../assets/Services/Texts/service-illustration-en.txt?raw'
+import serviceIllustrationViTxt from '../assets/Services/Texts/service-illustration-vi.txt?raw'
+import serviceGamedevEnTxt from '../assets/Services/Texts/service-gamedev-en.txt?raw'
+import serviceGamedevViTxt from '../assets/Services/Texts/service-gamedev-vi.txt?raw'
+import serviceComingsoonEnTxt from '../assets/Services/Texts/service-comingsoon-en.txt?raw'
+import serviceComingsoonViTxt from '../assets/Services/Texts/service-comingsoon-vi.txt?raw'
+import collaborationEnTxt from '../assets/Collaboration/Texts/collaboration-en.txt?raw'
+import collaborationViTxt from '../assets/Collaboration/Texts/collaboration-vi.txt?raw'
 
 const RightColumn = ({ onServiceClick, currentLanguage }) => {
   const cellsRef = useRef([])
@@ -101,10 +105,10 @@ const RightColumn = ({ onServiceClick, currentLanguage }) => {
         descriptionKey: 'illustration',
         image: serviceImg1,
         gif: serviceGif1,
-        buttonColorNormal: '#f6b0b4',
-        buttonColorNormalEnd: '#f7e1c3',
-        buttonColorHighlight: '#ff69b4',
-        buttonColorHighlightEnd: '#ffcc00'
+        buttonColorNormal: '#ff69b4',
+        buttonColorNormalEnd: '#ffcc00',
+        buttonColorHighlight: '#f6b0b4',
+        buttonColorHighlightEnd: '#f7e1c3'
       },
       {
         buttonText: 'Game Development',
@@ -112,10 +116,10 @@ const RightColumn = ({ onServiceClick, currentLanguage }) => {
         descriptionKey: 'gamedev',
         image: serviceImg2,
         gif: serviceGif2,
-        buttonColorNormal: '#afaff3',
-        buttonColorNormalEnd: '#f6c8da',
-        buttonColorHighlight: '#4a55e2',
-        buttonColorHighlightEnd: '#00bcd4'
+        buttonColorNormal: '#4a55e2',
+        buttonColorNormalEnd: '#00bcd4',
+        buttonColorHighlight: '#afaff3',
+        buttonColorHighlightEnd: '#f6c8da'
       },
       {
         buttonText: 'Coming Soon',
@@ -123,10 +127,10 @@ const RightColumn = ({ onServiceClick, currentLanguage }) => {
         descriptionKey: 'comingsoon',
         image: serviceImg3,
         gif: serviceGif3,
-        buttonColorNormal: '#f5b9dd',
-        buttonColorNormalEnd: '#ffe6f0',
-        buttonColorHighlight: '#9b59b6',
-        buttonColorHighlightEnd: '#e91e63'
+        buttonColorNormal: '#9b59b6',
+        buttonColorNormalEnd: '#e91e63',
+        buttonColorHighlight: '#f5b9dd',
+        buttonColorHighlightEnd: '#ffe6f0'
       }
     ],
     vi: [
@@ -136,10 +140,10 @@ const RightColumn = ({ onServiceClick, currentLanguage }) => {
         descriptionKey: 'illustration',
         image: serviceImg1,
         gif: serviceGif1,
-        buttonColorNormal: '#f8d2d5',
-        buttonColorNormalEnd: '#fef3e2',
-        buttonColorHighlight: '#ff69b4',
-        buttonColorHighlightEnd: '#ffcc00'
+        buttonColorNormal: '#ff69b4',
+        buttonColorNormalEnd: '#ffcc00',
+        buttonColorHighlight: '#f8d2d5',
+        buttonColorHighlightEnd: '#fef3e2'
       },
       {
         buttonText: 'Game Development',
@@ -147,10 +151,10 @@ const RightColumn = ({ onServiceClick, currentLanguage }) => {
         descriptionKey: 'gamedev',
         image: serviceImg2,
         gif: serviceGif2,
-        buttonColorNormal: '#cecef5',
-        buttonColorNormalEnd: '#e8f4f8',
-        buttonColorHighlight: '#4a55e2',
-        buttonColorHighlightEnd: '#00bcd4'
+        buttonColorNormal: '#4a55e2',
+        buttonColorNormalEnd: '#00bcd4',
+        buttonColorHighlight: '#cecef5',
+        buttonColorHighlightEnd: '#e8f4f8'
       },
       {
         buttonText: 'Coming Soon',
@@ -158,10 +162,10 @@ const RightColumn = ({ onServiceClick, currentLanguage }) => {
         descriptionKey: 'comingsoon',
         image: serviceImg3,
         gif: serviceGif3,
-        buttonColorNormal: '#fad9ed',
-        buttonColorNormalEnd: '#ffe6f0',
-        buttonColorHighlight: '#9b59b6',
-        buttonColorHighlightEnd: '#e91e63'
+        buttonColorNormal: '#9b59b6',
+        buttonColorNormalEnd: '#e91e63',
+        buttonColorHighlight: '#fad9ed',
+        buttonColorHighlightEnd: '#ffe6f0'
       }
     ]
   }
@@ -285,7 +289,7 @@ const RightColumn = ({ onServiceClick, currentLanguage }) => {
   return (
     <div className="flex flex-col">
       <div className="flex gap-6 pb-2">
-        {['services', 'portfolio', 'collaboration'].map((tab) => (
+        {['services', 'samples', 'collaboration'].map((tab) => (
           <button
             key={tab}
             onClick={() => setActiveTab(tab)}
@@ -319,7 +323,7 @@ const RightColumn = ({ onServiceClick, currentLanguage }) => {
         </div>
       )}
 
-      {activeTab === 'portfolio' && <PortfolioGrid />}
+      {activeTab === 'samples' && <PortfolioGrid />}
 
       {activeTab === 'collaboration' && (
         <div className={`bg-white ${COLLABORATION_CONFIG.paddingLeft} ${COLLABORATION_CONFIG.paddingRight} ${COLLABORATION_CONFIG.paddingTop} ${COLLABORATION_CONFIG.paddingBottom} rounded-lg`}>

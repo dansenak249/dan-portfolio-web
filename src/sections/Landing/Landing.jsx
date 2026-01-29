@@ -167,7 +167,7 @@ const Landing = ({ activeSection, onSectionChange }) => {
   }
 
   return (
-    <div ref={containerRef} className="min-h-screen bg-[#dadef0] pb-5 relative overflow-hidden">
+    <div ref={containerRef} className="min-h-screen bg-[#dadef0] pb-4 relative overflow-hidden">
       <div 
         ref={pattern1Ref}
         className="fixed inset-0 pointer-events-none"
@@ -194,7 +194,7 @@ const Landing = ({ activeSection, onSectionChange }) => {
         }}
       />
 
-      <div className="max-w-4xl mx-auto px-4 sm:px-6 pt-10 relative z-10">
+      <div className="max-w-4xl mx-auto px-4 sm:px-6 pt-4 relative z-10">
         <div className="relative">
           <div 
             className="absolute inset-0 bg-[#b1d5ff] rounded-lg"
@@ -229,7 +229,9 @@ const Landing = ({ activeSection, onSectionChange }) => {
             
             <Navigation 
               activeSection={activeSection} 
-              onSectionChange={() => handleSectionChange('landing')} 
+              onSectionChange={() => handleSectionChange('landing')}
+              currentLanguage={currentLanguage}
+              onLanguageChange={handleLanguageChange}
             />
             
             {renderContent()}
