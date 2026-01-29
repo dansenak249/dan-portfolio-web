@@ -8,7 +8,6 @@ import BackToTop from '../../components/BackToTop'
 import SectionTransition from '../../components/SectionTransition'
 import IllustrationSection from '../Illustration/IllustrationSection'
 import GameDevSection from '../GameDev/GameDevSection'
-import PlaceholderSection from '../Placeholder/PlaceholderSection'
 import patternImg1 from './assets/pattern-1.png'
 import patternImg2 from './assets/pattern-2.png'
 

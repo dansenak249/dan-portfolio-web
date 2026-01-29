@@ -7,8 +7,6 @@ import serviceImg1 from '../assets/Services/service-1.png'
 import serviceGif1 from '../assets/Services/service-1.gif'
 import serviceImg2 from '../assets/Services/service-2.png'
 import serviceGif2 from '../assets/Services/service-2.gif'
-import serviceImg3 from '../assets/Services/service-3.png'
-import serviceGif3 from '../assets/Services/service-3.gif'
 
 // Service texts
 import serviceHeaderEnTxt from '../assets/Services/Texts/service-header-en.txt?raw'
@@ -17,15 +15,24 @@ import serviceIllustrationEnTxt from '../assets/Services/Texts/service-illustrat
 import serviceIllustrationViTxt from '../assets/Services/Texts/service-illustration-vi.txt?raw'
 import serviceGamedevEnTxt from '../assets/Services/Texts/service-gamedev-en.txt?raw'
 import serviceGamedevViTxt from '../assets/Services/Texts/service-gamedev-vi.txt?raw'
-import serviceComingsoonEnTxt from '../assets/Services/Texts/service-comingsoon-en.txt?raw'
-import serviceComingsoonViTxt from '../assets/Services/Texts/service-comingsoon-vi.txt?raw'
 import collaborationEnTxt from '../assets/Collaboration/Texts/collaboration-en.txt?raw'
 import collaborationViTxt from '../assets/Collaboration/Texts/collaboration-vi.txt?raw'
 
 const RightColumn = ({ onServiceClick, currentLanguage }) => {
   const cellsRef = useRef([])
+  const tabContainerRef = useRef(null)
   const [activeTab, setActiveTab] = useState('services')
   const [hoveredTab, setHoveredTab] = useState(null)
+
+  // ===========================================
+  // TAB SWITCH SCROLL CONFIGURATION
+  // ===========================================
+  const TAB_SCROLL_CONFIG = {
+    enabled: true,
+    behavior: 'smooth',
+    topOffset: 0
+  }
+  // ===========================================
 
   useEffect(() => {
     gsap.fromTo(cellsRef.current, { opacity: 0, y: 30 }, { opacity: 1, y: 0, duration: 0.6, stagger: 0.2, ease: 'power2.out', delay: 0.5 })
@@ -37,10 +44,23 @@ const RightColumn = ({ onServiceClick, currentLanguage }) => {
     }
   }
 
+  const handleTabSwitch = (tab) => {
+    if (tab === activeTab) return
+    
+    setActiveTab(tab)
+    
+    if (TAB_SCROLL_CONFIG.enabled) {
+      window.scrollTo({
+        top: TAB_SCROLL_CONFIG.topOffset,
+        behavior: TAB_SCROLL_CONFIG.behavior
+      })
+    }
+  }
+
   const SERVICE_CONFIG = {
     cellHeight: 'h-40',
     cellBorderRadius: '16px',
-    cellGap: 'gap-6',
+    cellGap: 'gap-4',
     marginTop: 'mt-0',
     marginBottom: 'mb-0',
     imageSize: 'w-40 h-40',
@@ -90,17 +110,13 @@ const RightColumn = ({ onServiceClick, currentLanguage }) => {
     gamedev: {
       en: serviceGamedevEnTxt,
       vi: serviceGamedevViTxt
-    },
-    comingsoon: {
-      en: serviceComingsoonEnTxt,
-      vi: serviceComingsoonViTxt
     }
   }
 
   const servicesContent = {
     en: [
       {
-        buttonText: 'Animated Illustrations',
+        buttonText: 'Animated Illustration',
         sectionId: 'illustration',
         descriptionKey: 'illustration',
         image: serviceImg1,
@@ -120,17 +136,6 @@ const RightColumn = ({ onServiceClick, currentLanguage }) => {
         buttonColorNormalEnd: '#00bcd4',
         buttonColorHighlight: '#afaff3',
         buttonColorHighlightEnd: '#f6c8da'
-      },
-      {
-        buttonText: 'Coming Soon',
-        sectionId: 'placeholder',
-        descriptionKey: 'comingsoon',
-        image: serviceImg3,
-        gif: serviceGif3,
-        buttonColorNormal: '#9b59b6',
-        buttonColorNormalEnd: '#e91e63',
-        buttonColorHighlight: '#f5b9dd',
-        buttonColorHighlightEnd: '#ffe6f0'
       }
     ],
     vi: [
@@ -155,17 +160,6 @@ const RightColumn = ({ onServiceClick, currentLanguage }) => {
         buttonColorNormalEnd: '#00bcd4',
         buttonColorHighlight: '#cecef5',
         buttonColorHighlightEnd: '#e8f4f8'
-      },
-      {
-        buttonText: 'Coming Soon',
-        sectionId: 'placeholder',
-        descriptionKey: 'comingsoon',
-        image: serviceImg3,
-        gif: serviceGif3,
-        buttonColorNormal: '#9b59b6',
-        buttonColorNormalEnd: '#e91e63',
-        buttonColorHighlight: '#fad9ed',
-        buttonColorHighlightEnd: '#ffe6f0'
       }
     ]
   }
@@ -288,11 +282,11 @@ const RightColumn = ({ onServiceClick, currentLanguage }) => {
 
   return (
     <div className="flex flex-col">
-      <div className="flex gap-6 pb-2">
+      <div ref={tabContainerRef} className="flex gap-6 pb-2">
         {['services', 'samples', 'collaboration'].map((tab) => (
           <button
             key={tab}
-            onClick={() => setActiveTab(tab)}
+            onClick={() => handleTabSwitch(tab)}
             onMouseEnter={() => setHoveredTab(tab)}
             onMouseLeave={() => setHoveredTab(null)}
             className={`pb-2 relative ${

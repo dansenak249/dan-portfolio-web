@@ -19,20 +19,20 @@ const PortfolioGrid = () => {
   // ===========================================
   const LOADING_CONFIG = {
     // Minimum loading time in milliseconds (set to 0 for production)
-    minLoadTime: 2000,
+    minLoadTime: 0,
     // Box settings
     box: {
-      width: '300px',
-      height: '320px',
+      width: '250px',
+      height: '250px',
       backgroundColor: '#ffffff',
       borderRadius: '8px'
     },
     // Loading image/gif settings (square)
     image: {
-      size: '280px',
+      size: '225px',
       borderRadius: '0px',
       offsetX: '0px', 
-      offsetY: '10px'  // NEW: Distance from the TOP edge of the box
+      offsetY: '0px'  // NEW: Distance from the TOP edge of the box
     },
     // Loading text settings
     text: {
@@ -40,7 +40,7 @@ const PortfolioGrid = () => {
       fontSize: '16px',
       color: '#a7a7a7',
       offsetX: '0px',
-      offsetY: '-10px' // Distance from the BOTTOM edge of the box
+      offsetY: '-8px' // Distance from the BOTTOM edge of the box
     }
   }
   // ===========================================

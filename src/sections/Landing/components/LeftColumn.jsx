@@ -144,7 +144,7 @@ const LeftColumn = ({ currentLanguage, onLanguageChange }) => {
   return (
     <div className={`flex flex-col gap-0 ${CONTENT_OFFSET_TOP}`}>
       <div ref={addToRefs} className={`bg-white ${CELL_CONFIG.paddingLeft} ${CELL_CONFIG.paddingRight} ${CELL_CONFIG.paddingTop} ${CELL_CONFIG.paddingBottom}`}>
-        <h2 className="text-6xl font-bold text-gradient-blue-pink mb-2">Dan</h2>
+        <h2 className="text-6xl font-bold text-gradient-blue-pink mb-2">Dan✧</h2>
         <p className="text-[#a7a7a7] text-base font-bold mb-3">@dansenak249</p>
         <div 
           className="text-[#a7a7a7] text-base leading-relaxed"
