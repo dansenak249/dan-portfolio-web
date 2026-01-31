@@ -1,2 +1,63 @@
-<b>Unity C# | UX/UGUI | Shader & VFX</b><br />
-Phát triển Game trọn gói - Code, Art, Animation, VFX và UX/UI. Tất cả trong một! (๑˃ᴗ˂)ﻭ.
+<html>
+
+<head>
+<meta http-equiv=Content-Type content="text/html; charset=windows-1252">
+<meta name=Generator content="Microsoft Word 15 (filtered)">
+<style>
+<!--
+ /* Font Definitions */
+ @font-face
+	{font-family:"Cambria Math";
+	panose-1:2 4 5 3 5 4 6 3 2 4;}
+@font-face
+	{font-family:Calibri;
+	panose-1:2 15 5 2 2 2 4 3 2 4;}
+@font-face
+	{font-family:"UTM Aptima";
+	panose-1:2 4 6 3 5 5 6 2 2 4;}
+@font-face
+	{font-family:"Leelawadee UI";
+	panose-1:2 11 5 2 4 2 4 2 2 3;}
+ /* Style Definitions */
+ p.MsoNormal, li.MsoNormal, div.MsoNormal
+	{margin-top:0in;
+	margin-right:0in;
+	margin-bottom:8.0pt;
+	margin-left:0in;
+	line-height:115%;
+	font-size:12.0pt;
+	font-family:"Calibri",sans-serif;}
+.MsoChpDefault
+	{font-size:10.0pt;
+	font-family:"Calibri",sans-serif;}
+@page WordSection1
+	{size:8.5in 11.0in;
+	margin:1.0in 1.0in 1.0in 1.0in;}
+div.WordSection1
+	{page:WordSection1;}
+-->
+</style>
+
+</head>
+
+<body lang=EN-US style='word-wrap:break-word'>
+
+<div class=WordSection1>
+
+<p class=MsoNormal><b><span style='font-size:14.0pt;line-height:115%;
+font-family:"UTM Aptima",serif;color:#A7A7A7'>Game Development</span></b></p>
+
+<p class=MsoNormal><span style='font-family:"UTM Aptima",serif;color:#A7A7A7'>Phát
+tri&#7875;n Game tr&#7885;n gói - Code, Art, Animation, VFX và UX/UI. T&#7845;t
+c&#7843; trong m&#7897;t! (</span><span style='font-family:"Leelawadee UI",sans-serif;
+color:#A7A7A7'>&#3665;</span><span style='font-family:"Times New Roman",serif;
+color:#A7A7A7'>&#707;&#7447;&#706;</span><span style='font-family:"UTM Aptima",serif;
+color:#A7A7A7'>)</span><span style='font-family:"Times New Roman",serif;
+color:#A7A7A7'>&#65261;</span><span style='font-family:"UTM Aptima",serif;
+color:#A7A7A7'>.</span></p>
+
+</div>
+
+</body>
+
+</html>

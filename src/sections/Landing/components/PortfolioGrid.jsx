@@ -358,7 +358,7 @@ const PortfolioGrid = () => {
             </div>
 
             <p className="text-white text-center mt-4 text-sm opacity-70">
-              Press ESC or click outside to close
+              
             </p>
           </div>
         </div>

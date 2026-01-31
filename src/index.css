@@ -21,7 +21,8 @@
   --color-bg-light: #F5F7FA;
   
   /* Font Family */
-  --font-sans: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+  /*--font-sans: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; */
+  --font-sans: 'UTM Aptima';
 }
 
 /* Custom Base Styles */
@@ -120,4 +121,20 @@ html {
 
 ::-webkit-scrollbar-thumb:hover {
   background: #a8a8a8;
+}
+
+/* Style dành cho container chứa nội dung từ Word */
+.collaboration-content {
+  width: 100%;
+  overflow-x: hidden;
+  word-wrap: break-word;
+  overflow-wrap: break-word;
+}
+
+/* Ép tất cả các thẻ con từ Word phải tuân thủ kích thước cha */
+.collaboration-content * {
+  max-width: 100% !important;
+  box-sizing: border-box !important;
+  height: auto !important;
+  width: auto !important; 
 }

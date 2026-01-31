@@ -58,7 +58,7 @@ const RightColumn = ({ onServiceClick, currentLanguage }) => {
   }
 
   const SERVICE_CONFIG = {
-    cellHeight: 'h-40',
+    cellHeight: 'h-44',
     cellBorderRadius: '16px',
     cellGap: 'gap-4',
     marginTop: 'mt-0',
@@ -91,10 +91,10 @@ const RightColumn = ({ onServiceClick, currentLanguage }) => {
   }
 
   const COLLABORATION_CONFIG = {
-    paddingLeft: 'pl-8',
-    paddingRight: 'pr-8',
-    paddingTop: 'pt-8',
-    paddingBottom: 'pb-8'
+    paddingLeft: 'pl-0',
+    paddingRight: 'pr-0',
+    paddingTop: 'pt-0',
+    paddingBottom: 'pb-0'
   }
 
   const serviceHeaderContent = {
@@ -116,7 +116,7 @@ const RightColumn = ({ onServiceClick, currentLanguage }) => {
   const servicesContent = {
     en: [
       {
-        buttonText: 'Animated Illustration',
+        buttonText: 'Explore',
         sectionId: 'illustration',
         descriptionKey: 'illustration',
         image: serviceImg1,
@@ -127,13 +127,13 @@ const RightColumn = ({ onServiceClick, currentLanguage }) => {
         buttonColorHighlightEnd: '#f7e1c3'
       },
       {
-        buttonText: 'Game Development',
+        buttonText: 'Explore',
         sectionId: 'gamedev',
         descriptionKey: 'gamedev',
         image: serviceImg2,
         gif: serviceGif2,
-        buttonColorNormal: '#4a55e2',
-        buttonColorNormalEnd: '#00bcd4',
+        buttonColorNormal: '#7978e6',
+        buttonColorNormalEnd: '#e99bba',
         buttonColorHighlight: '#afaff3',
         buttonColorHighlightEnd: '#f6c8da'
       }
@@ -156,8 +156,8 @@ const RightColumn = ({ onServiceClick, currentLanguage }) => {
         descriptionKey: 'gamedev',
         image: serviceImg2,
         gif: serviceGif2,
-        buttonColorNormal: '#4a55e2',
-        buttonColorNormalEnd: '#00bcd4',
+        buttonColorNormal: '#7978e6',
+        buttonColorNormalEnd: '#e99bba',
         buttonColorHighlight: '#cecef5',
         buttonColorHighlightEnd: '#e8f4f8'
       }
@@ -291,14 +291,14 @@ const RightColumn = ({ onServiceClick, currentLanguage }) => {
             onMouseLeave={() => setHoveredTab(null)}
             className={`pb-2 relative ${
               activeTab === tab
-                ? 'text-2xl text-[#ffa500] font-bold'
+                ? 'text-2xl text-[#af83b9] font-bold'
                 : 'text-2xl text-[#a7a7a7] font-normal'
             }`}
           >
             {tab.charAt(0).toUpperCase() + tab.slice(1)}
             
             {activeTab === tab && (
-              <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-[#ffa500]" />
+              <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-[#af83b9]" />
             )}
             
             {hoveredTab === tab && activeTab !== tab && (
@@ -306,7 +306,7 @@ const RightColumn = ({ onServiceClick, currentLanguage }) => {
             )}
           </button>
         ))}
-      </div>
+      </div> 
 
       {activeTab === 'services' && (
         <div className={`flex flex-col ${SERVICE_CONFIG.cellGap} ${SERVICE_CONFIG.marginTop} ${SERVICE_CONFIG.marginBottom}`}>
