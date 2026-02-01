@@ -1,8 +1,8 @@
 import { useState, useRef, useEffect } from 'react'
-import homeIcon from '../sections/Landing/assets/home-icon.png'
-import languageIcon from '../sections/Landing/assets/language-icon.png'
-import vnFlag from '../sections/Landing/assets/vn-flag.png'
-import usFlag from '../sections/Landing/assets/us-flag.png'
+import homeIcon from '@/app/commission/assets/home-icon.png'
+import languageIcon from '@/app/commission/assets/language-icon.png'
+import vnFlag from '@/app/commission/assets/vn-flag.png'
+import usFlag from '@/app/commission/assets/us-flag.png'
 
 const Navigation = ({ activeSection, onSectionChange, currentLanguage, onLanguageChange }) => {
   const [isDropdownOpen, setIsDropdownOpen] = useState(false)
@@ -74,7 +74,7 @@ const Navigation = ({ activeSection, onSectionChange, currentLanguage, onLanguag
           className="flex items-center gap-4 px-6 py-0 h-full hover:scale-105 transition-transform duration-300 rounded-xl bg-white"
         >
           <img 
-            src={homeIcon} 
+            src={homeIcon.src} 
             alt="Home"
             className="h-[45px] aspect-square object-contain"
           />
@@ -89,7 +89,7 @@ const Navigation = ({ activeSection, onSectionChange, currentLanguage, onLanguag
             className="h-[45px] w-[45px] rounded-lg overflow-hidden hover:scale-105 transition-transform duration-300"
           >
             <img 
-              src={languageIcon} 
+              src={languageIcon.src} 
               alt="Language"
               className="w-full h-full object-contain"
             />
@@ -126,7 +126,7 @@ const Navigation = ({ activeSection, onSectionChange, currentLanguage, onLanguag
                 >
                   <div className="flex items-center gap-3">
                     <img 
-                      src={lang.flag} 
+                      src={lang.flag.src} 
                       alt={lang.shortCode}
                       className="w-6 h-6 object-cover rounded"
                     />

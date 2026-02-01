@@ -1,0 +1,20 @@
+const ServiceGamedev = ({ language }) => {
+  const content = {
+    en: (
+      <p>
+        <strong>Game Development</strong> - Unity/Unreal Engine development, 
+        gameplay programming, and technical art.
+      </p>
+    ),
+    vi: (
+      <p>
+        <strong>Phát triển Game</strong> - Phát triển Unity/Unreal Engine, 
+        lập trình gameplay, và technical art.
+      </p>
+    )
+  }
+
+  return content[language] || content.en
+}
+
+export default ServiceGamedev

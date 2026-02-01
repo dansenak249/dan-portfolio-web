@@ -1,0 +1,21 @@
+{
+  "editor.autoClosingQuotes": "never",
+  "editor.quickSuggestions": {
+    "strings": false
+  },
+  "editor.acceptSuggestionOnCommitCharacter": false,
+  "editor.snippetSuggestions": "none",
+  "files.encoding": "utf8",
+  "files.autoGuessEncoding": false,
+  "files.eol": "\n",
+  "editor.formatOnPaste": false,
+  "editor.formatOnType": false,
+  "[javascript]": {
+    "editor.defaultFormatter": "esbenp.prettier-vscode",
+    "editor.formatOnSave": false
+  },
+  "[javascriptreact]": {
+    "editor.defaultFormatter": "esbenp.prettier-vscode",
+    "editor.formatOnSave": false
+  }
+}
