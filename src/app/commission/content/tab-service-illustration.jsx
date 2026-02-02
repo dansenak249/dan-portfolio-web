@@ -49,14 +49,14 @@ const ServiceIllustration = ({ language }) => {
         <ContentLayout 
           sub="Photoshop | Spine2D"
           head="Animated Illustration"
-          body="Make your ideas into vibrant art brought to life with mesmerizing animations and magical FX ヾ(≧▽≦*)o."
+          body="Make your ideas into vibrant magical art brought to life ヾ(≧▽≦*)o"
         />
       </en>
       <vi>
         <ContentLayout 
           sub="Photoshop | Spine2D"
           head="Animated Illustration"
-          body="Biến ý tưởng của cậu thành những bức tranh sống động với animation đầy màu sắc và hiệu ứng mê hoặc ヾ(≧▽≦*)o."
+          body="Biến ý tưởng của cậu thành những bức tranh sống động mê hoặc ヾ(≧▽≦*)o"
         />
       </vi>
     </T>

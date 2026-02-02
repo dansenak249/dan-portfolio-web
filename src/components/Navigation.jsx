@@ -67,8 +67,8 @@ const Navigation = ({ activeSection, onSectionChange, currentLanguage, onLanguag
   }
 
   return (
-    <nav className="h-[60px] bg-white border-b-2 border-[#efefef]">
-      <div className="px-2 h-full flex items-center justify-between">
+    <nav className="h-[45px] bg-white border-b-2 border-[#efefef]">
+      <div className="px-1 h-full flex items-center justify-between">
         <button
           onClick={() => onSectionChange('landing')}
           className="flex items-center gap-4 px-6 py-0 h-full hover:scale-105 transition-transform duration-300 rounded-xl bg-white"
@@ -76,17 +76,17 @@ const Navigation = ({ activeSection, onSectionChange, currentLanguage, onLanguag
           <img 
             src={homeIcon.src} 
             alt="Home"
-            className="h-[45px] aspect-square object-contain"
+            className="h-[35px] aspect-square object-contain"
           />
           <span className="text-3xl font-bold text-[#b7e7fb]">
-            Home
+            
           </span>
         </button>
 
         <div className="relative mr-4" ref={dropdownRef}>
           <button
             onClick={() => setIsDropdownOpen(!isDropdownOpen)}
-            className="h-[45px] w-[45px] rounded-lg overflow-hidden hover:scale-105 transition-transform duration-300"
+            className="h-[35px] w-[35px] rounded-lg overflow-hidden hover:scale-105 transition-transform duration-300"
           >
             <img 
               src={languageIcon.src} 

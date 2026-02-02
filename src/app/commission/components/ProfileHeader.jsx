@@ -32,11 +32,11 @@ const ProfileHeader = () => {
 
   const AVATAR_CONFIG = {
     size: {
-      mobile: 224,
-      desktop: 272
+      mobile: 200,
+      desktop: 250,
     },
-    offsetY: '12px',
-    offsetX: '-8px',
+    offsetY: '24px',
+    offsetX: '0px',
     borderWidth: '8px',
     interactionDelay: 2000,
     spineConfig: {

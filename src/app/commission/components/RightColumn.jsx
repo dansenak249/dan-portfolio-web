@@ -19,12 +19,21 @@ import serviceGif2 from '../assets/services/service-2-gif.webp'
 
 // --- CONFIGURATIONS ---
 const SERVICE_CONFIG = {
-  cellHeight: 'h-52',
+  // Container padding
+  containerPaddingTop: 'pt-0',
+  containerPaddingBottom: 'pb-0',
+  containerPaddingLeft: 'pl-6',
+  containerPaddingRight: 'pr-0',
+
+  // Text Alignment: Set to true for 'text-justify', false for 'text-left'
+  textJustify: true,
+
+  cellHeight: 'h-48',
   cellBorderRadius: '0px',
-  cellGap: 'gap-4',
+  cellGap: 'gap-2',
   marginTop: 'mt-0',
   marginBottom: 'mb-0',
-  imageSize: 'w-52 h-52',
+  imageSize: 'w-48 h-48',
   imageMarginRight: 'mr-0',
   gap: 'gap-4',
   borderWidth: '1px',
@@ -42,7 +51,7 @@ const SERVICE_CONFIG = {
   buttonMarginLeft: 'ml-0',
   buttonMarginRight: 'mr-0',
   buttonMarginTop: 'mt-0',
-  buttonMarginBottom: 'mb-0',
+  buttonMarginBottom: 'mb-1',
   
   descriptionPaddingLeft: 'pl-4',
   descriptionPaddingRight: 'pr-0',
@@ -58,8 +67,8 @@ const HEADER_CONFIG = {
   cellBorderRadius: '0px',
   paddingLeft: 'pl-0',
   paddingRight: 'pr-0',
-  paddingTop: 'pt-2',
-  paddingBottom: 'pb-0',
+  paddingTop: 'pt-0',
+  paddingBottom: 'pb-1',
   backgroundColor: '#ffffff',
   borderWidth: '0px',
   borderColor: '#e5e7eb'
@@ -79,7 +88,8 @@ const ServiceHeaderCell = ({ currentLanguage, addToRefs }) => (
       borderStyle: 'solid'
     }}
   >
-    <div className="service-header-content">
+    {/* Apply text justification based on config */}
+    <div className={`service-header-content ${SERVICE_CONFIG.textJustify ? 'text-justify' : 'text-left'}`}>
       <TabServiceHeader language={currentLanguage} />
     </div>
   </div>
@@ -90,6 +100,7 @@ const ServiceCard = ({ service, currentLanguage, onServiceClick, addToRefs }) =>
   const [isHovering, setIsHovering] = useState(false);
 
   useEffect(() => {
+    // Preload gif to avoid flicker
     if (service.gif) {
       const img = new Image();
       img.onload = () => setCurrentImage(service.gif.src);
@@ -127,7 +138,8 @@ const ServiceCard = ({ service, currentLanguage, onServiceClick, addToRefs }) =>
       />
 
       <div className={`flex-1 flex flex-col overflow-hidden relative z-10 ${SERVICE_CONFIG.descriptionPaddingLeft} ${SERVICE_CONFIG.descriptionPaddingRight} ${SERVICE_CONFIG.descriptionPaddingTop} ${SERVICE_CONFIG.descriptionPaddingBottom}`}>
-        <div className={`flex-1 ${SERVICE_CONFIG.descriptionFontSize} text-[#a7a7a7] leading-relaxed overflow-auto`}>
+        {/* Apply text justification based on config */}
+        <div className={`flex-1 ${SERVICE_CONFIG.descriptionFontSize} text-[#a7a7a7] leading-relaxed overflow-auto ${SERVICE_CONFIG.textJustify ? 'text-justify' : 'text-left'}`}>
           <ContentComponent language={currentLanguage} />
         </div>
 
@@ -178,8 +190,6 @@ const RightColumn = ({ currentLanguage }) => {
   const [activeTab, setActiveTab] = useState('services')
   const [hoveredTab, setHoveredTab] = useState(null)
   const hasAnimatedRef = useRef(false)
-  
-  // State for CMS Info modal
   const [cmsSection, setCmsSection] = useState(null)
 
   useEffect(() => {
@@ -272,8 +282,14 @@ const RightColumn = ({ currentLanguage }) => {
 
   return (
     <>
-      <div className="flex flex-col">
-        <div ref={tabContainerRef} className="flex gap-6 pb-2">
+      <div className={`flex flex-col 
+        ${SERVICE_CONFIG.containerPaddingTop} 
+        ${SERVICE_CONFIG.containerPaddingBottom} 
+        ${SERVICE_CONFIG.containerPaddingLeft} 
+        ${SERVICE_CONFIG.containerPaddingRight}`}
+      >
+        {/* Changed: back to justify-start (default) to align tabs to the left */}
+        <div ref={tabContainerRef} className="flex justify-start gap-6 pb-2">
           {['services', 'samples', 'collaboration'].map((tab) => (
             <button
               key={tab}
@@ -284,7 +300,7 @@ const RightColumn = ({ currentLanguage }) => {
             >
               {tab.charAt(0).toUpperCase() + tab.slice(1)}
               {activeTab === tab && <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-[#af83b9]" />}
-              {hoveredTab === tab && activeTab !== tab && <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-[#a7a7a7]" />}
+              {hoveredTab === tab && activeTab !== tab && <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-[#a7a7a7] padding" />}
             </button>
           ))}
         </div> 
@@ -311,14 +327,14 @@ const RightColumn = ({ currentLanguage }) => {
 
         {activeTab === 'collaboration' && (
           <div className="bg-white p-0 rounded-lg">
-            <div className="collaboration-content text-[#a7a7a7] text-base leading-relaxed">
+            {/* Apply text justification based on config */}
+            <div className={`collaboration-content text-[#a7a7a7] text-base leading-relaxed ${SERVICE_CONFIG.textJustify ? 'text-justify' : 'text-left'}`}>
               <TabCollaboration language={currentLanguage} />
             </div>
           </div>
         )}
       </div>
 
-      {/* CMS Info Modal */}
       {cmsSection && (
         <CmsInfo 
           section={cmsSection}

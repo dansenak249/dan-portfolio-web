@@ -40,7 +40,7 @@ export default function CommissionPage({ activeSection, onSectionChange }) {
     paddingTop: 'pt-6',
     paddingBottom: 'pb-6',
     marginTop: 'mt-0',
-    gap: 'gap-0'
+    gap: 'gap-2'
   }
 
   // First effect: set mounted
@@ -271,7 +271,7 @@ export default function CommissionPage({ activeSection, onSectionChange }) {
             {renderContent()}
 
             <div 
-              className="h-8"
+              className="h-4"
               style={{ background: 'linear-gradient(90deg, #b1d5ff 0%, #C8E6F5 50%, #ffc4e4 100%)' }}
             />
           </div>

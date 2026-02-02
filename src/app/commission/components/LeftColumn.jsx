@@ -17,10 +17,26 @@ import discordColorIcon from '../assets/discord-color-icon.webp'
 import ProfileDescription from '../content/profile'
 
 const LeftColumn = ({ currentLanguage, onLanguageChange }) => {
+  // --- CONFIGURATION ---
+  const JUSTIFY_TEXT = true // Set to true to justify text, false for default alignment
+  
+  // Width configuration for social icons grid (0.8 = 80%)
+  const SOCIAL_WIDTH_PERCENT = 0.8 
+
+  // Spacing configuration (Tailwind classes)
+  const SPACING = {
+    betweenNameAndHandle: 'mb-1', // Space between "Dan✧" and "@dansenak249"
+    betweenHandleAndBio: 'mb-4',  // Space between "@dansenak249" and the description text
+    betweenBioAndSocials: 'mt-0', // Space between the description block and social icons
+    betweenSocialsAndStatus: 'gap-0' // Space between social icons and the status text
+  }
+  // ---------------------
+
   const cellsRef = useRef([])
   const [copiedItem, setCopiedItem] = useState(null)
 
   useEffect(() => {
+    // Initial animation for cells
     gsap.fromTo(cellsRef.current, { opacity: 0, x: -30 }, { opacity: 1, x: 0, duration: 0.5, stagger: 0.15, ease: 'power2.out', delay: 0.4 })
   }, [])
 
@@ -41,6 +57,7 @@ const LeftColumn = ({ currentLanguage, onLanguageChange }) => {
         setCopiedItem(null)
       }, 2000)
     } catch (err) {
+      // Log error if copy fails
       console.error('Copy failed:', err)
     }
   }
@@ -48,17 +65,16 @@ const LeftColumn = ({ currentLanguage, onLanguageChange }) => {
   const CELL_CONFIG = {
     paddingLeft: 'pl-6',
     paddingRight: 'pr-6',
-    paddingTop: 'pt-6',
-    paddingBottom: 'pb-8',
+    paddingTop: 'pt-2',
+    paddingBottom: 'pb-6',
     paddingTopZero: 'pt-0'
   }
 
   const CONTENT_OFFSET_TOP = '-mt-4'
   
   const SOCIAL_GRID = {
-    iconSize: 'w-8 h-8',
+    iconSize: 'w-7 h-7',
     gap: 'gap-5',
-    maxWidth: 'max-w-[150px]',
     layout: 'flex-wrap',
     columns: 5
   }
@@ -142,33 +158,38 @@ const LeftColumn = ({ currentLanguage, onLanguageChange }) => {
   return (
     <div className={`flex flex-col gap-0 ${CONTENT_OFFSET_TOP}`}>
       <div ref={addToRefs} className={`bg-white ${CELL_CONFIG.paddingLeft} ${CELL_CONFIG.paddingRight} ${CELL_CONFIG.paddingTop} ${CELL_CONFIG.paddingBottom}`}>
-        <h2 className="text-6xl font-bold text-gradient-blue-pink mb-2">Dan✧</h2>
-        <p className="text-[#a7a7a7] text-base font-bold mb-3">@dansenak249</p>
+        <h2 className={`text-6xl font-bold text-gradient-blue-pink ${SPACING.betweenNameAndHandle}`}>Dan✧</h2>
+        <p className={`text-[#a7a7a7] text-base font-bold ${SPACING.betweenHandleAndBio}`}>@dansenak249</p>
         
-        {/* Use JSX content component instead of dangerouslySetInnerHTML */}
-        <div className="text-[#a7a7a7] text-base leading-relaxed">
+        <div className={`text-[#a7a7a7] text-base leading-relaxed ${JUSTIFY_TEXT ? 'text-justify' : 'text-left'}`}>
           <ProfileDescription language={currentLanguage} />
         </div>
       </div>
 
       <div ref={addToRefs} className={`bg-white ${CELL_CONFIG.paddingLeft} ${CELL_CONFIG.paddingRight} ${CELL_CONFIG.paddingTopZero} ${CELL_CONFIG.paddingBottom} relative`}>
-        <h3 className="text-xl font-bold text-[#a7a7a7] mb-4">Socials</h3>
-        
-        {copiedItem === 'email' && (
-          <div className="absolute top-2 right-2 bg-green-500 text-white text-xs px-3 py-1 rounded-full animate-pulse z-10">
-            Email copied! ✓
+        <div className={`flex flex-col ${SPACING.betweenBioAndSocials} ${SPACING.betweenSocialsAndStatus}`}>
+          {/* Use inline style to apply the percentage-based max-width */}
+          <div 
+            className={`flex ${SOCIAL_GRID.layout} ${SOCIAL_GRID.gap}`}
+            style={{ maxWidth: `${SOCIAL_WIDTH_PERCENT * 100}%` }}
+          >
+            {socialLinks.map((social) => (
+              <SocialIcon key={social.name} social={social} />
+            ))}
           </div>
-        )}
-        {copiedItem === 'discord' && (
-          <div className="absolute top-2 right-2 bg-[#ff69b4] text-white text-xs px-3 py-1 rounded-full animate-pulse z-10">
-            Discord copied! ✓
+
+          <div className="h-6">
+            {copiedItem === 'email' && (
+              <div className="inline-block bg-green-500 text-white text-xs px-3 py-1 rounded-full animate-fade-in-up">
+                Email copied! ✓
+              </div>
+            )}
+            {copiedItem === 'discord' && (
+              <div className="inline-block bg-[#ff69b4] text-white text-xs px-3 py-1 rounded-full animate-fade-in-up">
+                Discord copied! ✓
+              </div>
+            )}
           </div>
-        )}
-        
-        <div className={`flex ${SOCIAL_GRID.layout} ${SOCIAL_GRID.gap} ${SOCIAL_GRID.maxWidth}`}>
-          {socialLinks.map((social) => (
-            <SocialIcon key={social.name} social={social} />
-          ))}
         </div>
       </div>
     </div>
