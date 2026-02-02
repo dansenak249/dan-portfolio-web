@@ -2,19 +2,19 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { gsap } from 'gsap'
-import vgenIcon from '../assets/vgen-icon.png'
-import vgenColorIcon from '../assets/vgen-color-icon.png'
-import fbIcon from '../assets/fb-icon.png'
-import fbColorIcon from '../assets/fb-color-icon.png'
-import twitterIcon from '../assets/twitter-icon.png'
-import twitterColorIcon from '../assets/twitter-color-icon.png'
-import emailIcon from '../assets/email-icon.png'
-import emailColorIcon from '../assets/email-color-icon.png'
-import discordIcon from '../assets/discord-icon.png'
-import discordColorIcon from '../assets/discord-color-icon.png'
+import vgenIcon from '../assets/vgen-icon.webp'
+import vgenColorIcon from '../assets/vgen-color-icon.webp'
+import fbIcon from '../assets/fb-icon.webp'
+import fbColorIcon from '../assets/fb-color-icon.webp'
+import twitterIcon from '../assets/twitter-icon.webp'
+import twitterColorIcon from '../assets/twitter-color-icon.webp'
+import emailIcon from '../assets/email-icon.webp'
+import emailColorIcon from '../assets/email-color-icon.webp'
+import discordIcon from '../assets/discord-icon.webp'
+import discordColorIcon from '../assets/discord-color-icon.webp'
 
-// Import content component
-import ProfileDescription from '../content/ProfileDescription'
+// Import JSX content component
+import ProfileDescription from '../content/profile'
 
 const LeftColumn = ({ currentLanguage, onLanguageChange }) => {
   const cellsRef = useRef([])
@@ -145,7 +145,7 @@ const LeftColumn = ({ currentLanguage, onLanguageChange }) => {
         <h2 className="text-6xl font-bold text-gradient-blue-pink mb-2">Dan✧</h2>
         <p className="text-[#a7a7a7] text-base font-bold mb-3">@dansenak249</p>
         
-        {/* Use content component instead of dangerouslySetInnerHTML */}
+        {/* Use JSX content component instead of dangerouslySetInnerHTML */}
         <div className="text-[#a7a7a7] text-base leading-relaxed">
           <ProfileDescription language={currentLanguage} />
         </div>

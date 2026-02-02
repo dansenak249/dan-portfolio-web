@@ -1,8 +1,8 @@
 import { useState, useRef, useEffect } from 'react'
-import homeIcon from '@/app/commission/assets/home-icon.png'
-import languageIcon from '@/app/commission/assets/language-icon.png'
-import vnFlag from '@/app/commission/assets/vn-flag.png'
-import usFlag from '@/app/commission/assets/us-flag.png'
+import homeIcon from '@/app/commission/assets/home-icon.webp'
+import languageIcon from '@/app/commission/assets/language-icon.webp'
+import vnFlag from '@/app/commission/assets/vn-flag.webp'
+import usFlag from '@/app/commission/assets/us-flag.webp'
 
 const Navigation = ({ activeSection, onSectionChange, currentLanguage, onLanguageChange }) => {
   const [isDropdownOpen, setIsDropdownOpen] = useState(false)

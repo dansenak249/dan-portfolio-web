@@ -4,8 +4,8 @@ import { useState, useEffect } from 'react'
 import { gsap } from 'gsap'
 
 // Import loading assets from src (these are bundled)
-import loadingPlaceholder from '../assets/samples/loading-placeholder.png'
-import loadingGif from '../assets/samples/loading.gif'
+import loadingPlaceholder from '../assets/samples/loading-placeholder.webp'
+import loadingGif from '../assets/samples/loading.webp'
 
 const PortfolioGrid = () => {
   const [isMounted, setIsMounted] = useState(false)
@@ -66,6 +66,7 @@ const PortfolioGrid = () => {
       setCurrentLoadingImage(loadingGif.src)
     }
     img.onerror = () => {
+      // Error handling for loading gif
       setLoadingGifReady(false)
     }
     img.src = loadingGif.src
@@ -75,9 +76,9 @@ const PortfolioGrid = () => {
   useEffect(() => {
     const loadPortfolioImages = async () => {
       try {
-        // Fetch the samples manifest
         const response = await fetch('/commission/samples/manifest.json')
         if (!response.ok) {
+          // Failed to load manifest
           console.error('Failed to load samples manifest')
           setPortfolioItems([])
           return
@@ -85,11 +86,12 @@ const PortfolioGrid = () => {
 
         const manifest = await response.json()
         
-        // Filter and process images
+        // Filter and process images (Updated to support .webp)
         const items = manifest.files
-          .filter(filename => filename.match(/-thumb\.(png|jpg|jpeg)$/i))
+          .filter(filename => filename.match(/-thumb\.(webp|png|jpg|jpeg)$/i))
           .map(filename => {
-            const nameMatch = filename.match(/^(.+)-thumb\.(png|jpg|jpeg)$/i)
+            // Updated regex to capture webp extension
+            const nameMatch = filename.match(/^(.+)-thumb\.(webp|png|jpg|jpeg)$/i)
             if (nameMatch) {
               const [, name, ext] = nameMatch
               if (name === 'loading' || name === 'loading-placeholder') return null
@@ -107,6 +109,7 @@ const PortfolioGrid = () => {
         
         setPortfolioItems(items)
       } catch (error) {
+        // Fetching manifest failed
         console.error('Failed to load portfolio images:', error)
         setPortfolioItems([])
       }
@@ -115,12 +118,12 @@ const PortfolioGrid = () => {
     loadPortfolioImages()
   }, [])
 
+  // Logic load image giữ nguyên vì đã lấy extension từ lúc parse manifest
   const loadFullImage = async (item) => {
     if (loadedFullImages.has(item.name)) {
       return loadedFullImages.get(item.name)
     }
 
-    // Check if full image exists
     try {
       const response = await fetch(item.fullImage, { method: 'HEAD' })
       if (response.ok) {
@@ -128,12 +131,14 @@ const PortfolioGrid = () => {
         return item.fullImage
       }
     } catch (error) {
+      // Full image fetch fallback
       console.warn(`Full image not found for ${item.name}, using thumbnail`)
     }
     
     return null
   }
 
+  // Popup & GSAP logic stays the same...
   useEffect(() => {
     if (!isMounted) return
 
@@ -161,7 +166,6 @@ const PortfolioGrid = () => {
     
     const loadStartTime = Date.now()
     
-    // Wait for DOM then animate
     requestAnimationFrame(() => {
       const overlay = document.querySelector('.portfolio-popup-overlay')
       const content = document.querySelector('.portfolio-popup-content')
@@ -195,6 +199,7 @@ const PortfolioGrid = () => {
         setIsLoadingFull(false)
       }
       img.onerror = async () => {
+        // Full image load failed
         console.error('Failed to load full image')
         
         const elapsedTime = Date.now() - loadStartTime

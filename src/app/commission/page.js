@@ -10,8 +10,8 @@ import GameDevSection from '@/components/GameDevSection'
 import ProfileHeader from './components/ProfileHeader'
 import LeftColumn from './components/LeftColumn'
 import RightColumn from './components/RightColumn'
-import patternImg1 from './assets/pattern-1.png'
-import patternImg2 from './assets/pattern-2.png'
+import patternImg1 from './assets/pattern-1.webp'
+import patternImg2 from './assets/pattern-2.webp'
 
 export default function CommissionPage({ activeSection, onSectionChange }) {
   const containerRef = useRef(null)

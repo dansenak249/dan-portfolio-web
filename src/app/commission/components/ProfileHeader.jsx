@@ -1,8 +1,10 @@
+'use client'
+
 import { useEffect, useRef, useState } from 'react'
 import { gsap } from 'gsap'
-import avatarImg from '../assets/avatar.png'
-import coverImg from '../assets/cover.png'
-import coverGif from '../assets/cover.gif'
+import avatarImg from '../assets/avatar.webp'
+import coverImg from '../assets/cover.webp'
+import coverGif from '../assets/cover-gif.webp'
 
 const ProfileHeader = () => {
   const coverRef = useRef(null)
@@ -14,14 +16,19 @@ const ProfileHeader = () => {
   const mousePositionRef = useRef({ x: 0, y: 0 })
   const rafIdRef = useRef(null)
   const mountTimeRef = useRef(null)
-  const [currentAvatar, setCurrentAvatar] = useState(avatarImg.src)
-  const [currentCover, setCurrentCover] = useState(coverImg.src)
+  
+  // FIX: Use .src for Next.js image objects in state, but store the whole object for JSX
+  const [currentCover, setCurrentCover] = useState(coverImg)
   const [coverGifLoaded, setCoverGifLoaded] = useState(false)
   const [isHovering, setIsHovering] = useState(false)
   const [isAnimating, setIsAnimating] = useState(false)
   const [spineLoaded, setSpineLoaded] = useState(false)
   const [showSpine, setShowSpine] = useState(true)
   const [interactionEnabled, setInteractionEnabled] = useState(false)
+  
+  // FIX: SSR-safe - store avatarSize in state, calculate after mount
+  const [avatarSize, setAvatarSize] = useState(272)
+  const [isMounted, setIsMounted] = useState(false)
 
   const AVATAR_CONFIG = {
     size: {
@@ -54,7 +61,36 @@ const ProfileHeader = () => {
     }
   }
 
+  // FIX: Handle SSR - calculate avatar size after mount
   useEffect(() => {
+    setIsMounted(true)
+    const size = window.innerWidth >= 640 ? AVATAR_CONFIG.size.desktop : AVATAR_CONFIG.size.mobile
+    setAvatarSize(size)
+    
+    // Handle resize
+    const handleResize = () => {
+      const newSize = window.innerWidth >= 640 ? AVATAR_CONFIG.size.desktop : AVATAR_CONFIG.size.mobile
+      setAvatarSize(newSize)
+    }
+    
+    window.addEventListener('resize', handleResize)
+    return () => window.removeEventListener('resize', handleResize)
+  }, [])
+
+  useEffect(() => {
+    if (!isMounted) return
+    
+    console.log('=== DEBUG SPINE ===')
+    console.log('window.spine exists:', !!window.spine)
+    console.log('spineCanvasRef.current:', !!spineCanvasRef.current)
+    console.log('showSpine:', showSpine)
+    console.log('avatarSize:', avatarSize)
+  }, [isMounted])
+
+
+  useEffect(() => {
+    if (!isMounted) return
+    
     mountTimeRef.current = Date.now()
     
     const timer = setTimeout(() => {
@@ -67,20 +103,25 @@ const ProfileHeader = () => {
       { opacity: 1, y: 0, duration: 0.8, ease: 'power3.out' }
     )
 
+    // FIX: Load cover GIF - Access .src for Next.js image imports
     if (coverGif) {
       const img = new Image()
       img.onload = () => {
         setCoverGifLoaded(true)
-        setCurrentCover(coverGif.src)
+        setCurrentCover(coverGif)
       }
-      img.onerror = () => setCoverGifLoaded(false)
-      img.src = coverGif.src
+      img.onerror = () => {
+        console.error('Failed to load cover GIF')
+        setCoverGifLoaded(false)
+      }
+      // FIX: Next.js image import is an object, access .src property
+      img.src = typeof coverGif === 'string' ? coverGif : coverGif.src
     }
 
     return () => {
       clearTimeout(timer)
     }
-  }, [])
+  }, [isMounted])
 
   const calculateBounds = (skeleton, config) => {
     skeleton.setToSetupPose()
@@ -140,14 +181,14 @@ const ProfileHeader = () => {
     }
   }
 
+  // Spine WebGL initialization
   useEffect(() => {
-    if (!spineCanvasRef.current || !window.spine || !showSpine) {
+    if (!isMounted || !spineCanvasRef.current || !window.spine || !showSpine) {
       return
     }
 
     const canvas = spineCanvasRef.current
     const config = AVATAR_CONFIG.spineConfig
-    const avatarSize = window.innerWidth >= 640 ? AVATAR_CONFIG.size.desktop : AVATAR_CONFIG.size.mobile
 
     canvas.width = avatarSize
     canvas.height = avatarSize
@@ -275,9 +316,12 @@ const ProfileHeader = () => {
         rafIdRef.current = null
       }
     }
-  }, [showSpine])
+  }, [isMounted, showSpine, avatarSize])
 
+  // Mouse tracking for eye follow
   useEffect(() => {
+    if (!isMounted) return
+    
     const handleMouseMove = (e) => {
       if (!spineCanvasRef.current || isAnimating) return
 
@@ -294,7 +338,7 @@ const ProfileHeader = () => {
 
     window.addEventListener('mousemove', handleMouseMove)
     return () => window.removeEventListener('mousemove', handleMouseMove)
-  }, [isAnimating])
+  }, [isMounted, isAnimating])
 
   const handleAvatarHover = () => {
     if (!interactionEnabled || isAnimating || !spinePlayerRef.current) return
@@ -364,6 +408,7 @@ const ProfileHeader = () => {
     setIsHovering(false)
   }
 
+  // Cleanup on unmount
   useEffect(() => {
     return () => {
       if (animationIntervalRef.current) {
@@ -375,14 +420,49 @@ const ProfileHeader = () => {
     }
   }, [])
 
-  const avatarSize = window.innerWidth >= 640 ? AVATAR_CONFIG.size.desktop : AVATAR_CONFIG.size.mobile
+  // FIX: Helper to get image src for both string and Next.js image objects
+  const getImageSrc = (img) => {
+    if (!img) return ''
+    if (typeof img === 'string') return img
+    if (typeof img === 'object' && img.src) return img.src
+    return img
+  }
+
+  // Show placeholder during SSR
+  if (!isMounted) {
+    return (
+      <div className="relative">
+        <div 
+          className="h-48 sm:h-64 relative overflow-hidden bg-cover bg-center bg-gray-200"
+        />
+        <div 
+          className="absolute top-0 left-8 z-10"
+          style={{ 
+            transform: `translateX(${AVATAR_CONFIG.offsetX}) translateY(${AVATAR_CONFIG.offsetY})`
+          }}
+        >
+          <div 
+            className="rounded-full bg-white flex items-center justify-center overflow-hidden relative"
+            style={{ 
+              width: `${AVATAR_CONFIG.size.desktop}px`,
+              height: `${AVATAR_CONFIG.size.desktop}px`,
+              border: `${AVATAR_CONFIG.borderWidth} solid white`
+            }}
+          >
+            <div className="w-full h-full bg-gray-100 animate-pulse" />
+          </div>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="relative">
+      {/* Cover Image */}
       <div 
         ref={coverRef}
         className="h-48 sm:h-64 relative overflow-hidden bg-cover bg-center"
-        style={{ backgroundImage: `url(${currentCover})` }}
+        style={{ backgroundImage: `url(${getImageSrc(currentCover)})` }}
       >
         <div className="absolute inset-0 bg-gradient-to-br from-blue-400/10 to-pink-400/10" />
         <div className="absolute inset-0 opacity-20">
@@ -391,6 +471,7 @@ const ProfileHeader = () => {
         </div>
       </div>
 
+      {/* Avatar Frame */}
       <div 
         className="absolute top-0 left-8 z-10"
         style={{ 
@@ -409,6 +490,7 @@ const ProfileHeader = () => {
             cursor: interactionEnabled ? 'pointer' : 'default'
           }}
         >
+          {/* Spine2D Canvas */}
           <canvas
             ref={spineCanvasRef}
             className="absolute inset-0 w-full h-full"
@@ -419,12 +501,12 @@ const ProfileHeader = () => {
             }}
           />
           
-          {!showSpine && (
+          {/* Fallback Avatar Image (shown when Spine is disabled or loading) */}
+          {(!showSpine || !spineLoaded) && (
             <img 
-              src={currentAvatar.src}
+              src={getImageSrc(avatarImg)}
               alt="Dan Avatar"
               className="w-full h-full object-cover pointer-events-none"
-              key={currentAvatar}
             />
           )}
         </div>

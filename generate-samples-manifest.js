@@ -11,15 +11,16 @@ const manifestPath = path.join(samplesDir, 'manifest.json');
 // Create samples directory if it doesn't exist
 if (!fs.existsSync(samplesDir)) {
   fs.mkdirSync(samplesDir, { recursive: true });
+  // Log creation in English to avoid unicode issues
   console.log('Created public/commission/samples directory');
 }
 
 // Read all files in samples directory
 const files = fs.readdirSync(samplesDir)
   .filter(file => {
-    // Only include image files, exclude manifest.json
+    // Added .webp to the allowed extensions
     const ext = path.extname(file).toLowerCase();
-    return ['.png', '.jpg', '.jpeg'].includes(ext) && file !== 'manifest.json';
+    return ['.webp', '.png', '.jpg', '.jpeg'].includes(ext) && file !== 'manifest.json';
   })
   .sort();
 
@@ -32,6 +33,7 @@ const manifest = {
 // Write manifest
 fs.writeFileSync(manifestPath, JSON.stringify(manifest, null, 2));
 
+// Log results in English
 console.log(`✅ Generated manifest with ${files.length} files:`);
 files.forEach(file => console.log(`   - ${file}`));
 console.log(`\n📄 Manifest saved to: ${manifestPath}`);

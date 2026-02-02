@@ -1,5 +1,6 @@
 import './globals.css'
 import localFont from 'next/font/local'
+import Script from 'next/script'
 
 // UTM Aptima custom font
 const utmAptima = localFont({
@@ -27,6 +28,7 @@ const utmAptima = localFont({
   ],
   variable: '--font-utm-aptima',
   display: 'swap',
+  preload: true,
 })
 
 export const metadata = {
@@ -58,11 +60,14 @@ export const metadata = {
 
 export default function RootLayout({ children }) {
   return (
-    <html lang="en" className={utmAptima.variable}>
+    <html lang="vi" className={`${utmAptima.variable}`}> 
       <head>
-        <script src="/spine-webgl.js" defer />
+        <Script 
+          src="/spine-webgl.js" 
+          strategy="beforeInteractive"
+        />
       </head>
-      <body className={utmAptima.className}>
+      <body className="font-aptima">
         {children}
       </body>
     </html>

@@ -5,11 +5,17 @@ import { gsap } from 'gsap'
 import PortfolioGrid from './PortfolioGrid'
 import CmsInfo from './CmsInfo'
 
+// Import JSX content components
+import TabServiceHeader from '../content/tab-service-header'
+import TabServiceIllustration from '../content/tab-service-illustration'
+import TabServiceGamedev from '../content/tab-service-gamedev'
+import TabCollaboration from '../content/tab-collaboration'
+
 // Service images
-import serviceImg1 from '../assets/services/service-1.png'
-import serviceGif1 from '../assets/services/service-1.gif'
-import serviceImg2 from '../assets/services/service-2.png'
-import serviceGif2 from '../assets/services/service-2.gif'
+import serviceImg1 from '../assets/services/service-1-png.webp'
+import serviceGif1 from '../assets/services/service-1-gif.webp'
+import serviceImg2 from '../assets/services/service-2-png.webp'
+import serviceGif2 from '../assets/services/service-2-gif.webp'
 
 // --- CONFIGURATIONS ---
 const SERVICE_CONFIG = {
@@ -61,7 +67,7 @@ const HEADER_CONFIG = {
 
 // --- SUB-COMPONENTS ---
 
-const ServiceHeaderCell = ({ currentLanguage, serviceHeaderContent, addToRefs }) => (
+const ServiceHeaderCell = ({ currentLanguage, addToRefs }) => (
   <div 
     ref={addToRefs}
     className={`border ${HEADER_CONFIG.cellHeight} ${HEADER_CONFIG.paddingLeft} ${HEADER_CONFIG.paddingRight} ${HEADER_CONFIG.paddingTop} ${HEADER_CONFIG.paddingBottom}`}
@@ -73,14 +79,13 @@ const ServiceHeaderCell = ({ currentLanguage, serviceHeaderContent, addToRefs })
       borderStyle: 'solid'
     }}
   >
-    <div 
-      className="service-header-content"
-      dangerouslySetInnerHTML={{ __html: serviceHeaderContent[currentLanguage] }}
-    />
+    <div className="service-header-content">
+      <TabServiceHeader language={currentLanguage} />
+    </div>
   </div>
 );
 
-const ServiceCard = ({ service, currentLanguage, serviceDescriptions, onServiceClick, addToRefs }) => {
+const ServiceCard = ({ service, currentLanguage, onServiceClick, addToRefs }) => {
   const [currentImage, setCurrentImage] = useState(service.image.src);
   const [isHovering, setIsHovering] = useState(false);
 
@@ -93,6 +98,7 @@ const ServiceCard = ({ service, currentLanguage, serviceDescriptions, onServiceC
   }, [service.gif]);
 
   const shadowColor = service.buttonColorNormal;
+  const ContentComponent = service.contentComponent;
 
   return (
     <div 
@@ -102,15 +108,15 @@ const ServiceCard = ({ service, currentLanguage, serviceDescriptions, onServiceC
       onClick={() => onServiceClick?.(service.sectionId)}
       className={`border overflow-hidden transition-all duration-300 flex ${SERVICE_CONFIG.gap} ${SERVICE_CONFIG.cellHeight} group relative cursor-pointer`}
       style={{ 
-      backgroundColor: isHovering ? SERVICE_CONFIG.hoverTintColor : '#ffffff',
-      borderRadius: SERVICE_CONFIG.cellBorderRadius,
-      borderWidth: SERVICE_CONFIG.borderWidth,
-      borderColor: SERVICE_CONFIG.borderColor,
-      borderStyle: 'solid',
-      boxShadow: isHovering 
-        ? `0 10px 20px -5px ${shadowColor}44`
-        : `0 4px 6px -1px ${shadowColor}22`
-    }}
+        backgroundColor: isHovering ? SERVICE_CONFIG.hoverTintColor : '#ffffff',
+        borderRadius: SERVICE_CONFIG.cellBorderRadius,
+        borderWidth: SERVICE_CONFIG.borderWidth,
+        borderColor: SERVICE_CONFIG.borderColor,
+        borderStyle: 'solid',
+        boxShadow: isHovering 
+          ? `0 10px 20px -5px ${shadowColor}44`
+          : `0 4px 6px -1px ${shadowColor}22`
+      }}
     >
       <div 
         className="h-full flex-shrink-0"
@@ -121,10 +127,9 @@ const ServiceCard = ({ service, currentLanguage, serviceDescriptions, onServiceC
       />
 
       <div className={`flex-1 flex flex-col overflow-hidden relative z-10 ${SERVICE_CONFIG.descriptionPaddingLeft} ${SERVICE_CONFIG.descriptionPaddingRight} ${SERVICE_CONFIG.descriptionPaddingTop} ${SERVICE_CONFIG.descriptionPaddingBottom}`}>
-        <div 
-          className={`flex-1 ${SERVICE_CONFIG.descriptionFontSize} text-[#a7a7a7] leading-relaxed overflow-auto`}
-          dangerouslySetInnerHTML={{ __html: serviceDescriptions[service.descriptionKey][currentLanguage] }}
-        />
+        <div className={`flex-1 ${SERVICE_CONFIG.descriptionFontSize} text-[#a7a7a7] leading-relaxed overflow-auto`}>
+          <ContentComponent language={currentLanguage} />
+        </div>
 
         <div 
           className={`${SERVICE_CONFIG.buttonHeight} ${SERVICE_CONFIG.buttonPadding} 
@@ -174,53 +179,8 @@ const RightColumn = ({ currentLanguage }) => {
   const [hoveredTab, setHoveredTab] = useState(null)
   const hasAnimatedRef = useRef(false)
   
-  // State for loaded HTML content
-  const [serviceHeaderContent, setServiceHeaderContent] = useState({ en: '', vi: '' })
-  const [serviceDescriptions, setServiceDescriptions] = useState({
-    illustration: { en: '', vi: '' },
-    gamedev: { en: '', vi: '' }
-  })
-  const [collaborationContent, setCollaborationContent] = useState({ en: '', vi: '' })
-  
   // State for CMS Info modal
   const [cmsSection, setCmsSection] = useState(null)
-
-  // Load all HTML files on mount
-  useEffect(() => {
-    const loadAllContent = async () => {
-      try {
-        // Load service headers
-        const [headerEn, headerVi] = await Promise.all([
-          fetch('/commission/services/service-header-en.htm').then(r => r.text()),
-          fetch('/commission/services/service-header-vi.htm').then(r => r.text())
-        ])
-        setServiceHeaderContent({ en: headerEn, vi: headerVi })
-
-        // Load service descriptions
-        const [illustrationEn, illustrationVi, gamedevEn, gamedevVi] = await Promise.all([
-          fetch('/commission/services/service-illustration-en.htm').then(r => r.text()),
-          fetch('/commission/services/service-illustration-vi.htm').then(r => r.text()),
-          fetch('/commission/services/service-gamedev-en.htm').then(r => r.text()),
-          fetch('/commission/services/service-gamedev-vi.htm').then(r => r.text())
-        ])
-        setServiceDescriptions({
-          illustration: { en: illustrationEn, vi: illustrationVi },
-          gamedev: { en: gamedevEn, vi: gamedevVi }
-        })
-
-        // Load collaboration content
-        const [collabEn, collabVi] = await Promise.all([
-          fetch('/commission/collaboration/collaboration-en.htm').then(r => r.text()),
-          fetch('/commission/collaboration/collaboration-vi.htm').then(r => r.text())
-        ])
-        setCollaborationContent({ en: collabEn, vi: collabVi })
-      } catch (error) {
-        console.error('Failed to load content:', error)
-      }
-    }
-
-    loadAllContent()
-  }, [])
 
   useEffect(() => {
     if (activeTab === 'services' && !hasAnimatedRef.current && cellsRef.current.length > 0) {
@@ -259,12 +219,52 @@ const RightColumn = ({ currentLanguage }) => {
 
   const servicesContent = {
     en: [
-      { buttonText: 'Explore', sectionId: 'illustration', descriptionKey: 'illustration', image: serviceImg1, gif: serviceGif1, buttonColorNormal: '#ff69b4', buttonColorNormalEnd: '#ffcc00', buttonColorHighlight: '#f6b0b4', buttonColorHighlightEnd: '#f7e1c3' },
-      { buttonText: 'Explore', sectionId: 'gamedev', descriptionKey: 'gamedev', image: serviceImg2, gif: serviceGif2, buttonColorNormal: '#7978e6', buttonColorNormalEnd: '#e99bba', buttonColorHighlight: '#afaff3', buttonColorHighlightEnd: '#f6c8da' }
+      { 
+        buttonText: 'Explore', 
+        sectionId: 'illustration', 
+        contentComponent: TabServiceIllustration,
+        image: serviceImg1, 
+        gif: serviceGif1, 
+        buttonColorNormal: '#ff69b4', 
+        buttonColorNormalEnd: '#ffcc00', 
+        buttonColorHighlight: '#f6b0b4', 
+        buttonColorHighlightEnd: '#f7e1c3' 
+      },
+      { 
+        buttonText: 'Explore', 
+        sectionId: 'gamedev', 
+        contentComponent: TabServiceGamedev,
+        image: serviceImg2, 
+        gif: serviceGif2, 
+        buttonColorNormal: '#7978e6', 
+        buttonColorNormalEnd: '#e99bba', 
+        buttonColorHighlight: '#afaff3', 
+        buttonColorHighlightEnd: '#f6c8da' 
+      }
     ],
     vi: [
-      { buttonText: 'Khám phá', sectionId: 'illustration', descriptionKey: 'illustration', image: serviceImg1, gif: serviceGif1, buttonColorNormal: '#ff69b4', buttonColorNormalEnd: '#ffcc00', buttonColorHighlight: '#f8d2d5', buttonColorHighlightEnd: '#fef3e2' },
-      { buttonText: 'Khám phá', sectionId: 'gamedev', descriptionKey: 'gamedev', image: serviceImg2, gif: serviceGif2, buttonColorNormal: '#7978e6', buttonColorNormalEnd: '#e99bba', buttonColorHighlight: '#cecef5', buttonColorHighlightEnd: '#e8f4f8' }
+      { 
+        buttonText: 'Khám phá', 
+        sectionId: 'illustration', 
+        contentComponent: TabServiceIllustration,
+        image: serviceImg1, 
+        gif: serviceGif1, 
+        buttonColorNormal: '#ff69b4', 
+        buttonColorNormalEnd: '#ffcc00', 
+        buttonColorHighlight: '#f8d2d5', 
+        buttonColorHighlightEnd: '#fef3e2' 
+      },
+      { 
+        buttonText: 'Khám phá', 
+        sectionId: 'gamedev', 
+        contentComponent: TabServiceGamedev,
+        image: serviceImg2, 
+        gif: serviceGif2, 
+        buttonColorNormal: '#7978e6', 
+        buttonColorNormalEnd: '#e99bba', 
+        buttonColorHighlight: '#cecef5', 
+        buttonColorHighlightEnd: '#e8f4f8' 
+      }
     ]
   }
 
@@ -293,7 +293,6 @@ const RightColumn = ({ currentLanguage }) => {
           <div className={`flex flex-col ${SERVICE_CONFIG.cellGap} ${SERVICE_CONFIG.marginTop} ${SERVICE_CONFIG.marginBottom}`}>
             <ServiceHeaderCell 
               currentLanguage={currentLanguage} 
-              serviceHeaderContent={serviceHeaderContent} 
               addToRefs={addToRefs} 
             />
             {services.map((service, index) => (
@@ -301,7 +300,6 @@ const RightColumn = ({ currentLanguage }) => {
                 key={index} 
                 service={service} 
                 currentLanguage={currentLanguage}
-                serviceDescriptions={serviceDescriptions}
                 onServiceClick={handleServiceClick}
                 addToRefs={addToRefs}
               />
@@ -313,10 +311,9 @@ const RightColumn = ({ currentLanguage }) => {
 
         {activeTab === 'collaboration' && (
           <div className="bg-white p-0 rounded-lg">
-            <div 
-              className="collaboration-content text-[#a7a7a7] text-base leading-relaxed"
-              dangerouslySetInnerHTML={{ __html: collaborationContent[currentLanguage] }}
-            />
+            <div className="collaboration-content text-[#a7a7a7] text-base leading-relaxed">
+              <TabCollaboration language={currentLanguage} />
+            </div>
           </div>
         )}
       </div>

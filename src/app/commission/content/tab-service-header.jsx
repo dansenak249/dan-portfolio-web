@@ -1,0 +1,8 @@
+const ServiceHeader = ({ language }) => {
+  const content = {
+    en: "Explore my creative services below! Each card represents a unique area where I can help bring your vision to life with art, animation, and technical expertise.",
+    vi: "Khám phá các dịch vụ sáng tạo của tớ bên dưới! Mỗi card đại diện cho một lĩnh vực độc đáo mà tớ có thể giúp biến tầm nhìn của cậu thành hiện thực với nghệ thuật, animation và kỹ thuật chuyên môn."
+  };
+  return <p className="font-aptima text-[#a7a7a7]">{content[language] || content.en}</p>;
+};
+export default ServiceHeader;
