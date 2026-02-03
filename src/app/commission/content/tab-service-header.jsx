@@ -6,7 +6,7 @@ const ServiceHeader = ({ language }) => {
       </p>,
     vi:
       <p>
-        Khám phá các dịch vụ sáng tạo của tớ bên dưới! Mỗi card đại diện cho một lĩnh vực độc đáo mà tớ có thể giúp biến tầm nhìn của cậu thành hiện thực.
+        Khám phá các dịch vụ sáng tạo của tớ bên dưới. Mỗi card là cho một lĩnh vực độc đáo có thể biến ý tưởng của cậu thành hiện thực.
       </p>  
   };
   return <div className="font-aptima text-[#a7a7a7]">{content[language] || content.en}</div>;

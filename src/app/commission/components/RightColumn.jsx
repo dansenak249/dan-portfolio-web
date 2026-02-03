@@ -383,7 +383,7 @@ const RightColumn = forwardRef(({ currentLanguage, onServiceClick }, ref) => {
     ],
     vi: [
       { 
-        buttonText: 'Khám phá', 
+        buttonText: 'Explore', 
         sectionId: 'illustration', 
         contentComponent: TabServiceIllustration,
         image: serviceImg1, 
@@ -394,7 +394,7 @@ const RightColumn = forwardRef(({ currentLanguage, onServiceClick }, ref) => {
         buttonColorHighlightEnd: '#fef3e2' 
       },
       { 
-        buttonText: 'Khám phá', 
+        buttonText: 'Explore', 
         sectionId: 'gamedev', 
         contentComponent: TabServiceGamedev,
         image: serviceImg2, 

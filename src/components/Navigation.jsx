@@ -85,7 +85,7 @@ const Navigation = ({ activeSection, onSectionChange, currentLanguage, onLanguag
 
   return (
     <nav className="h-[45px] bg-white border-b-2 border-[#efefef]">
-      <div className="px-1 h-full flex items-center justify-between">
+      <div className="px-3 h-full flex items-center justify-between">
         {/* Home Button */}
         <button
           onClick={() => onSectionChange('landing')}

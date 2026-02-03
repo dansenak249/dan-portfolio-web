@@ -49,7 +49,7 @@ const TabServiceGamedev = ({ language }) => {
         <ContentLayout 
           sub="Unity C#"
           head="Game Development"
-          body="Full-package game development: Code, Art, Animations, VFX & UX/UI (๑ ˃ᴗ˂ )ﻭ"
+          body="Full-package: Code, Animation, Art, VFX & UX/UI (๑ ˃ᴗ˂ )ﻭ"
         />
       </en>
       <vi>
