@@ -312,7 +312,7 @@ const PortfolioGrid = () => {
         }}
       >
         <p className="text-[#a7a7a7] text-lg">    
-          There's nothing here ⊙﹏⊙∥
+          Loading Images... ლ(╹◡╹ლ)
         </p>
       </div>
     )

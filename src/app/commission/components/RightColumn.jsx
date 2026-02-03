@@ -64,8 +64,8 @@ const SERVICE_CONFIG = {
 
   // Mobile card (vertical) - breakpoint and settings
   mobileBreakpoint: 768, // px
-  mobileImageHeight: '200px',
-  mobileCardPadding: '16px',
+  mobileImageHeight: '245px',
+  mobileCardPadding: '20px',
   mobileGradientHeight: '6px'
 }
 
