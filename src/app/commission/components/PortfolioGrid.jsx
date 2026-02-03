@@ -17,7 +17,7 @@ const PortfolioGrid = () => {
   const [loadingGifReady, setLoadingGifReady] = useState(false)
   const [currentLoadingImage, setCurrentLoadingImage] = useState(loadingPlaceholder.src)
 
-  // Set mounted on client
+  // Set mounted on client side
   useEffect(() => {
     setIsMounted(true)
   }, [])
@@ -48,9 +48,19 @@ const PortfolioGrid = () => {
     }
   }
 
+  // ===========================================
+  // GRID CONFIGURATION
+  // Updated columns: 1 column for mobile, 2 columns for md (768px+)
+  // ===========================================
   const GRID_CONFIG = {
-    columns: 'grid-cols-2',
+    // Container padding
+    containerPadding: '0px',
+    
+    // Grid layout with responsive breakpoints
+    columns: 'grid-cols-1 md:grid-cols-2',
     gap: 'gap-4',
+    
+    // Styling
     backgroundColor: '#ffffff',
     thumbSize: 'aspect-square',
     thumbRounded: 'rounded-lg',
@@ -66,7 +76,6 @@ const PortfolioGrid = () => {
       setCurrentLoadingImage(loadingGif.src)
     }
     img.onerror = () => {
-      // Error handling for loading gif
       setLoadingGifReady(false)
     }
     img.src = loadingGif.src
@@ -78,7 +87,6 @@ const PortfolioGrid = () => {
       try {
         const response = await fetch('/commission/samples/manifest.json')
         if (!response.ok) {
-          // Failed to load manifest
           console.error('Failed to load samples manifest')
           setPortfolioItems([])
           return
@@ -86,11 +94,10 @@ const PortfolioGrid = () => {
 
         const manifest = await response.json()
         
-        // Filter and process images (Updated to support .webp)
+        // Filter and process images (Supports webp, png, jpg)
         const items = manifest.files
           .filter(filename => filename.match(/-thumb\.(webp|png|jpg|jpeg)$/i))
           .map(filename => {
-            // Updated regex to capture webp extension
             const nameMatch = filename.match(/^(.+)-thumb\.(webp|png|jpg|jpeg)$/i)
             if (nameMatch) {
               const [, name, ext] = nameMatch
@@ -109,7 +116,6 @@ const PortfolioGrid = () => {
         
         setPortfolioItems(items)
       } catch (error) {
-        // Fetching manifest failed
         console.error('Failed to load portfolio images:', error)
         setPortfolioItems([])
       }
@@ -118,7 +124,7 @@ const PortfolioGrid = () => {
     loadPortfolioImages()
   }, [])
 
-  // Logic load image giữ nguyên vì đã lấy extension từ lúc parse manifest
+  // Handle loading full resolution images
   const loadFullImage = async (item) => {
     if (loadedFullImages.has(item.name)) {
       return loadedFullImages.get(item.name)
@@ -131,14 +137,13 @@ const PortfolioGrid = () => {
         return item.fullImage
       }
     } catch (error) {
-      // Full image fetch fallback
       console.warn(`Full image not found for ${item.name}, using thumbnail`)
     }
     
     return null
   }
 
-  // Popup & GSAP logic stays the same...
+  // Keyboard and body scroll management
   useEffect(() => {
     if (!isMounted) return
 
@@ -159,6 +164,7 @@ const PortfolioGrid = () => {
     }
   }, [isMounted, isPopupOpen])
 
+  // Open popup with GSAP animation
   const openPopup = async (item) => {
     setSelectedImage({ ...item, fullImageLoaded: null })
     setIsPopupOpen(true)
@@ -199,49 +205,39 @@ const PortfolioGrid = () => {
         setIsLoadingFull(false)
       }
       img.onerror = async () => {
-        // Full image load failed
         console.error('Failed to load full image')
-        
         const elapsedTime = Date.now() - loadStartTime
         const remainingTime = LOADING_CONFIG.minLoadTime - elapsedTime
-        
-        if (remainingTime > 0) {
-          await new Promise(resolve => setTimeout(resolve, remainingTime))
-        }
-        
+        if (remainingTime > 0) await new Promise(resolve => setTimeout(resolve, remainingTime))
         setIsLoadingFull(false)
       }
       img.src = fullImageUrl
     } else {
       const elapsedTime = Date.now() - loadStartTime
       const remainingTime = LOADING_CONFIG.minLoadTime - elapsedTime
-      
-      if (remainingTime > 0) {
-        await new Promise(resolve => setTimeout(resolve, remainingTime))
-      }
-      
+      if (remainingTime > 0) await new Promise(resolve => setTimeout(resolve, remainingTime))
       setIsLoadingFull(false)
     }
   }
 
+  // Close popup with GSAP animation
   const closePopup = () => {
     const overlay = document.querySelector('.portfolio-popup-overlay')
     const content = document.querySelector('.portfolio-popup-content')
     
     if (overlay && content) {
-      gsap.to(overlay,
-        { opacity: 0, duration: 0.2, ease: 'power2.in' }
-      )
-      
-      gsap.to(content,
-        { scale: 0.8, opacity: 0, duration: 0.2, ease: 'power2.in',
-          onComplete: () => {
-            setIsPopupOpen(false)
-            setSelectedImage(null)
-            setIsLoadingFull(false)
-          }
+      gsap.to(overlay, { opacity: 0, duration: 0.2, ease: 'power2.in' })
+      gsap.to(content, { 
+        scale: 0.8, 
+        opacity: 0, 
+        duration: 0.2, 
+        ease: 'power2.in',
+        onComplete: () => {
+          setIsPopupOpen(false)
+          setSelectedImage(null)
+          setIsLoadingFull(false)
         }
-      )
+      })
     } else {
       setIsPopupOpen(false)
       setSelectedImage(null)
@@ -294,7 +290,13 @@ const PortfolioGrid = () => {
 
   if (!isMounted) {
     return (
-      <div className="p-8 min-h-[300px] flex items-center justify-center" style={{ backgroundColor: GRID_CONFIG.backgroundColor }}>
+      <div 
+        className="min-h-[300px] flex items-center justify-center" 
+        style={{ 
+          backgroundColor: GRID_CONFIG.backgroundColor,
+          padding: GRID_CONFIG.containerPadding
+        }}
+      >
         <p className="text-[#a7a7a7] text-lg">Loading samples...</p>
       </div>
     )
@@ -302,9 +304,15 @@ const PortfolioGrid = () => {
 
   if (portfolioItems.length === 0) {
     return (
-      <div className="p-8 min-h-[300px] flex items-center justify-center" style={{ backgroundColor: GRID_CONFIG.backgroundColor }}>
-        <p className="text-[#a7a7a7] text-lg">
-          No sample images found. Add images to public/commission/samples/ and run: node generate-samples-manifest.js
+      <div 
+        className="min-h-[300px] flex items-center justify-center" 
+        style={{ 
+          backgroundColor: GRID_CONFIG.backgroundColor,
+          padding: GRID_CONFIG.containerPadding
+        }}
+      >
+        <p className="text-[#a7a7a7] text-lg">    
+          There's nothing here ⊙﹏⊙∥
         </p>
       </div>
     )
@@ -312,7 +320,13 @@ const PortfolioGrid = () => {
 
   return (
     <>
-      <div className="p-6" style={{ backgroundColor: GRID_CONFIG.backgroundColor }}>
+      <div 
+        style={{ 
+          backgroundColor: GRID_CONFIG.backgroundColor,
+          padding: GRID_CONFIG.containerPadding
+        }}
+      >
+        {/* Responsive grid: 1 col on mobile, 2 cols on md screens */}
         <div className={`grid ${GRID_CONFIG.columns} ${GRID_CONFIG.gap}`}>
           {portfolioItems.map((item, index) => (
             <button
@@ -368,10 +382,6 @@ const PortfolioGrid = () => {
                 />
               )}
             </div>
-
-            <p className="text-white text-center mt-4 text-sm opacity-70">
-              {selectedImage.name}
-            </p>
           </div>
         </div>
       )}

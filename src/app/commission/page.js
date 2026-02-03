@@ -1,12 +1,10 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, useCallback } from 'react'
 import { gsap } from 'gsap'
 import Navigation from '@/components/Navigation'
 import BackToTop from '@/components/BackToTop'
 import SectionTransition from '@/components/SectionTransition'
-import IllustrationSection from '@/components/IllustrationSection'
-import GameDevSection from '@/components/GameDevSection'
 import ProfileHeader from './components/ProfileHeader'
 import LeftColumn from './components/LeftColumn'
 import RightColumn from './components/RightColumn'
@@ -17,18 +15,27 @@ export default function CommissionPage({ activeSection, onSectionChange }) {
   const containerRef = useRef(null)
   const mainSectionRef = useRef(null)
   const mainBoxRef = useRef(null)
-  const overlayRef = useRef(null)
   const pattern1Ref = useRef(null)
   const pattern2Ref = useRef(null)
   
-  // Add isMounted to fix hydration
+  // Ref to reset RightColumn tab
+  const rightColumnRef = useRef(null)
+  
+  // State management
   const [isMounted, setIsMounted] = useState(false)
-  const [isAnimating, setIsAnimating] = useState(false)
   const [isTransitioning, setIsTransitioning] = useState(false)
   const [currentSection, setCurrentSection] = useState('landing')
   const [nextSection, setNextSection] = useState(null)
   const [currentLanguage, setCurrentLanguage] = useState('en')
+  const [pendingLanguage, setPendingLanguage] = useState(null)
+  
+  // Responsive centering state
+  const [shouldCenter, setShouldCenter] = useState(false)
+  
+  // Transition type: 'section' or 'language'
+  const [transitionType, setTransitionType] = useState(null)
 
+  // --- CONFIGURATION ---
   const PATTERN_CONFIG = {
     layer1: { speed: 5, opacity: 0.4, size: '200px' },
     layer2: { speed: 8, opacity: 0.6, size: '400px' }
@@ -42,6 +49,30 @@ export default function CommissionPage({ activeSection, onSectionChange }) {
     marginTop: 'mt-0',
     gap: 'gap-2'
   }
+
+  // Responsive centering animation config
+  const CENTERING_CONFIG = {
+    transitionDuration: 0.4, // seconds
+    ease: 'power2.out',
+    checkDebounce: 100 // ms
+  }
+  // ---------------------
+
+  // Check if content should be centered
+  const checkShouldCenter = useCallback(() => {
+    if (!mainBoxRef.current || typeof window === 'undefined') return
+
+    const containerHeight = mainBoxRef.current.offsetHeight
+    const viewportHeight = window.innerHeight
+    const padding = 32 // pt-4 + pb-4 = 32px
+
+    // If container + padding is less than viewport, center it
+    const newShouldCenter = (containerHeight + padding) < viewportHeight
+    
+    if (newShouldCenter !== shouldCenter) {
+      setShouldCenter(newShouldCenter)
+    }
+  }, [shouldCenter])
 
   // First effect: set mounted
   useEffect(() => {
@@ -75,60 +106,60 @@ export default function CommissionPage({ activeSection, onSectionChange }) {
     }
   }, [isMounted])
 
-  const triggerPageFlip = (callback) => {
-    if (isAnimating || !mainSectionRef.current || !overlayRef.current) return
-    setIsAnimating(true)
+  // Responsive centering: check on mount, resize, and content change
+  useEffect(() => {
+    if (!isMounted) return
 
-    const clone = mainSectionRef.current.cloneNode(true)
-    overlayRef.current.innerHTML = ''
-    overlayRef.current.appendChild(clone)
-    
-    gsap.set(overlayRef.current, {
-      x: 0,
-      opacity: 1,
-      display: 'block',
-      zIndex: 100
-    })
+    // Initial check after a small delay to ensure content is rendered
+    const initialTimer = setTimeout(checkShouldCenter, 100)
 
-    if (callback) {
-      callback()
+    // Debounced resize handler
+    let resizeTimer
+    const handleResize = () => {
+      clearTimeout(resizeTimer)
+      resizeTimer = setTimeout(checkShouldCenter, CENTERING_CONFIG.checkDebounce)
     }
 
-    setTimeout(() => {
-      const timeline = gsap.timeline({
-        onComplete: () => {
-          if (overlayRef.current) {
-            gsap.set(overlayRef.current, {
-              x: 0,
-              opacity: 1,
-              display: 'none'
-            })
-            overlayRef.current.innerHTML = ''
-          }
-          setIsAnimating(false)
-        }
-      })
+    window.addEventListener('resize', handleResize)
 
-      timeline
-        .to(overlayRef.current, {
-          x: '500px',
-          duration: 0.6,
-          ease: 'power2.inOut'
-        }, 0)
-        .to(overlayRef.current, {
-          opacity: 0,
-          duration: 0.5,
-          ease: 'power2.in'
-        }, 0.1)
-    }, 10)
-  }
+    return () => {
+      clearTimeout(initialTimer)
+      clearTimeout(resizeTimer)
+      window.removeEventListener('resize', handleResize)
+    }
+  }, [isMounted, checkShouldCenter])
 
+  // Re-check centering when section or language changes
+  useEffect(() => {
+    if (!isMounted) return
+    
+    // Small delay to allow content to render
+    const timer = setTimeout(checkShouldCenter, 50)
+    return () => clearTimeout(timer)
+  }, [currentSection, currentLanguage, isMounted, checkShouldCenter])
+
+  // Handle section change
   const handleSectionChange = (section) => {
-    if (section === currentSection || isTransitioning) {
+    // If clicking Home while already on landing, just reset tabs (no transition needed)
+    if (section === 'landing' && currentSection === 'landing') {
+      if (rightColumnRef.current?.resetToServices) {
+        rightColumnRef.current.resetToServices()
+      }
       return
     }
     
+    // Don't do anything if transitioning
+    if (isTransitioning) {
+      return
+    }
+    
+    // If navigating to landing from another section, reset tabs after transition
+    if (section === 'landing') {
+      // Will reset after transition completes
+    }
+    
     setNextSection(section)
+    setTransitionType('section')
     setIsTransitioning(false)
     
     setTimeout(() => {
@@ -136,38 +167,45 @@ export default function CommissionPage({ activeSection, onSectionChange }) {
     }, 10)
   }
 
+  // Handle language change - NEW: uses SectionTransition
+  const handleLanguageChange = (newLanguage) => {
+    if (newLanguage === currentLanguage || isTransitioning) {
+      return
+    }
+
+    setPendingLanguage(newLanguage)
+    setTransitionType('language')
+    setIsTransitioning(false)
+    
+    setTimeout(() => {
+      setIsTransitioning(true)
+    }, 10)
+  }
+
+  // Called when transition overlay fully covers the content
   const handleFillComplete = () => {
-    if (nextSection) {
+    if (transitionType === 'section' && nextSection) {
       setCurrentSection(nextSection)
+      // Reset tabs when navigating to landing
+      if (nextSection === 'landing' && rightColumnRef.current?.resetToServices) {
+        rightColumnRef.current.resetToServices()
+      }
+    } else if (transitionType === 'language' && pendingLanguage) {
+      setCurrentLanguage(pendingLanguage)
     }
   }
 
+  // Called when transition animation fully completes
   const handleTransitionComplete = () => {
     setIsTransitioning(false)
     setNextSection(null)
+    setPendingLanguage(null)
+    setTransitionType(null)
   }
 
-  const handleLanguageChange = (newLanguage) => {
-    setCurrentLanguage(newLanguage)
-  }
-
-  useEffect(() => {
-    if (!isMounted || typeof window === 'undefined') return
-
-    window.triggerPageFlip = triggerPageFlip
-    return () => {
-      if (typeof window !== 'undefined') {
-        delete window.triggerPageFlip
-      }
-    }
-  }, [isMounted, isAnimating])
-
+  // Render main content based on current section
   const renderContent = () => {
     switch (currentSection) {
-      case 'illustration':
-        return <IllustrationSection />
-      case 'gamedev':
-        return <GameDevSection />
       case 'landing':
       default:
         return (
@@ -179,6 +217,7 @@ export default function CommissionPage({ activeSection, onSectionChange }) {
                 onLanguageChange={handleLanguageChange}
               />
               <RightColumn 
+                ref={rightColumnRef}
                 onServiceClick={handleSectionChange}
                 currentLanguage={currentLanguage}
               />
@@ -201,12 +240,19 @@ export default function CommissionPage({ activeSection, onSectionChange }) {
   }
 
   return (
-    <div ref={containerRef} className="min-h-screen bg-[#dadef0] pb-4 relative overflow-hidden">
+    <div 
+      ref={containerRef} 
+      className={`min-h-screen bg-[#dadef0] pb-4 relative overflow-hidden flex flex-col ${shouldCenter ? 'justify-center' : 'justify-start'}`}
+      style={{
+        transition: `all ${CENTERING_CONFIG.transitionDuration}s ${CENTERING_CONFIG.ease.replace('power2.out', 'ease-out')}`
+      }}
+    >
+      {/* Pattern Layer 1 */}
       <div 
         ref={pattern1Ref}
         className="fixed inset-0 pointer-events-none"
         style={{
-          backgroundImage: `url(${patternImg1})`,
+          backgroundImage: `url(${patternImg1.src})`,
           backgroundRepeat: 'repeat',
           backgroundSize: PATTERN_CONFIG.layer1.size,
           backgroundPosition: '0 0',
@@ -215,11 +261,12 @@ export default function CommissionPage({ activeSection, onSectionChange }) {
         }}
       />
 
+      {/* Pattern Layer 2 */}
       <div 
         ref={pattern2Ref}
         className="fixed inset-0 pointer-events-none"
         style={{
-          backgroundImage: `url(${patternImg2})`,
+          backgroundImage: `url(${patternImg2.src})`,
           backgroundRepeat: 'repeat',
           backgroundSize: PATTERN_CONFIG.layer2.size,
           backgroundPosition: '0 0',
@@ -228,22 +275,16 @@ export default function CommissionPage({ activeSection, onSectionChange }) {
         }}
       />
 
-      <div className="max-w-4xl mx-auto px-4 sm:px-6 pt-4 relative z-10">
+      {/* Main Content Container */}
+      <div className={`max-w-4xl mx-auto px-4 sm:px-6 ${shouldCenter ? 'py-4' : 'pt-4'} relative z-10`}>
         <div className="relative">
+          {/* Shadow Layer */}
           <div 
             className="absolute inset-0 bg-[#b1d5ff] rounded-lg"
             style={{ transform: 'translate(3px, 3px)', zIndex: -1 }}
           />
-          
-          <div 
-            ref={overlayRef}
-            className="absolute inset-0 pointer-events-none"
-            style={{ 
-              display: 'none',
-              zIndex: 100
-            }}
-          />
 
+          {/* Main Box */}
           <div 
             ref={(el) => {
               mainSectionRef.current = el
@@ -254,6 +295,7 @@ export default function CommissionPage({ activeSection, onSectionChange }) {
               boxShadow: '0 20px 60px rgba(75, 0, 130, 0.15)'
             }}
           >
+            {/* Section Transition Overlay */}
             <SectionTransition 
               isActive={isTransitioning} 
               onFillComplete={handleFillComplete}
@@ -261,15 +303,19 @@ export default function CommissionPage({ activeSection, onSectionChange }) {
               containerRef={mainBoxRef}
             />
             
+            {/* Navigation */}
             <Navigation 
               activeSection={activeSection} 
               onSectionChange={() => handleSectionChange('landing')}
               currentLanguage={currentLanguage}
               onLanguageChange={handleLanguageChange}
+              isTransitioning={isTransitioning}
             />
             
+            {/* Page Content */}
             {renderContent()}
 
+            {/* Bottom Gradient Bar */}
             <div 
               className="h-4"
               style={{ background: 'linear-gradient(90deg, #b1d5ff 0%, #C8E6F5 50%, #ffc4e4 100%)' }}

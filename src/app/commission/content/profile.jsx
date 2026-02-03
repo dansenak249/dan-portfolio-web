@@ -6,8 +6,8 @@ const ProfileDescription = ({ language }) => {
           Helicopter | 25 | UTC+7
         </p>
         <p className="mt-0">
-          <span className="text-[#7b79e5]">Technical Artist</span> specializing in 
-          Digital Arts, Visual FX & Animation.
+          <span className="text-[#7b79e5]">Technical Artist</span> specialized in 
+          Digital Painting, Animation & Visual FX.
         </p>
         <p className="mt-0">
           I'd be super happy to bring your ideas to life.
@@ -20,8 +20,8 @@ const ProfileDescription = ({ language }) => {
           Helicopter | 25 | UTC+7
         </p>
         <p className="mt-0">
-          <span className="text-[#7b79e5]">Technical Artist</span> specializing in 
-          Digital Arts, Visual FX & Animation.
+          <span className="text-[#7b79e5]">Technical Artist</span> specialized in 
+          Digital Painting, Animation & Visual FX.
         </p>
         <p className="mt-0">
           Tớ sẽ rất vui khi được biến những ý tưởng của cậu thành hiện thực.

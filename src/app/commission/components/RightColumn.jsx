@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, forwardRef, useImperativeHandle } from 'react'
 import { gsap } from 'gsap'
 import PortfolioGrid from './PortfolioGrid'
 import CmsInfo from './CmsInfo'
@@ -22,12 +22,13 @@ const SERVICE_CONFIG = {
   // Container padding
   containerPaddingTop: 'pt-0',
   containerPaddingBottom: 'pb-0',
-  containerPaddingLeft: 'pl-6',
+  containerPaddingLeft: 'pl-8',
   containerPaddingRight: 'pr-0',
 
   // Text Alignment: Set to true for 'text-justify', false for 'text-left'
   textJustify: true,
 
+  // Desktop card (horizontal)
   cellHeight: 'h-48',
   cellBorderRadius: '0px',
   cellGap: 'gap-2',
@@ -59,7 +60,13 @@ const SERVICE_CONFIG = {
   descriptionPaddingBottom: 'pb-3',
   descriptionFontSize: 'text-base',
   descriptionBgColor: '#ffffff',
-  hoverTintColor: '#ffffff'
+  hoverTintColor: '#ffffff',
+
+  // Mobile card (vertical) - breakpoint and settings
+  mobileBreakpoint: 768, // px
+  mobileImageHeight: '200px',
+  mobileCardPadding: '16px',
+  mobileGradientHeight: '6px'
 }
 
 const HEADER_CONFIG = {
@@ -72,6 +79,17 @@ const HEADER_CONFIG = {
   backgroundColor: '#ffffff',
   borderWidth: '0px',
   borderColor: '#e5e7eb'
+}
+
+const TAB_CONFIG = {
+  // Minimum scale for tab text when space is tight
+  minScale: 0.7,
+  // Gap between tabs
+  gap: '24px',
+  // Font sizes
+  fontSize: '24px',
+  // Padding right to match cells
+  paddingRight: 'pr-6'
 }
 
 // --- SUB-COMPONENTS ---
@@ -88,29 +106,97 @@ const ServiceHeaderCell = ({ currentLanguage, addToRefs }) => (
       borderStyle: 'solid'
     }}
   >
-    {/* Apply text justification based on config */}
     <div className={`service-header-content ${SERVICE_CONFIG.textJustify ? 'text-justify' : 'text-left'}`}>
       <TabServiceHeader language={currentLanguage} />
     </div>
   </div>
-);
+)
 
-const ServiceCard = ({ service, currentLanguage, onServiceClick, addToRefs }) => {
-  const [currentImage, setCurrentImage] = useState(service.image.src);
-  const [isHovering, setIsHovering] = useState(false);
+const ServiceCard = ({ service, currentLanguage, onServiceClick, addToRefs, isMobile }) => {
+  const [currentImage, setCurrentImage] = useState(service.image.src)
+  const [isHovering, setIsHovering] = useState(false)
 
   useEffect(() => {
     // Preload gif to avoid flicker
     if (service.gif) {
-      const img = new Image();
-      img.onload = () => setCurrentImage(service.gif.src);
-      img.src = service.gif.src;
+      const img = new Image()
+      img.onload = () => setCurrentImage(service.gif.src)
+      img.src = service.gif.src
     }
-  }, [service.gif]);
+  }, [service.gif])
 
-  const shadowColor = service.buttonColorNormal;
-  const ContentComponent = service.contentComponent;
+  const shadowColor = service.buttonColorNormal
+  const ContentComponent = service.contentComponent
 
+  // Mobile vertical card layout
+  if (isMobile) {
+    return (
+      <div 
+        ref={addToRefs}
+        onClick={() => onServiceClick?.(service.sectionId)}
+        className="border overflow-hidden transition-all duration-300 flex flex-col cursor-pointer"
+        style={{ 
+          backgroundColor: '#ffffff',
+          borderRadius: SERVICE_CONFIG.cellBorderRadius,
+          borderWidth: SERVICE_CONFIG.borderWidth,
+          borderColor: SERVICE_CONFIG.borderColor,
+          borderStyle: 'solid',
+          boxShadow: `0 4px 6px -1px ${shadowColor}22`
+        }}
+      >
+        {/* Top gradient bar */}
+        <div 
+          className="w-full"
+          style={{ 
+            height: SERVICE_CONFIG.mobileGradientHeight,
+            background: `linear-gradient(to right, ${service.buttonColorNormal}, ${service.buttonColorNormalEnd})`
+          }}
+        />
+
+        {/* Image */}
+        <div 
+          className="w-full flex items-center justify-center overflow-hidden"
+          style={{ height: SERVICE_CONFIG.mobileImageHeight }}
+        >
+          <img 
+            src={currentImage.src || currentImage}
+            alt={service.sectionId}
+            className="w-full h-full object-contain"
+          />
+        </div>
+
+        {/* Content area */}
+        <div 
+          className="flex flex-col"
+          style={{ padding: SERVICE_CONFIG.mobileCardPadding }}
+        >
+          {/* Description text */}
+          <div className={`${SERVICE_CONFIG.descriptionFontSize} text-[#a7a7a7] leading-relaxed mb-4 ${SERVICE_CONFIG.textJustify ? 'text-justify' : 'text-left'}`}>
+            <ContentComponent language={currentLanguage} />
+          </div>
+
+          {/* Button */}
+          <div 
+            className={`${SERVICE_CONFIG.buttonHeight} ${SERVICE_CONFIG.buttonPadding} flex items-center justify-center relative overflow-hidden`}
+            style={{ 
+              background: `linear-gradient(to right, ${service.buttonColorNormal}, ${service.buttonColorNormalEnd})`,
+              borderRadius: SERVICE_CONFIG.buttonBorderRadius,
+              fontSize: SERVICE_CONFIG.buttonFontSize
+            }}
+          >
+            <span 
+              className="font-normal text-white leading-tight relative z-10"
+              style={{ transform: `translate(${SERVICE_CONFIG.buttonTextOffsetX}, ${SERVICE_CONFIG.buttonTextOffsetY})` }}
+            >
+              {service.buttonText}
+            </span>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  // Desktop horizontal card layout (original)
   return (
     <div 
       ref={addToRefs}
@@ -138,7 +224,6 @@ const ServiceCard = ({ service, currentLanguage, onServiceClick, addToRefs }) =>
       />
 
       <div className={`flex-1 flex flex-col overflow-hidden relative z-10 ${SERVICE_CONFIG.descriptionPaddingLeft} ${SERVICE_CONFIG.descriptionPaddingRight} ${SERVICE_CONFIG.descriptionPaddingTop} ${SERVICE_CONFIG.descriptionPaddingBottom}`}>
-        {/* Apply text justification based on config */}
         <div className={`flex-1 ${SERVICE_CONFIG.descriptionFontSize} text-[#a7a7a7] leading-relaxed overflow-auto ${SERVICE_CONFIG.textJustify ? 'text-justify' : 'text-left'}`}>
           <ContentComponent language={currentLanguage} />
         </div>
@@ -174,23 +259,67 @@ const ServiceCard = ({ service, currentLanguage, onServiceClick, addToRefs }) =>
       <div className={`${SERVICE_CONFIG.imageSize} ${SERVICE_CONFIG.imageMarginRight} h-full flex-shrink-0 flex items-center justify-center relative z-10`}>
         <img 
           src={currentImage.src || currentImage}
-          alt="service"
+          alt={service.sectionId}
           className="w-full h-full object-contain"
         />
       </div>
     </div>
-  );
-};
+  )
+}
 
 // --- MAIN COMPONENT ---
 
-const RightColumn = ({ currentLanguage }) => {
+const RightColumn = forwardRef(({ currentLanguage, onServiceClick }, ref) => {
   const cellsRef = useRef([])
   const tabContainerRef = useRef(null)
+  const tabsWrapperRef = useRef(null)
   const [activeTab, setActiveTab] = useState('services')
   const [hoveredTab, setHoveredTab] = useState(null)
   const hasAnimatedRef = useRef(false)
   const [cmsSection, setCmsSection] = useState(null)
+  const [isMobile, setIsMobile] = useState(false)
+  const [tabScale, setTabScale] = useState(1)
+
+  // Expose resetToServices method to parent via ref
+  useImperativeHandle(ref, () => ({
+    resetToServices: () => {
+      if (activeTab !== 'services') {
+        cellsRef.current = []
+        setActiveTab('services')
+      }
+    }
+  }))
+
+  // Check mobile breakpoint and calculate tab scale
+  useEffect(() => {
+    const checkResponsive = () => {
+      const width = window.innerWidth
+      setIsMobile(width < SERVICE_CONFIG.mobileBreakpoint)
+      
+      // Calculate tab scale based on available width
+      if (tabsWrapperRef.current && tabContainerRef.current) {
+        const containerWidth = tabContainerRef.current.offsetWidth
+        const tabsNaturalWidth = tabsWrapperRef.current.scrollWidth
+        
+        if (tabsNaturalWidth > containerWidth) {
+          const scale = Math.max(TAB_CONFIG.minScale, containerWidth / tabsNaturalWidth)
+          setTabScale(scale)
+        } else {
+          setTabScale(1)
+        }
+      }
+    }
+
+    checkResponsive()
+    window.addEventListener('resize', checkResponsive)
+    
+    // Re-check after fonts load
+    if (document.fonts) {
+      document.fonts.ready.then(checkResponsive)
+    }
+
+    return () => window.removeEventListener('resize', checkResponsive)
+  }, [activeTab])
 
   useEffect(() => {
     if (activeTab === 'services' && !hasAnimatedRef.current && cellsRef.current.length > 0) {
@@ -204,7 +333,7 @@ const RightColumn = ({ currentLanguage }) => {
           ease: 'power2.out', 
           delay: 0.5,
           onComplete: () => {
-            hasAnimatedRef.current = true; 
+            hasAnimatedRef.current = true
           }
         }
       )
@@ -278,7 +407,7 @@ const RightColumn = ({ currentLanguage }) => {
     ]
   }
 
-  const services = servicesContent[currentLanguage]
+  const services = servicesContent[currentLanguage] || servicesContent.en
 
   return (
     <>
@@ -288,22 +417,37 @@ const RightColumn = ({ currentLanguage }) => {
         ${SERVICE_CONFIG.containerPaddingLeft} 
         ${SERVICE_CONFIG.containerPaddingRight}`}
       >
-        {/* Changed: back to justify-start (default) to align tabs to the left */}
-        <div ref={tabContainerRef} className="flex justify-start gap-6 pb-2">
-          {['services', 'samples', 'collaboration'].map((tab) => (
-            <button
-              key={tab}
-              onClick={() => handleTabSwitch(tab)}
-              onMouseEnter={() => setHoveredTab(tab)}
-              onMouseLeave={() => setHoveredTab(null)}
-              className={`pb-2 relative ${activeTab === tab ? 'text-2xl text-[#af83b9] font-bold' : 'text-2xl text-[#a7a7a7] font-normal'}`}
-            >
-              {tab.charAt(0).toUpperCase() + tab.slice(1)}
-              {activeTab === tab && <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-[#af83b9]" />}
-              {hoveredTab === tab && activeTab !== tab && <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-[#a7a7a7] padding" />}
-            </button>
-          ))}
-        </div> 
+        {/* Tabs container - same width as cells */}
+        <div 
+          ref={tabContainerRef} 
+          className={`overflow-hidden pb-2 ${TAB_CONFIG.paddingRight}`}
+        >
+          <div 
+            ref={tabsWrapperRef}
+            className="flex justify-start"
+            style={{ 
+              gap: TAB_CONFIG.gap,
+              transform: `scale(${tabScale})`,
+              transformOrigin: 'left center',
+              transition: 'transform 0.2s ease-out'
+            }}
+          >
+            {['services', 'samples', 'collaboration'].map((tab) => (
+              <button
+                key={tab}
+                onClick={() => handleTabSwitch(tab)}
+                onMouseEnter={() => setHoveredTab(tab)}
+                onMouseLeave={() => setHoveredTab(null)}
+                className={`pb-2 relative whitespace-nowrap ${activeTab === tab ? 'text-[#af83b9] font-bold' : 'text-[#a7a7a7] font-normal'}`}
+                style={{ fontSize: TAB_CONFIG.fontSize }}
+              >
+                {tab.charAt(0).toUpperCase() + tab.slice(1)}
+                {activeTab === tab && <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-[#af83b9]" />}
+                {hoveredTab === tab && activeTab !== tab && <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-[#a7a7a7]" />}
+              </button>
+            ))}
+          </div>
+        </div>
 
         {activeTab === 'services' && (
           <div className={`flex flex-col ${SERVICE_CONFIG.cellGap} ${SERVICE_CONFIG.marginTop} ${SERVICE_CONFIG.marginBottom}`}>
@@ -318,6 +462,7 @@ const RightColumn = ({ currentLanguage }) => {
                 currentLanguage={currentLanguage}
                 onServiceClick={handleServiceClick}
                 addToRefs={addToRefs}
+                isMobile={isMobile}
               />
             ))}
           </div>
@@ -327,7 +472,6 @@ const RightColumn = ({ currentLanguage }) => {
 
         {activeTab === 'collaboration' && (
           <div className="bg-white p-0 rounded-lg">
-            {/* Apply text justification based on config */}
             <div className={`collaboration-content text-[#a7a7a7] text-base leading-relaxed ${SERVICE_CONFIG.textJustify ? 'text-justify' : 'text-left'}`}>
               <TabCollaboration language={currentLanguage} />
             </div>
@@ -344,6 +488,8 @@ const RightColumn = ({ currentLanguage }) => {
       )}
     </>
   )
-}
+})
+
+RightColumn.displayName = 'RightColumn'
 
 export default RightColumn
