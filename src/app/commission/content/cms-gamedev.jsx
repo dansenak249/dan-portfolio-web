@@ -258,22 +258,16 @@ const CmsGamedev = ({ language }) => {
               storytelling approach?
             </en>
             <vi>
-              Do you have a unique game idea, an adorable OC, and your own magical world, 
-              but aren't satisfied with the current art commissions and want a more original 
-              storytelling approach?
+              Cậu có idea game cực ngầu, một bé OC cực dễ huông,
+              hay cả một thế giới mê hoặc trong đầu mà không thể lôi hết ra ngoài bằng viết hay vẽ,
+              và đang tìm kiếm một cách kể chuyện khác? 
             </vi>
           </T>
         </p>
       </div>
 
       {/* Header Image - Featured image for the article */}
-      <div className={CONFIG.headerImage.marginY}>
-        <img 
-          src={cmsHeaderImage.src} 
-          alt="Game Development Cover"
-          className={`w-full ${CONFIG.headerImage.maxWidth} mx-auto ${CONFIG.headerImage.borderRadius} ${CONFIG.headerImage.shadow}`}
-        />
-      </div>
+
 
       {/* Table of Contents */}
       <div 
@@ -293,7 +287,7 @@ const CmsGamedev = ({ language }) => {
         >
           <T>
             <en>Table of Contents</en>
-            <vi>Table of Contents</vi>
+            <vi>Mục Lục</vi>
           </T>
         </h2>
         <ul className="space-y-2">
@@ -308,7 +302,7 @@ const CmsGamedev = ({ language }) => {
             >
               <T>
                 <en>About Game Development</en>
-                <vi>About Game Development</vi>
+                <vi>Về việc làm game</vi>
               </T>
             </button>
             <ul className="mt-1 space-y-1" style={{ paddingLeft: CONFIG.list.indentLeft }}>
@@ -323,7 +317,7 @@ const CmsGamedev = ({ language }) => {
                 >
                   <T>
                     <en>Is GameDev so difficult as people say?</en>
-                    <vi>Is GameDev so difficult as people say?</vi>
+                    <vi>Làm game có khó như giang hồ đồn thổi không?</vi>
                   </T>
                 </button>
               </li>
@@ -338,7 +332,7 @@ const CmsGamedev = ({ language }) => {
                 >
                   <T>
                     <en>Work Process</en>
-                    <vi>Work Process</vi>
+                    <vi>Quy trình làm việc</vi>
                   </T>
                 </button>
               </li>
@@ -353,7 +347,7 @@ const CmsGamedev = ({ language }) => {
                 >
                   <T>
                     <en>Game Development Price</en>
-                    <vi>Game Development Price</vi>
+                    <vi>Chi phí viết game</vi>
                   </T>
                 </button>
               </li>
@@ -371,7 +365,7 @@ const CmsGamedev = ({ language }) => {
             >
               <T>
                 <en>Term of Service</en>
-                <vi>Term of Service</vi>
+                <vi>Điều khoản và Dịch vụ</vi>
               </T>
             </button>
             <ul className="mt-1 space-y-1" style={{ paddingLeft: CONFIG.list.indentLeft }}>
@@ -386,7 +380,7 @@ const CmsGamedev = ({ language }) => {
                 >
                   <T>
                     <en>Contact Information</en>
-                    <vi>Contact Information</vi>
+                    <vi>Thông tin liên hệ</vi>
                   </T>
                 </button>
               </li>
@@ -401,7 +395,7 @@ const CmsGamedev = ({ language }) => {
                 >
                   <T>
                     <en>Payment & Refund Policy</en>
-                    <vi>Payment & Refund Policy</vi>
+                    <vi>Thanh toán & Hoàn tiền</vi>
                   </T>
                 </button>
               </li>
@@ -416,7 +410,7 @@ const CmsGamedev = ({ language }) => {
                 >
                   <T>
                     <en>Copyright & Usage Rights</en>
-                    <vi>Copyright & Usage Rights</vi>
+                    <vi>Bản quyền và Quyền sử dụng</vi>
                   </T>
                 </button>
               </li>
@@ -437,7 +431,7 @@ const CmsGamedev = ({ language }) => {
         >
           <T>
             <en>About Game Development</en>
-            <vi>About Game Development</vi>
+            <vi>Về việc làm game</vi>
           </T>
         </h2>
         
@@ -452,7 +446,7 @@ const CmsGamedev = ({ language }) => {
           >
             <T>
               <en>🔸 Is GameDev so difficult as people say?</en>
-              <vi>🔸 Is GameDev so difficult as people say?</vi>
+              <vi>🔸 Làm game có khó như giang hồ đồn thổi không?</vi>
             </T>
           </h3>
           <div 
@@ -472,10 +466,10 @@ const CmsGamedev = ({ language }) => {
                   to undertake a project on their own.
                 </en>
                 <vi>
-                  Well.. yes ~(&#62;_&#60;。)＼. Even in 2026, with widespread availability of leading 
-                  development libraries and technologies like Unity / Unreal, or even advanced AI like 
-                  ChatGPT or Claude Code, game development remains a very difficult field for an individual 
-                  to undertake a project on their own.
+                  Ừ thì công nhận là khó thật ~(&#62;_&#60;。)＼.
+                  Dù giờ đã là 2026, kể cả khi các công cụ và thư viện làm game phổ biến như Unity / Unreal đều đã phổ cập đến cấp sinh viên,
+                  giờ AI viết code cũng rất ngon như là ChatGPT hay Claude Code,
+                  việc tự build một con game vẫn là một thách thức lớn nếu tự làm solo.
                 </vi>
               </T>
             </p>
@@ -490,12 +484,12 @@ const CmsGamedev = ({ language }) => {
                   complete a full game project without the help of my friends and colleagues.
                 </en>
                 <vi>
-                  Game development isn't as simple as people think, just "draw something" and "write code 
-                  to make it work." The process actually requires collaboration from many different areas, 
-                  from writing game mechanics to designing and illustrating characters and backgrounds, 
-                  animation and visual effects, not to mention storyline and world building. Despite being 
-                  an IT student, self taught Art and worked in game industry for over 3 years, I couldn't 
-                  complete a full game project without the help of my friends and colleagues.
+                  Việc lập trình game thực ra không đơn giản như bề ngoài, kiểu cứ có tranh vẽ rồi viết vài dòng cho nó cử động là xong. 
+                  Coi như bỏ qua luôn phần code, quy trình vẫn rất gắt gao về nhiều mảng kết hợp với nhau, 
+                  từ việc thiết kế game mechanic, thiết kế minh hoạ nhân vật và background, làm animation cho chúng nó rồi chưa kể làm giao diện và hiệu ứng nữa,.. 
+                  đó là chưa nói đến việc build cốt truyện và thế giới trong game. 
+                  Thậm chí đối với tớ, một người có background là sinh viên phần mềm, tự học art và đi làm trong ngành cũng ngót nghét 3 năm, 
+                  để mà tự một mình làm ra được con game nhỏ hoàn thiện cũng gần như không khả thi nếu không có sự giúp đỡ từ anh em bạn bè và đồng nghiệp.
                 </vi>
               </T>
             </p>
@@ -508,10 +502,9 @@ const CmsGamedev = ({ language }) => {
                   help people build their own worlds.
                 </en>
                 <vi>
-                  Because it's so difficult, many of my friends have interesting ideas and worlds with 
-                  amazing characters, and they really want to use games as a way to tell their stories, 
-                  but they can't do it themselves. So I with our team decided to open this service to 
-                  help people build their own worlds.
+                  Bởi vì nó khó vậy, tớ có rất nhiều người bạn cũng chơi chả ốc với mấy quả world building to đùng, 
+                  và chúng nó rất muốn làm mấy game nhỏ liên quan như một cách kể chuyện mới, mà không tài nào tự xử được. 
+                  Do vậy tớ và anh em cùng team quyết định mở com này với cộng đồng.
                 </vi>
               </T>
             </p>
@@ -557,9 +550,8 @@ const CmsGamedev = ({ language }) => {
                   Animations, Audio, UI, and VFX if any).
                 </en>
                 <vi>
-                  The project will only begin when a complete <strong>Game Design Document</strong> is 
-                  available, along with all <strong>Assets</strong> (including Sprites / Models, 
-                  Animations, Audio, UI, and VFX if any).
+                  Tớ sẽ bắt đầu vào việc chỉ khi đã có đầy đủ <strong>Game Design Document</strong>, 
+                  cùng với toàn bộ <strong>Assets</strong> (gồm art hoặc model, animation, âm thanh, UI và hiệu ứng nếu cần).
                 </vi>
               </T>
             </p>
@@ -572,12 +564,11 @@ const CmsGamedev = ({ language }) => {
                   want to make changes, I will gladly help you for free, but please don't overuse this 
                   ≧ ﹏ ≦.
                 </en>
-                <vi>
-                  During the development process, <strong>Assets can be freely modified</strong> (within 
-                  permitted limits) an unlimited number of times without charge. However, changing the 
-                  Game Design is strictly prohibited as it will affect the entire system. If you really 
-                  want to make changes, I will gladly help you for free, but please don't overuse this 
-                  ≧ ﹏ ≦.
+                <vi>              
+                  Trong quá trình làm việc, <strong>Asset có thể thay đổi thoải mái</strong>
+                  (within permitted limits) vô số lần. 
+                  Tuy nhiên ngược lại, việc thay đổi Game Design là tối kỵ bởi sẽ ảnh hưởng tới toàn bộ cấu trúc game.
+                  Thực ra nếu cậu cần sửa thì tớ vẫn sẽ sửa thôi =)) nhưng mà làm vậy hoài tớ mệt lắm huhu ≧ ﹏ ≦.
                 </vi>
               </T>
             </p>
@@ -597,7 +588,7 @@ const CmsGamedev = ({ language }) => {
         >
           <T>
             <en>🔸 Game Development Price</en>
-            <vi>🔸 Game Development Price</vi>
+            <vi>🔸 Chi phí viết game</vi>
           </T>
         </h3>
         
@@ -613,26 +604,14 @@ const CmsGamedev = ({ language }) => {
           <p className={CONFIG.bodyText.marginBottom}>
             <T>
               <en>
-                Based on scale, games can be divided into five categories: Hypercasual (Flappy Bird), 
-                Casual (Candy Crush Saga), Midcore (Clash Royal), Hardcore (CS:GO), and AAA (GTA V).
-              </en>
-              <vi>
-                Based on scale, games can be divided into five categories: Hypercasual (Flappy Bird), 
-                Casual (Candy Crush Saga), Midcore (Clash Royal), Hardcore (CS:GO), and AAA (GTA V).
-              </vi>
-            </T>
-          </p>
-          <p className={CONFIG.bodyText.marginBottom}>
-            <T>
-              <en>
                 The price below only includes technical services (game programming, environment setup, 
                 interface integration, graphics optimization…). <strong>It does not include</strong> Game 
                 Design, Illustration, Animation, BGM / SFX or Visual FX…
               </en>
               <vi>
-                The price below only includes technical services (game programming, environment setup, 
-                interface integration, graphics optimization…). <strong>It does not include</strong> Game 
-                Design, Illustration, Animation, BGM / SFX or Visual FX…
+                Giá bên dưới chỉ bao gồm các mảng kỹ thuật (lập trình, setup môi trường, tích hợp giao diện responsive, tối ưu đồ hoạ,..).
+                <strong>Không bao gồm </strong>
+                Game Design, Minh hoạ, Animation, Âm thanh hay hiệu ứng...
               </vi>
             </T>
           </p>
@@ -727,7 +706,7 @@ const CmsGamedev = ({ language }) => {
                     color: CONFIG.priceTable.cellTextColor
                   }}
                 >
-                  $700
+                  $100
                 </td>
                 <td 
                   className={`text-center ${CONFIG.priceTable.cellPadding}`}
@@ -738,7 +717,7 @@ const CmsGamedev = ({ language }) => {
                     color: CONFIG.priceTable.cellTextColor
                   }}
                 >
-                  $1,200
+                  $250
                 </td>
                 <td 
                   className={`text-center ${CONFIG.priceTable.cellPadding}`}
@@ -749,7 +728,7 @@ const CmsGamedev = ({ language }) => {
                     color: CONFIG.priceTable.cellTextColor
                   }}
                 >
-                  $6,000
+                  $800
                 </td>
               </tr>
 
@@ -765,7 +744,7 @@ const CmsGamedev = ({ language }) => {
                     fontWeight: '600'
                   }}
                 >
-                  Casual
+                  Visual Novel
                 </td>
                 <td 
                   className={`text-center ${CONFIG.priceTable.cellPadding}`}
@@ -776,7 +755,7 @@ const CmsGamedev = ({ language }) => {
                     color: CONFIG.priceTable.cellTextColor
                   }}
                 >
-                  $1,200
+                  $200
                 </td>
                 <td 
                   className={`text-center ${CONFIG.priceTable.cellPadding}`}
@@ -787,7 +766,7 @@ const CmsGamedev = ({ language }) => {
                     color: CONFIG.priceTable.cellTextColor
                   }}
                 >
-                  $2,300
+                  $400
                 </td>
                 <td 
                   className={`text-center ${CONFIG.priceTable.cellPadding}`}
@@ -798,58 +777,10 @@ const CmsGamedev = ({ language }) => {
                     color: CONFIG.priceTable.cellTextColor
                   }}
                 >
-                  $11,000
+                  $1400
                 </td>
               </tr>
 
-              {/* Midcore - Empty cells */}
-              <tr style={{ backgroundColor: CONFIG.priceTable.cellBackgroundColor }}>
-                <td 
-                  className={CONFIG.priceTable.cellPadding}
-                  style={{ 
-                    borderWidth: CONFIG.priceTable.borderWidth,
-                    borderColor: CONFIG.priceTable.borderColor,
-                    borderStyle: 'solid',
-                    color: CONFIG.priceTable.cellTextColor,
-                    fontWeight: '600'
-                  }}
-                >
-                  Midcore
-                </td>
-                <td 
-                  className={`text-center ${CONFIG.priceTable.cellPadding}`}
-                  style={{ 
-                    borderWidth: CONFIG.priceTable.borderWidth,
-                    borderColor: CONFIG.priceTable.borderColor,
-                    borderStyle: 'solid',
-                    color: CONFIG.priceTable.cellTextColor
-                  }}
-                >
-                  
-                </td>
-                <td 
-                  className={`text-center ${CONFIG.priceTable.cellPadding}`}
-                  style={{ 
-                    borderWidth: CONFIG.priceTable.borderWidth,
-                    borderColor: CONFIG.priceTable.borderColor,
-                    borderStyle: 'solid',
-                    color: CONFIG.priceTable.cellTextColor
-                  }}
-                >
-                  
-                </td>
-                <td 
-                  className={`text-center ${CONFIG.priceTable.cellPadding}`}
-                  style={{ 
-                    borderWidth: CONFIG.priceTable.borderWidth,
-                    borderColor: CONFIG.priceTable.borderColor,
-                    borderStyle: 'solid',
-                    color: CONFIG.priceTable.cellTextColor
-                  }}
-                >
-                  
-                </td>
-              </tr>
             </tbody>
           </table>
         </div>
@@ -868,8 +799,8 @@ const CmsGamedev = ({ language }) => {
               Both commercial and non-commercial are the same.
             </en>
             <vi>
-              The price above is an estimated price, as the game varies greatly in complexity and length. 
-              Both commercial and non-commercial are the same.
+              Bên trên là giá ước tính, bởi các game có sự khác biệt rất lớn về độ dài lẫn độ phức tạp. 
+              Giá trên chung cho cả thương mại và phi thương mại.
             </vi>
           </T>
         </p>
@@ -894,7 +825,7 @@ const CmsGamedev = ({ language }) => {
           >
             <T>
               <en>TERM OF SERVICE</en>
-              <vi>TERM OF SERVICE</vi>
+              <vi>ĐIỀU KHOẢN VÀ DỊCH VỤ</vi>
             </T>
           </h2>
           <p 
@@ -907,8 +838,8 @@ const CmsGamedev = ({ language }) => {
                 Please read everything carefully so we can have a smooth and magical collab!
               </en>
               <vi>
-                By placing a commission, you agree to the terms below. 
-                Please read everything carefully so we can have a smooth and magical collab!
+                Đặt com đồng nghĩa với việc đồng ý với các điều khoản bên dưới. 
+                Cậu hãy đọc thật kỹ để chúng mình có một kỳ hợp tác ngon nghẻ nhé.
               </vi>
             </T>
           </p>
@@ -926,7 +857,7 @@ const CmsGamedev = ({ language }) => {
           >
             <T>
               <en>Contact Information</en>
-              <vi>Contact Information</vi>
+              <vi>Thông tin liên hệ</vi>
             </T>
           </h3>
           <ul 
@@ -939,7 +870,7 @@ const CmsGamedev = ({ language }) => {
             <li>
               <T>
                 <en>I accept commision through any platform noted in my Profile.</en>
-                <vi>I accept commision through any platform noted in my Profile.</vi>
+                <vi>Cậu nhắn cho tớ qua bất kỳ trang nào tớ để trên Profile đều được.</vi>
               </T>
             </li>
             <li>
@@ -948,14 +879,14 @@ const CmsGamedev = ({ language }) => {
                   My active hours are <strong>20:00-23:59 UTC+7</strong>, and I usually reply within 24 hours.
                 </en>
                 <vi>
-                   My active hours are <strong>20:00-23:59 UTC+7</strong>, and I usually reply within 24 hours.
+                  Tớ sẽ hoạt động vào khoảng <strong>20:00-23:59 UTC+7</strong>, và thường sẽ phản hồi đầy đủ trong 24h.
                 </vi>
               </T>
             </li>
             <li>
               <T>
                 <en>If you pay via PayPal, I'll send you a proper invoice to keep things secure and organized.</en>
-                <vi>If you pay via PayPal, I'll send you a proper invoice to keep things secure and organized.</vi>
+                <vi>Thanh toán: dòng này bên EN là Paypal nhưng tụi mình Việt cả mà, Banking nhé UwU</vi>
               </T>
             </li>
             <li>
@@ -964,7 +895,7 @@ const CmsGamedev = ({ language }) => {
                   When placing your order, please include: <strong>Game Design Document</strong> and full <strong>Assets</strong>.
                 </en>
                 <vi>
-                  When placing your order, please include: <strong>Game Design Document</strong> and full <strong>Assets</strong>.
+                  Khi cậu đặt com, đừng quên gửi đầy đủ <strong>Game Design Document</strong> và full <strong>Assets</strong>.
                 </vi>
               </T>
             </li>
@@ -983,7 +914,7 @@ const CmsGamedev = ({ language }) => {
           >
             <T>
               <en>Payment & Refund Policy</en>
-              <vi>Payment & Refund Policy</vi>
+              <vi>Thanh toán & Hoàn tiền </vi>
             </T>
           </h3>
           
@@ -997,7 +928,7 @@ const CmsGamedev = ({ language }) => {
           >
             <T>
               <en>🔸 Price</en>
-              <vi>🔸 Price</vi>
+              <vi>🔸 Về giá cả</vi>
             </T>
           </h4>
           <ul 
@@ -1009,32 +940,32 @@ const CmsGamedev = ({ language }) => {
           >
             <li>
               <T>
-                <en>Prices above are based on non-commercial purpose. Commercial Fees will be charge by Total Price x2-3 base on each purpose.</en>
-                <vi>Prices above are based on non-commercial purpose. Commercial Fees will be charge by Total Price x2-3 base on each purpose.</vi>
+                <en>Prices above are both non-commercial & commercial purpose.</en>
+                <vi>Giá niêm yết bên trên sử dụng cho cả thương mại và phi thương mại</vi>
               </T>
             </li>
             <li>
               <T>
                 <en>Private commission comes with 50% Fee.</en>
-                <vi>Private commission comes with 50% Fee.</vi>
+                <vi>Phí private là 50% tổng đơn.</vi>
               </T>
             </li>
             <li>
               <T>
                 <en>Prices may be changed due to complexity of commission.</en>
-                <vi>Prices may be changed due to complexity of commission.</vi>
+                <vi>Giá có thể thay đổi dựa vào độ dài hoặc phức tạp của brief.</vi>
               </T>
             </li>
             <li>
               <T>
                 <en>Short/rush deadline must have to be charged around 50-100% Total Price, depending on your brief.</en>
-                <vi>Short/rush deadline must have to be charged around 50-100% Total Price, depending on your brief.</vi>
+                <vi>Dí deadline gấp quá tớ sẽ charge thêm 50-100% tổng phí ạ.</vi>
               </T>
             </li>
             <li>
               <T>
                 <en>Commission prices may be updated regularly without prior notice.</en>
-                <vi>Commission prices may be updated regularly without prior notice.</vi>
+                <vi>Như thường lệ, giá com có thể được update thường xuyên mà không báo trước.</vi>
               </T>
             </li>
           </ul>
@@ -1049,7 +980,7 @@ const CmsGamedev = ({ language }) => {
           >
             <T>
               <en>🔸 Payment</en>
-              <vi>🔸 Payment</vi>
+              <vi>🔸 Về thanh toán</vi>
             </T>
           </h4>
           <ul 
@@ -1061,20 +992,20 @@ const CmsGamedev = ({ language }) => {
           >
             <li>
               <T>
-                <en>100% upfront payment is required before I start. For large projects, we can split it into 2 payments upon agreement.</en>
-                <vi>100% upfront payment is required before I start. For large projects, we can split it into 2 payments upon agreement.</vi>
+                <en>For large projects, we can split it into 2 payments upon agreement.</en>
+                <vi>Với dự án cỡ bự kiểu này, mình sẽ chia làm 2 phần thanh toán nhé.</vi>
               </T>
             </li>
             <li>
               <T>
                 <en>PayPal only. I don't accept other payment methods.</en>
-                <vi>PayPal only. I don't accept other payment methods.</vi>
+                <vi>Chỉ Paypal/Banking, tớ không giao dịch bằng thẻ hay các phương thức gián tiếp khác.</vi>
               </T>
             </li>
             <li>
               <T>
                 <en>I will hold your slot for 7 days after confirmation. If no payment is made, the slot will be released.</en>
-                <vi>I will hold your slot for 7 days after confirmation. If no payment is made, the slot will be released.</vi>
+                <vi>Tớ sẽ hold slot của cậu trong một tuần sau khi nhận việc, sau đó nếu cậu không cọc tớ xin phép huỷ slot ạ.</vi>
               </T>
             </li>
             <li>
@@ -1084,8 +1015,8 @@ const CmsGamedev = ({ language }) => {
                   However, I'm not responsible for incorrect PayPal emails.
                 </en>
                 <vi>
-                  If you send the wrong amount or there's a payment error, I'll do my best to help. 
-                  However, I'm not responsible for incorrect PayPal emails.
+                  Nếu cậu có lỡ chuyển nhầm lượng tiền, tớ sẽ làm hết sức để giúp cậu. 
+                  Tuy nhiên tớ sẽ không chịu trách nhiệm cho case chuyền nhầm cho người khác ạ.
                 </vi>
               </T>
             </li>
@@ -1101,7 +1032,7 @@ const CmsGamedev = ({ language }) => {
           >
             <T>
               <en>🔸 Refund</en>
-              <vi>🔸 Refund</vi>
+              <vi>🔸 Về hoàn tiền</vi>
             </T>
           </h4>
           <ul 
@@ -1114,13 +1045,13 @@ const CmsGamedev = ({ language }) => {
             <li>
               <T>
                 <en>100% if I <strong>haven't started</strong> working on your commission (not include the Paypal extra fee).</en>
-                <vi>100% if I <strong>haven't started</strong> working on your commission (not include the Paypal extra fee).</vi>
+                <vi>100% nếu tớ chưa bắt đầu làm và cậu muốn huỷ (không gồm phụ phí Paypal).</vi>
               </T>
             </li>
             <li>
               <T>
                 <en>50% if I've done <strong>Visual & Interaction</strong> and started <strong>Core System</strong>.</en>
-                <vi>50% if I've done <strong>Visual & Interaction</strong> and started <strong>Core System</strong>.</vi>
+                <vi>50% nếu tớ đã làm xong phần Visual & Interaction (hiểu là Front-end cũng được).</vi>
               </T>
             </li>
           </ul>
@@ -1135,7 +1066,7 @@ const CmsGamedev = ({ language }) => {
           >
             <T>
               <en>🔸 Tax & Fee Notice</en>
-              <vi>🔸 Tax & Fee Notice</vi>
+              <vi>🔸 Về thuế và phụ phí</vi>
             </T>
           </h4>
           <p 
@@ -1154,10 +1085,9 @@ const CmsGamedev = ({ language }) => {
                 as an independent creator.
               </en>
               <vi>
-                As a Freelancer in Vietnam, I am required to pay a 10% personal income tax on all earnings. 
-                Therefore, a <strong>10% tax fee</strong> will be added on top of the total invoice amount. 
-                This helps me stay compliant with local tax laws while continuing to provide quality work 
-                as an independent creator.
+                Là một Freelancer mẫu mực không trốn thuế, tớ có nghĩa vụ phải đóng 10% thu nhập cá nhân của mình. 
+                Bởi vậy tớ xin phép cộng 10% phí được cộng thêm vào tổng com ạ. 
+                Việc này giúp tớ yên tâm làm đơn của cậu hơn mà không sợ bị mời lên uống trà lúc dở việc.
               </vi>
             </T>
           </p>
@@ -1175,7 +1105,7 @@ const CmsGamedev = ({ language }) => {
           >
             <T>
               <en>Copyright & Usage Rights</en>
-              <vi>Copyright & Usage Rights</vi>
+              <vi>Bản quyền và Quyền sử dụng</vi>
             </T>
           </h3>
           
@@ -1193,13 +1123,13 @@ const CmsGamedev = ({ language }) => {
             <p style={{ color: CONFIG.bodyText.color }}>
               <T>
                 <en>Required credit: <strong>"Dan @dansenak249"</strong> in Developer section.</en>
-                <vi>Required credit: <strong>"Dan @dansenak249"</strong> in Developer section.</vi>
+                <vi>Chỉ cần credit: <strong>"Dan @dansenak249"</strong> ở mục Developer.</vi>
               </T>
             </p>
             <p className="mt-2" style={{ color: CONFIG.bodyText.color }}>
               <T>
                 <en>There's nothing more here, you can do what ever you want even monetizing your game ヾ(≧▽≦*)o.</en>
-                <vi>There's nothing more here, you can do what ever you want even monetizing your game ヾ(≧▽≦*)o.</vi>
+                <vi>Không còn gì đặc biệt ở đây nữa, cậu có thể làm gì cũng được kể cả mang game đi bán ヾ(≧▽≦*)o.</vi>
               </T>
             </p>
           </div>
@@ -1231,8 +1161,8 @@ const CmsGamedev = ({ language }) => {
                   or use it in my portfolio unless marked as a private commission.
                 </en>
                 <vi>
-                  <strong>Self-promotion.</strong> I may post finished game video/capture on my social media 
-                  or use it in my portfolio unless marked as a private commission.
+                  <strong>Self-promotion.</strong> tớ có thể post ảnh / video của game trên các trang cá nhân 
+                  hoặc sử dụng nó trong portfolio của mình với chú thích về role, trừ khi cậu đặt private.
                 </vi>
               </T>
             </li>
@@ -1243,8 +1173,7 @@ const CmsGamedev = ({ language }) => {
                   disrespectful or places unfair demands.
                 </en>
                 <vi>
-                  I reserve the right to cancel the commission and issue a refund if the client is 
-                  disrespectful or places unfair demands.
+                  Tớ có quyền huỷ com và hoàn tiền nếu khách hàng có thái độ hoặc đưa ra những yêu cầu không phù hợp.
                 </vi>
               </T>
             </li>
@@ -1255,15 +1184,15 @@ const CmsGamedev = ({ language }) => {
                   as long as it aligns with the original brief.
                 </en>
                 <vi>
-                  I may slightly adjust the layout or style during the process for better quality, 
-                  as long as it aligns with the original brief.
+                  Tớ có thể thay đổi nhẹ một chút trong quá trình làm việc để đảm bảo chất lượng, 
+                  tất nhiên là vẫn đi theo brief ban đầu.
                 </vi>
               </T>
             </li>
             <li>
               <T>
                 <en>Other copyright to which I am entitled under international law.</en>
-                <vi>Other copyright to which I am entitled under international law.</vi>
+                <vi>Các luật bản quyền khác dựa theo luật pháp quốc gia và quốc tế.</vi>
               </T>
             </li>
           </ul>
@@ -1289,7 +1218,7 @@ const CmsGamedev = ({ language }) => {
         >
           <T>
             <en>Ready to build your dream game?</en>
-            <vi>Ready to build your dream game?</vi>
+            <vi>Làm con game thôi các con vợ!</vi>
           </T>
         </h3>
         <p 
@@ -1298,7 +1227,7 @@ const CmsGamedev = ({ language }) => {
         >
           <T>
             <en>Let's discuss your game idea and bring it to life!</en>
-            <vi>Let's discuss your game idea and bring it to life!</vi>
+            <vi>Đừng quá lo lắng nếu cậu còn nhiều băn khoăn</vi>
           </T>
         </p>
         <p 
@@ -1307,7 +1236,7 @@ const CmsGamedev = ({ language }) => {
         >
           <T>
             <en>Contact me via any platform in my Profile</en>
-            <vi>Contact me via any platform in my Profile</vi>
+            <vi>Cậu có thể liên hệ với tớ qua bất kỳ nền tảng nào trong Profile nhé</vi>
           </T>
         </p>
       </div>

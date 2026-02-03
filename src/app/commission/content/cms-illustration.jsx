@@ -380,7 +380,7 @@ const CmsIllustration = ({ language }) => {
                   color: CONFIG.priceTable.cellTextColor
                 }}
               >
-                $250
+                $190
               </td>
               <td 
                 className={`text-center ${CONFIG.priceTable.cellPadding}`}
@@ -391,7 +391,7 @@ const CmsIllustration = ({ language }) => {
                   color: CONFIG.priceTable.cellTextColor
                 }}
               >
-                $400
+                $290
               </td>
             </tr>
 
@@ -421,7 +421,7 @@ const CmsIllustration = ({ language }) => {
                   color: CONFIG.priceTable.cellTextColor
                 }}
               >
-                $70
+                $50
               </td>
               <td 
                 className={`text-center ${CONFIG.priceTable.cellPadding}`}
@@ -432,7 +432,7 @@ const CmsIllustration = ({ language }) => {
                   color: CONFIG.priceTable.cellTextColor
                 }}
               >
-                $150
+                $110
               </td>
               <td 
                 className={`text-center ${CONFIG.priceTable.cellPadding}`}
@@ -443,7 +443,7 @@ const CmsIllustration = ({ language }) => {
                   color: CONFIG.priceTable.cellTextColor
                 }}
               >
-                $250
+                $170
               </td>
             </tr>
 
@@ -473,7 +473,7 @@ const CmsIllustration = ({ language }) => {
                   color: CONFIG.priceTable.cellTextColor
                 }}
               >
-                $40
+                $35
               </td>
               <td 
                 className={`text-center ${CONFIG.priceTable.cellPadding}`}
@@ -484,7 +484,7 @@ const CmsIllustration = ({ language }) => {
                   color: CONFIG.priceTable.cellTextColor
                 }}
               >
-                $90
+                $80
               </td>
               <td 
                 className={`text-center ${CONFIG.priceTable.cellPadding}`}
@@ -524,7 +524,7 @@ const CmsIllustration = ({ language }) => {
                   color: CONFIG.priceTable.cellTextColor
                 }}
               >
-                $25
+                $20
               </td>
               <td 
                 className={`text-center ${CONFIG.priceTable.cellPadding}`}
@@ -535,7 +535,7 @@ const CmsIllustration = ({ language }) => {
                   color: CONFIG.priceTable.cellTextColor
                 }}
               >
-                $60
+                $45
               </td>
               <td 
                 className={`text-center ${CONFIG.priceTable.cellPadding}`}
@@ -571,11 +571,11 @@ const CmsIllustration = ({ language }) => {
               onMouseEnter={(e) => e.target.style.color = CONFIG.tableOfContents.linkHoverColor}
               onMouseLeave={(e) => e.target.style.color = CONFIG.tableOfContents.linkColor}
             >
-              Payment
+              Payment & Refund Policy
             </button>.
           </en>
           <vi>
-            For further information, check{' '}
+            Xem thêm ở{' '}
             <button 
               onClick={() => scrollToSection('payment')}
               className="transition-colors underline"
@@ -583,7 +583,7 @@ const CmsIllustration = ({ language }) => {
               onMouseEnter={(e) => e.target.style.color = CONFIG.tableOfContents.linkHoverColor}
               onMouseLeave={(e) => e.target.style.color = CONFIG.tableOfContents.linkColor}
             >
-              Payment
+              Thanh toán và Hoàn tiền
             </button>.
           </vi>
         </T>
@@ -607,7 +607,7 @@ const CmsIllustration = ({ language }) => {
         >
           <T>
             <en>TERM OF SERVICE</en>
-            <vi>TERM OF SERVICE</vi>
+            <vi>ĐIỀU KHOẢN VÀ DỊCH VỤ</vi>
           </T>
         </h1>
         <p 
@@ -619,7 +619,8 @@ const CmsIllustration = ({ language }) => {
               By placing a commission, you agree to the terms below. Please read everything carefully so we can have a smooth and magical collab!
             </en>
             <vi>
-              By placing a commission, you agree to the terms below. Please read everything carefully so we can have a smooth and magical collab!
+              Đặt com đồng nghĩa với việc đồng ý với các điều khoản bên dưới. 
+              Cậu hãy đọc thật kỹ để chúng mình có một kỳ hợp tác ngon nghẻ nhé.
             </vi>
           </T>
         </p>
@@ -643,7 +644,7 @@ const CmsIllustration = ({ language }) => {
         >
           <T>
             <en>Table of Contents</en>
-            <vi>Table of Contents</vi>
+            <vi>Mục Lục</vi>
           </T>
         </h2>
         <p 
@@ -666,7 +667,7 @@ const CmsIllustration = ({ language }) => {
             >
               <T>
                 <en>Work Process</en>
-                <vi>Work Process</vi>
+                <vi>Quy trình làm việc</vi>
               </T>
             </button>
           </li>
@@ -680,7 +681,7 @@ const CmsIllustration = ({ language }) => {
             >
               <T>
                 <en>Contact Information</en>
-                <vi>Contact Information</vi>
+                <vi>Thông tin liên hệ</vi>
               </T>
             </button>
           </li>
@@ -694,7 +695,7 @@ const CmsIllustration = ({ language }) => {
             >
               <T>
                 <en>Payment & Refund Policy</en>
-                <vi>Payment & Refund Policy</vi>
+                <vi>Thanh toán và Hoàn tiền</vi>
               </T>
             </button>
           </li>
@@ -708,7 +709,7 @@ const CmsIllustration = ({ language }) => {
             >
               <T>
                 <en>Copyright & Usage Rights</en>
-                <vi>Copyright & Usage Rights</vi>
+                <vi>Bản quyền và Quyền sử dụng</vi>
               </T>
             </button>
           </li>
@@ -727,7 +728,7 @@ const CmsIllustration = ({ language }) => {
         >
           <T>
             <en>Work Process</en>
-            <vi>Work Process</vi>
+            <vi>Quy trình làm việc</vi>
           </T>
         </h2>
         
@@ -769,7 +770,7 @@ const CmsIllustration = ({ language }) => {
                   Few Sketch options will be made base on your brief. Small fix could be proceed free until you satisfied.
                 </en>
                 <vi>
-                  Few Sketch options will be made base on your brief. Small fix could be proceed free until you satisfied.
+                  Tớ sẽ gửi cậu một vài bản sketch dựa trên brief. Ở đoạn này cậu có thể chỉnh sửa thoải mái.
                 </vi>
               </T>
             </p>
@@ -779,7 +780,7 @@ const CmsIllustration = ({ language }) => {
                   Extra fee would be charged from your 4th change or if you need another different sketch option.
                 </en>
                 <vi>
-                  Extra fee would be charged from your 4th change or if you need another different sketch option.
+                  Tớ sẽ chỉ thêm phí nếu cậu muốn thêm cái sketch nữa, hoặc sửa tới lui đến lần thứ 4 đổ đi.
                 </vi>
               </T>
             </p>
@@ -789,17 +790,19 @@ const CmsIllustration = ({ language }) => {
                   On Rendering steps, major changes are not available.
                 </en>
                 <vi>
-                  On Rendering steps, major changes are not available.
+                  Khi đã vào render, tớ chỉ có thể sửa tiểu tiết, nên hãy check sketch thật kỹ nhé.
                 </vi>
               </T>
             </p>
             <p className={CONFIG.bodyText.marginBottom}>
               <T>
                 <en>
-                  I don't accept vague feedback like "make it cuter" or "cooler" unless it's explained clearly. Please give specific instructions, e.g. "change the star to a heart" or "add a bow."
+                  I don't accept vague feedback like "make it cuter" or "cooler" unless it's explained clearly. 
+                  Please give specific instructions, e.g. "change the star to a heart" or "add a bow."
                 </en>
                 <vi>
-                  I don't accept vague feedback like "make it cuter" or "cooler" unless it's explained clearly. Please give specific instructions, e.g. "change the star to a heart" or "add a bow."
+                  Tớ sẽ không nhận feedback chung chung kiểu "bồ cho nó dễ huông hơn được khôm?" hay kiểu "cho nó ngầu hơn cậu nhé". 
+                  Hãy diễn giải nó thật rõ ràng với yêu cầu cụ thể như kiểu "thay phụ kiện ngôi sao này thành hình trái tym" hoặc là "cho nó thêm cây cung" nhá.
                 </vi>
               </T>
             </p>
@@ -809,7 +812,7 @@ const CmsIllustration = ({ language }) => {
                   If I don't receive feedback within 4 days, I'll move forward with the current version and no further changes will be accepted.
                 </en>
                 <vi>
-                  If I don't receive feedback within 4 days, I'll move forward with the current version and no further changes will be accepted.
+                  Nếu tớ không nhận được phản hồi nào trong vòng 4 ngày, tớ sẽ tiếp tục làm việc với phiên bản hiện tại.
                 </vi>
               </T>
             </p>
@@ -1031,7 +1034,7 @@ const CmsIllustration = ({ language }) => {
                 If you need another size or format, contact me for further discussion.
               </en>
               <vi>
-                If you need another size or format, contact me for further discussion.
+                Nếu cậu cần file hoặc định dạng đặc biệt khác, hãy nhắn tớ để trao đổi.
               </vi>
             </T>
           </p>
@@ -1049,7 +1052,7 @@ const CmsIllustration = ({ language }) => {
           >
             <T>
               <en>🔸 Time</en>
-              <vi>🔸 Time</vi>
+              <vi>🔸 Thời gian</vi>
             </T>
           </h3>
           <div 
@@ -1063,13 +1066,13 @@ const CmsIllustration = ({ language }) => {
             <p>
               <T>
                 <en>Total commission time: 60 days from Brief received day.</en>
-                <vi>Total commission time: 60 days from Brief received day.</vi>
+                <vi>Tổng thời gian làm việc: 60 ngày kể từ khi nhận brief hoàn chỉnh.</vi>
               </T>
             </p>
             <p>
               <T>
                 <en>Longest update time: At least once a week.</en>
-                <vi>Longest update time: At least once a week.</vi>
+                <vi>Thời gian dài nhất giữa các lần update: 1 tuần.</vi>
               </T>
             </p>
           </div>
@@ -1088,7 +1091,7 @@ const CmsIllustration = ({ language }) => {
         >
           <T>
             <en>Contact Information</en>
-            <vi>Contact Information</vi>
+            <vi>Thông tin liên hệ</vi>
           </T>
         </h2>
         <div 
@@ -1114,7 +1117,7 @@ const CmsIllustration = ({ language }) => {
                 </a>.
               </en>
               <vi>
-                I accept commision through any platform noted in my Profie. For Art Commissions, I recommend{' '}
+                Cậu nhắn cho tớ qua bất kỳ trang nào tớ để trên Profile đều được. Nếu là com Illustration, tớ recommend{' '}
                 <a 
                   href="https://vgen.co/dansenak249" 
                   target="_blank" 
@@ -1130,19 +1133,19 @@ const CmsIllustration = ({ language }) => {
           <p className={CONFIG.bodyText.marginBottom}>
             <T>
               <en>My active hours are 20:00-23:59 UTC+7, and I usually reply within 24 hours.</en>
-              <vi>My active hours are 20:00-23:59 UTC+7, and I usually reply within 24 hours.</vi>
+              <vi>Tớ sẽ hoạt động vào khoảng <strong>20:00-23:59 UTC+7</strong>, và thường sẽ phản hồi đầy đủ trong 24h.</vi>
             </T>
           </p>
           <p className={CONFIG.bodyText.marginBottom}>
             <T>
               <en>If you pay via PayPal, I'll send you a proper invoice to keep things secure and organized.</en>
-              <vi>If you pay via PayPal, I'll send you a proper invoice to keep things secure and organized.</vi>
+              <vi>Thanh toán: dòng này bên EN là Paypal nhưng tụi mình Việt cả mà, Banking nhé UwU.</vi>
             </T>
           </p>
           <p className={CONFIG.bodyText.marginBottom}>
             <T>
               <en>When placing your order, please include: Image refs, pose/emotion, canvas size, deadline (if any), and usage purpose.</en>
-              <vi>When placing your order, please include: Image refs, pose/emotion, canvas size, deadline (if any), and usage purpose.</vi>
+              <vi>Khi đặt com, hãy gửi đầy đủ: Ảnh refs, pose và biểu cảm, kích thước khổ giấy, deadline (nếu có) và mục đích sử dụng.</vi>
             </T>
           </p>
         </div>
@@ -1160,7 +1163,7 @@ const CmsIllustration = ({ language }) => {
         >
           <T>
             <en>Payment & Refund Policy</en>
-            <vi>Payment & Refund Policy</vi>
+            <vi>Thanh toán & Hoàn tiền</vi>
           </T>
         </h2>
 
@@ -1176,7 +1179,7 @@ const CmsIllustration = ({ language }) => {
           >
             <T>
               <en>🔸 Price</en>
-              <vi>🔸 Price</vi>
+              <vi>🔸 Về giá cả</vi>
             </T>
           </h4>
           <div 
@@ -1190,31 +1193,31 @@ const CmsIllustration = ({ language }) => {
             <p>
               <T>
                 <en>Prices above are based on non-commercial purpose. Commercial Fees will be charge by Total Price x2-3 base on each purpose.</en>
-                <vi>Prices above are based on non-commercial purpose. Commercial Fees will be charge by Total Price x2-3 base on each purpose.</vi>
+                <vi>Giá niêm yết ở trên là giá phi thương mại. Phí thương mại sẽ x2-3 tổng giá tuỳ mục đích.</vi>
               </T>
             </p>
             <p>
               <T>
                 <en>Private commission comes with 50% Fee.</en>
-                <vi>Private commission comes with 50% Fee.</vi>
+                <vi>Phí Private là 50% tổng đơn.</vi>
               </T>
             </p>
             <p>
               <T>
                 <en>Prices may be changed due to complexity of commission.</en>
-                <vi>Prices may be changed due to complexity of commission.</vi>
+                <vi>Giá có thể thay đổi dựa vào độ dài hoặc phức tạp của brief.</vi>
               </T>
             </p>
             <p>
               <T>
                 <en>Short/rush deadline must have to be charged around 50-100% Total Price, depending on your brief.</en>
-                <vi>Short/rush deadline must have to be charged around 50-100% Total Price, depending on your brief.</vi>
+                <vi>Dí deadline gấp quá tớ sẽ charge thêm 50-100% tổng phí ạ.</vi>
               </T>
             </p>
             <p>
               <T>
                 <en>Commission prices may be updated regularly without prior notice.</en>
-                <vi>Commission prices may be updated regularly without prior notice.</vi>
+                <vi>Như thường lệ, giá com có thể được update thường xuyên mà không báo trước.</vi>
               </T>
             </p>
           </div>
@@ -1232,7 +1235,7 @@ const CmsIllustration = ({ language }) => {
           >
             <T>
               <en>🔸 Payment</en>
-              <vi>🔸 Payment</vi>
+              <vi>🔸 Về thanh toán</vi>
             </T>
           </h4>
           <div 
@@ -1246,7 +1249,7 @@ const CmsIllustration = ({ language }) => {
             <p>
               <T>
                 <en>100% upfront payment is required before I start. For large projects, we can split it into 2 payments upon agreement.</en>
-                <vi>100% upfront payment is required before I start. For large projects, we can split it into 2 payments upon agreement.</vi>
+                <vi>Thanh toán 100% trước khi tớ bắt đầu làm việc. Với các dự án lớn, mình có thể chia làm 2 phần thanh toán.</vi>
               </T>
             </p>
             <p>
@@ -1273,20 +1276,20 @@ const CmsIllustration = ({ language }) => {
                   >
                     Vgen
                   </a>{' '}
-                  or PayPal only. I don't accept other payment methods.
+                  , Paypal hoặc Banking. Tớ không dùng các phương thức khác.
                 </vi>
               </T>
             </p>
             <p>
               <T>
                 <en>I will hold your slot for 7 days after confirmation. If no payment is made, the slot will be released.</en>
-                <vi>I will hold your slot for 7 days after confirmation. If no payment is made, the slot will be released.</vi>
+                <vi>Tớ sẽ hold slot của cậu trong một tuần sau khi nhận việc, sau đó nếu cậu không cọc tớ xin phép huỷ slot ạ.</vi>
               </T>
             </p>
             <p>
               <T>
                 <en>If you send the wrong amount or there's a payment error, I'll do my best to help. However, I'm not responsible for incorrect PayPal emails.</en>
-                <vi>If you send the wrong amount or there's a payment error, I'll do my best to help. However, I'm not responsible for incorrect PayPal emails.</vi>
+                <vi>Nếu cậu có lỡ chuyển nhầm lượng tiền, tớ sẽ làm hết sức để giúp cậu. Tuy nhiên tớ sẽ không chịu trách nhiệm cho case chuyền nhầm cho người khác ạ.</vi>
               </T>
             </p>
           </div>
@@ -1304,7 +1307,7 @@ const CmsIllustration = ({ language }) => {
           >
             <T>
               <en>🔸 Refund</en>
-              <vi>🔸 Refund</vi>
+              <vi>🔸 Về hoàn tiền</vi>
             </T>
           </h4>
           <div 
@@ -1318,25 +1321,25 @@ const CmsIllustration = ({ language }) => {
             <p>
               <T>
                 <en>100% if I <strong>haven't started</strong> working on your commission (not include the Paypal extra fee).</en>
-                <vi>100% if I <strong>haven't started</strong> working on your commission (not include the Paypal extra fee).</vi>
+                <vi>100% nếu tớ chưa bắt đầu làm và cậu muốn huỷ (không gồm phụ phí Paypal).</vi>
               </T>
             </p>
             <p>
               <T>
                 <en>100% if I <strong>cannot complete</strong> the Artwork.</en>
-                <vi>100% if I <strong>cannot complete</strong> the Artwork.</vi>
+                <vi>100% nếu tớ <strong>không thế hoàn thành</strong> tranh.</vi>
               </T>
             </p>
             <p>
               <T>
                 <en>50% if I've <strong>finished Sketchs</strong> and start Rendering.</en>
-                <vi>50% if I've <strong>finished Sketchs</strong> and start Rendering.</vi>
+                <vi>50% nếu tớ đã <strong>hoàn thành Sketchs</strong> và bắt đầu Rendering.</vi>
               </T>
             </p>
             <p>
               <T>
                 <en>10% if I'm over <strong>1 days late</strong> without a valid reason. You can request a full refund, and I'll stop right away.</en>
-                <vi>10% if I'm over <strong>1 days late</strong> without a valid reason. You can request a full refund, and I'll stop right away.</vi>
+                <vi>10% nếu tớ <strong>trễ quá 1 ngày</strong> mà không có lý do chính đáng. Cậu có thể yêu cầu hoàn tiền 100%, và tớ sẽ dừng com.</vi>
               </T>
             </p>
           </div>
@@ -1354,7 +1357,7 @@ const CmsIllustration = ({ language }) => {
           >
             <T>
               <en>🔸 Tax & Fee Notice</en>
-              <vi>🔸 Tax & Fee Notice</vi>
+              <vi>🔸 Về thuế và phụ phí</vi>
             </T>
           </h4>
           <p 
@@ -1373,10 +1376,9 @@ const CmsIllustration = ({ language }) => {
                 as an independent creator.
               </en>
               <vi>
-                As a Freelancer in Vietnam, I am required to pay a 10% personal income tax on all earnings. 
-                Therefore, a <strong>10% tax fee</strong> will be added on top of the total invoice amount. 
-                This helps me stay compliant with local tax laws while continuing to provide quality work 
-                as an independent creator.
+                Là một Freelancer mẫu mực không trốn thuế, tớ có nghĩa vụ phải đóng 10% thu nhập cá nhân của mình. 
+                Bởi vậy tớ xin phép cộng 10% phí được cộng thêm vào tổng com ạ. 
+                Việc này giúp tớ yên tâm làm đơn của cậu hơn mà không sợ bị mời lên uống trà lúc dở việc.
               </vi>
             </T>
           </p>
@@ -1395,7 +1397,7 @@ const CmsIllustration = ({ language }) => {
         >
           <T>
             <en>Copyright & Usage Rights</en>
-            <vi>Copyright & Usage Rights</vi>
+            <vi>Bản quyền và Quyền sử dụng</vi>
           </T>
         </h2>
 
@@ -1411,7 +1413,7 @@ const CmsIllustration = ({ language }) => {
           >
             <T>
               <en>🔸 Without Commersial Use</en>
-              <vi>🔸 Without Commersial Use</vi>
+              <vi>🔸 Với mục đích Phi thương mại</vi>
             </T>
           </h4>
           <div 
@@ -1425,13 +1427,13 @@ const CmsIllustration = ({ language }) => {
             <p>
               <T>
                 <en>I retain full copyright of the artwork unless a transfer is agreed upon (additional fee required).</en>
-                <vi>I retain full copyright of the artwork unless a transfer is agreed upon (additional fee required).</vi>
+                <vi>Tớ giữ toàn bộ bản quyền của tác phẩm trừ khi có thỏa thuận chuyển nhượng (cần thêm phí).</vi>
               </T>
             </p>
             <p>
               <T>
                 <en>You may use the commissioned art for personal use only: avatars, overlays, banners, etc.</en>
-                <vi>You may use the commissioned art for personal use only: avatars, overlays, banners, etc.</vi>
+                <vi>Cậu chỉ được sử dụng cho mục đích cá nhân: avatars, overlays, banners, v.v.</vi>
               </T>
             </p>
           </div>
@@ -1452,26 +1454,26 @@ const CmsIllustration = ({ language }) => {
             <p className="font-bold mb-2" style={{ color: CONFIG.warningBox.boldColor }}>
               <T>
                 <en>You may NOT</en>
-                <vi>You may NOT</vi>
+                <vi>Cậu KHÔNG được</vi>
               </T>
             </p>
             <div className="space-y-1" style={{ color: CONFIG.warningBox.textColor }}>
               <p>
                 <T>
                   <en><strong>Print or sell</strong> the artwork, or use it commercially without proper licensing</en>
-                  <vi><strong>Print or sell</strong> the artwork, or use it commercially without proper licensing</vi>
+                  <vi><strong>In hoặc bán</strong>, hoặc sử dụng cho mục đích thương mại mà không có sự đồng ý của tớ</vi>
                 </T>
               </p>
               <p>
                 <T>
                   <en>Repost without <strong>credit</strong></en>
-                  <vi>Repost without <strong>credit</strong></vi>
+                  <vi>Repost không <strong>credit</strong></vi>
                 </T>
               </p>
               <p>
                 <T>
                   <en>Use for <strong>AI/NFT/filter</strong> modifications, I do not allow my work to be used for AI training, AI blending, or filtered edits that distort the original intent.</en>
-                  <vi>Use for <strong>AI/NFT/filter</strong> modifications, I do not allow my work to be used for AI training, AI blending, or filtered edits that distort the original intent.</vi>
+                  <vi>Dùng cho <strong>AI/NFT/filter</strong> chỉnh sửa, tớ không cho phép tranh của tớ được sử dụng cho AI training, blending hay chỉnh sửa làm thay đổi sự toàn vẹn của tác phẩm.</vi>
                 </T>
               </p>
             </div>
@@ -1489,8 +1491,8 @@ const CmsIllustration = ({ language }) => {
             }}
           >
             <T>
-              <en>🔸 With Commersial Use</en>
-              <vi>🔸 With Commersial Use</vi>
+              <en>🔸 With Commercial Use</en>
+              <vi>🔸 Với mục đích Thương mại</vi>
             </T>
           </h4>
           <div 
@@ -1504,19 +1506,19 @@ const CmsIllustration = ({ language }) => {
             <p>
               <T>
                 <en>Requires an additional x2-3 of the base price.</en>
-                <vi>Requires an additional x2-3 of the base price.</vi>
+                <vi>Tính phí x2-3 so với giá cơ bản.</vi>
               </T>
             </p>
             <p>
               <T>
                 <en>Required credit: "by Dan @dansenak249"</en>
-                <vi>Required credit: "by Dan @dansenak249"</vi>
+                <vi>Có credit: "by Dan @dansenak249"</vi>
               </T>
             </p>
             <p>
               <T>
                 <en>If you violate copyright, I reserve the right to file DMCA claims and publicly address the issue.</en>
-                <vi>If you violate copyright, I reserve the right to file DMCA claims and publicly address the issue.</vi>
+                <vi>Nếu cậu vi phạm bản quyền, tớ có quyền khiếu nại DMCA claims và đăng bài công khai vấn đề này.</vi>
               </T>
             </p>
           </div>
@@ -1548,25 +1550,25 @@ const CmsIllustration = ({ language }) => {
             <p>
               <T>
                 <en>Self-promotion. I may post finished artwork on my social media or use it in my portfolio unless marked as a private commission.</en>
-                <vi>Self-promotion. I may post finished artwork on my social media or use it in my portfolio unless marked as a private commission.</vi>
+                <vi>Tớ có thể đăng ảnh / video lên các trang mạng xã hội hoặc sử dụng trong portfolio trừ khi cậu đặt đơn Private.</vi>
               </T>
             </p>
             <p>
               <T>
                 <en>I reserve the right to cancel the commission and issue a refund if the client is disrespectful or places unfair demands.</en>
-                <vi>I reserve the right to cancel the commission and issue a refund if the client is disrespectful or places unfair demands.</vi>
+                <vi>Tớ có quyền huỷ com và hoàn tiền nếu khách hàng có thái độ hoặc đưa ra những yêu cầu không phù hợp.</vi>
               </T>
             </p>
             <p>
               <T>
                 <en>I may slightly adjust the layout or style during the process for better quality, as long as it aligns with the original brief.</en>
-                <vi>I may slightly adjust the layout or style during the process for better quality, as long as it aligns with the original brief.</vi>
+                <vi>Tớ có thể điều chỉnh layout hoặc style trong quá trình làm để đạt chất lượng tốt hơn, miễn là phù hợp với yêu cầu ban đầu.</vi>
               </T>
             </p>
             <p>
               <T>
                 <en>Other copyright to which I am entitled under international law.</en>
-                <vi>Other copyright to which I am entitled under international law.</vi>
+                <vi>Các luật bản quyền khác dựa theo luật pháp quốc gia và quốc tế.</vi>
               </T>
             </p>
           </div>
@@ -1592,7 +1594,7 @@ const CmsIllustration = ({ language }) => {
         >
           <T>
             <en>Ready to bring your vision to life?</en>
-            <vi>Ready to bring your vision to life?</vi>
+            <vi>Làm con tranh thôi các con vợ</vi>
           </T>
         </h3>
         <p 
@@ -1610,7 +1612,7 @@ const CmsIllustration = ({ language }) => {
         >
           <T>
             <en>Contact me via any platform in my Profile</en>
-            <vi>Contact me via any platform in my Profile</vi>
+            <vi>Cậu có thể liên hệ với tớ qua bất kỳ nền tảng nào trong Profile nhé</vi>
           </T>
         </p>
       </div>
