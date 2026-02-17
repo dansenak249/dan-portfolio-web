@@ -34,10 +34,10 @@ const utmAptima = localFont({
 export const metadata = {
   metadataBase: new URL('https://www.dansenak249.com'),
   title: 'Dan (@dansenak249) | Technical Artist & Game Developer',
-  description: 'Dan - Technical Artist specializing in Digital Arts, Visual FX & Animation, Game Development',
+  description: 'Technical Artist specializing in Digital Arts, Visual FX & Animation, Game Development. Also known as Dan, dansenak249, dansenak, dan.senak, senak249, senak',
   openGraph: {
     title: 'Dan | Technical Artist',
-    description: 'Portfolio showcase',
+    description: 'Portfolio & Services Info',
     url: 'https://www.dansenak249.com',
     siteName: 'Dan Portfolio',
     images: [
@@ -53,7 +53,7 @@ export const metadata = {
   twitter: {
     card: 'summary_large_image',
     title: 'Dan | Technical Artist',
-    description: 'Portfolio showcase',
+    description: 'Portfolio & Services Info',
     images: ['/web-preview.png'],
   },
 }
