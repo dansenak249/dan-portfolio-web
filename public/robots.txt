@@ -1,0 +1,77 @@
+# ============================================
+# robots.txt — AI-Friendly Configuration
+# Site: dansenak249.com
+# Last updated: 2026-03-23
+# ============================================
+
+# Default: Allow all bots
+User-agent: *
+Allow: /
+Disallow: /api/
+Disallow: /_next/
+Disallow: /admin/
+
+# ------------------------------------------
+# Google Search & AI
+# ------------------------------------------
+User-agent: Googlebot
+Allow: /
+
+User-agent: Google-Extended
+Allow: /
+
+# ------------------------------------------
+# OpenAI
+# ------------------------------------------
+User-agent: GPTBot
+Allow: /
+
+User-agent: ChatGPT-User
+Allow: /
+
+# ------------------------------------------
+# Anthropic (Claude)
+# ------------------------------------------
+User-agent: ClaudeBot
+Allow: /
+
+User-agent: Claude-Web
+Allow: /
+
+# ------------------------------------------
+# Perplexity
+# ------------------------------------------
+User-agent: PerplexityBot
+Allow: /
+
+# ------------------------------------------
+# Microsoft / Bing / Copilot
+# ------------------------------------------
+User-agent: Bingbot
+Allow: /
+
+User-agent: BingPreview
+Allow: /
+
+# ------------------------------------------
+# Apple / Siri
+# ------------------------------------------
+User-agent: Applebot
+Allow: /
+
+User-agent: Applebot-Extended
+Allow: /
+
+# ------------------------------------------
+# Other AI Crawlers
+# ------------------------------------------
+User-agent: Bytespider
+Allow: /
+
+User-agent: cohere-ai
+Allow: /
+
+# ------------------------------------------
+# Sitemap & LLMs.txt
+# ------------------------------------------
+Sitemap: https://dansenak249.com/sitemap.xml

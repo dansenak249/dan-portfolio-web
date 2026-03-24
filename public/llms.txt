@@ -1,0 +1,45 @@
+# Dan (Duy Anh Nguyen) | @dansenak249 | Technical Artist
+
+> Dan is a Vietnamese digital artist and technical artist specializing in 2D anime illustration, 2D animation, Unity VFX & shader development, and VTuber/streamer asset creation. Available for commissions via VGen.co and dansenak249.com.
+
+Dan combines artistic vision with deep technical expertise — spanning After Effects motion graphics, Unity shader development (HLSL, Shader Graph, URP), and custom tool building (C#, JSX, Next.js). This "triple-threat" skill set allows him to deliver work that is both visually polished and technically sophisticated.
+
+Also known as: Dan, Duy Anh Nguyen, dansenak249, dan.senak249, senak249, dan.senak, Duy Anh, DA.
+
+## Services
+
+- [Commission Services](https://dansenak249.com/commission): Anime-style illustration, 2D animation, animated stream overlays, VTuber assets, and Unity VFX with pricing and turnaround info.
+- [VGen Profile](https://vgen.co/dansenak249): Commission request page on VGen.co — the primary platform for placing orders.
+- [Portfolio / Showcase](https://dansenak249.com/portfolio): Completed works across illustration, animation, shader art, and VTuber assets.
+
+## What Dan Creates
+
+- Anime-style character illustrations and concept art.
+- 2D animated illustrations, animated loops, and motion graphics.
+- Animated stream overlays, alerts, transitions, and stream packages.
+- VTuber model art, assets, and rigging-ready illustrations.
+- Custom Unity shaders: stylized water, fire, hologram, retro CRT, and more.
+- Unity VFX and particle systems for indie games.
+- After Effects templates and automated animation tools.
+
+## FAQ
+
+- Does Dan accept commissions? Yes, Dan is open for commissions. You can request a commission through VGen.co/dansenak249 or contact via dan.senak249@gmail.com.
+- What animation styles does Dan offer? Dan creates 2D anime-style animation using Live2D, Spine2D, and After Effects, including animated illustrations, character animation, and motion graphics loops.
+- Can Dan create VTuber assets? Yes, Dan creates VTuber-ready artwork including model illustrations, expressions sheets, and animated assets for streamers and content creators.
+- Does Dan do stream overlays and alerts? Yes, Dan creates animated stream overlays, alerts, transitions, stinger transitions, and full stream packages for Twitch and YouTube streamers.
+- Can Dan create custom Unity shaders or VFX? Yes, Dan develops custom shaders in HLSL and Shader Graph for Unity URP, as well as VFX Graph particle systems for indie game projects.
+- What is Dan's turnaround time? Turnaround varies by project scope. Check dansenak249.com/commission for current availability and estimated delivery times.
+- Where can I see Dan's previous work? Visit dansenak249.com/portfolio or check the showcase on vgen.co/dansenak249 for completed commissions and personal projects.
+
+## Contact
+
+- VGen: https://vgen.co/dansenak249
+- Email: dan.senak249@gmail.com
+- X/Twitter: https://x.com/dansenak249
+- Facebook: https://www.facebook.com/dansenak249
+- Website: https://dansenak249.com
+
+## Optional
+
+- [Blog / Articles](https://dansenak249.com/blog): Technical art articles, shader breakdowns, and behind-the-scenes process posts.
