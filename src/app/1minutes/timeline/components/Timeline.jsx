@@ -162,6 +162,10 @@ export default function Timeline({ bgOn, onSetBg }) {
   const rowsRef = useRef(null)
   const dragRef = useRef({ isDown: false, startX: 0, scrollLeft: 0 })
   const pendingFocalPctRef = useRef(null)
+  // Guards the one-shot "scroll to Today on first paint" effect so it
+  // only fires after real jobs have loaded and the scroll container has
+  // mounted, not during the initial null-data render.
+  const didInitialScrollRef = useRef(false)
   const [isDragging, setIsDragging] = useState(false)
   const [todayIso, setTodayIso] = useState(null)
   const [viewMode, setViewMode] = useState('month')
@@ -259,10 +263,21 @@ export default function Timeline({ bgOn, onSetBg }) {
   }, [])
 
   useEffect(() => {
-    if (!todayIso || !scrollRef.current) return
+    // One-shot: only run the very first time we have both a Today value
+    // and a populated jobs array (so the axis range actually includes
+    // today). Subsequent re-renders never override the user's scroll.
+    if (didInitialScrollRef.current) return
+    if (!todayIso) return
+    if (!jobs) return
+    if (!scrollRef.current) return
     if (pendingFocalPctRef.current !== null) return
     const pct = dateToPercent(todayIso, minMs, maxMs)
-    if (pct < 0 || pct > 100) return
+    if (pct < 0 || pct > 100) {
+      // Today not in range — mark done so we don't keep retrying. The
+      // user can still tap the Today button later when applicable.
+      didInitialScrollRef.current = true
+      return
+    }
     const viewport = Math.max(
       0,
       scrollRef.current.clientWidth - LEFT_TOTAL_WIDTH
@@ -270,8 +285,9 @@ export default function Timeline({ bgOn, onSetBg }) {
     // Place "today" at 20% from the left edge of the lane viewport.
     const target = (pct / 100) * timelineWidth - viewport * TODAY_OFFSET_RATIO
     scrollRef.current.scrollLeft = Math.max(0, target)
+    didInitialScrollRef.current = true
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [todayIso])
+  }, [todayIso, jobs, minMs, maxMs, timelineWidth])
 
   useEffect(() => {
     if (pendingFocalPctRef.current === null || !scrollRef.current) return
