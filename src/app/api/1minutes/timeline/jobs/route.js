@@ -9,10 +9,11 @@ import { NextResponse } from 'next/server'
 // writes are strongly consistent and sub-millisecond, which removes the
 // 10-15s read-after-write delay we hit with Vercel Blob's CDN.
 //
-// Selection is driven by the presence of the Upstash REST env vars,
+// We read the connection from `KV_REST_API_URL` / `KV_REST_API_TOKEN`,
 // which Vercel auto-injects when an Upstash store is linked to the
-// project. Locally, pull them with `vercel env pull .env.local` (or
-// paste the dashboard values into `.env.local` by hand).
+// project — no extra dashboard config needed. Locally, pull them with
+// `vercel env pull .env.local` (or paste the dashboard values into
+// `.env.local` by hand).
 //
 // Local dev without those env vars keeps writing to the bundled JSON
 // seed file so contributors can run the app with zero infra setup.
@@ -30,13 +31,19 @@ const SEED_FILE = path.join(
 )
 
 const HAS_KV = Boolean(
-  process.env.UPSTASH_REDIS_REST_URL && process.env.UPSTASH_REDIS_REST_TOKEN
+  process.env.KV_REST_API_URL && process.env.KV_REST_API_TOKEN
 )
 // Instantiate once at module scope — Next.js keeps the route handler
 // warm between requests on the same instance, so we avoid re-creating
-// the HTTP client on every call. Reads from `UPSTASH_REDIS_REST_URL`
-// and `UPSTASH_REDIS_REST_TOKEN` by convention.
-const redis = HAS_KV ? Redis.fromEnv() : null
+// the HTTP client on every call. Using the explicit constructor so we
+// can read directly from Vercel's auto-injected `KV_REST_API_*` vars,
+// skipping the `UPSTASH_REDIS_REST_*` aliases entirely.
+const redis = HAS_KV
+  ? new Redis({
+      url: process.env.KV_REST_API_URL,
+      token: process.env.KV_REST_API_TOKEN,
+    })
+  : null
 
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
