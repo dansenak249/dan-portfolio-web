@@ -3,7 +3,8 @@
     "allow": [
       "Bash(xargs grep:*)",
       "Bash(npm i:*)",
-      "Bash(node -e \"console.log\\(require\\(''@vercel/blob/package.json''\\).version\\)\")"
+      "Bash(node -e \"console.log\\(require\\(''@vercel/blob/package.json''\\).version\\)\")",
+      "Bash(ls -la .env*)"
     ]
   }
 }

@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { JobInfoCard, JobLane, ROW_HEIGHT_PX } from './JobRow'
 import EditPanel from './EditPanel'
+import LoadingScreen from './LoadingScreen'
 import {
   COMMISSION_TYPES,
   MILESTONES,
@@ -250,6 +251,9 @@ export default function Timeline({ bgOn, onSetBg }) {
 
   // Measure the lane viewport (body width minus the sticky left column).
   // Re-measure on resize so the Today-default detection stays accurate.
+  // Also re-measures when `jobs` flips from null to an array, since the
+  // scrollable JSX is gated on that and `scrollRef.current` only attaches
+  // after the gate opens.
   useEffect(() => {
     const update = () => {
       if (!scrollRef.current) return
@@ -260,7 +264,7 @@ export default function Timeline({ bgOn, onSetBg }) {
     update()
     window.addEventListener('resize', update)
     return () => window.removeEventListener('resize', update)
-  }, [])
+  }, [jobs])
 
   useEffect(() => {
     // One-shot: only run the very first time we have both a Today value
@@ -613,12 +617,15 @@ export default function Timeline({ bgOn, onSetBg }) {
   }
 
   // ---- Render guard ----
-  // Either the initial load failed (alerted above) or it is still in
-  // flight. Either way, render nothing: showing a blank table here is
-  // safer than letting the user mutate / overwrite valid server state
-  // with an empty optimistic list.
-  if (loadFailed || jobs === null) {
+  // loadFailed: initial GET failed (user was alerted) — render nothing
+  // so the bad-data state can't be mutated/overwritten with empty state.
+  // jobs === null: still fetching — show the loading screen instead of
+  // a blank surface so the user gets immediate visual feedback.
+  if (loadFailed) {
     return null
+  }
+  if (jobs === null) {
+    return <LoadingScreen />
   }
 
   // ---- Derived ----

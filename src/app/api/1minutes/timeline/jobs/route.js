@@ -1,23 +1,26 @@
 import { promises as fs } from 'fs'
 import path from 'path'
-import { list, put } from '@vercel/blob'
+import { Redis } from '@upstash/redis'
 import { NextResponse } from 'next/server'
 
 // Storage strategy
 // ----------------
-// Production (Vercel) uses Vercel Blob because the serverless filesystem
-// is read-only (EROFS on /var/task). Local dev keeps writing to the
-// bundled JSON file so contributors can run without provisioning Blob.
+// Production (Vercel) uses Upstash Redis via @upstash/redis. Reads and
+// writes are strongly consistent and sub-millisecond, which removes the
+// 10-15s read-after-write delay we hit with Vercel Blob's CDN.
 //
-// Selection is driven by the presence of BLOB_READ_WRITE_TOKEN, which
-// Vercel auto-injects when a Blob store is linked to the project. To
-// use Blob locally too, run `vercel env pull .env.local` after linking.
+// Selection is driven by the presence of the Upstash REST env vars,
+// which Vercel auto-injects when an Upstash store is linked to the
+// project. Locally, pull them with `vercel env pull .env.local` (or
+// paste the dashboard values into `.env.local` by hand).
 //
-// On first prod boot the Blob is empty, so we fall back to the bundled
-// JSON file as a seed. The first PUT after that materializes the Blob
-// and all subsequent reads come from there.
+// Local dev without those env vars keeps writing to the bundled JSON
+// seed file so contributors can run the app with zero infra setup.
+//
+// On first prod boot Redis is empty, so we seed it from the bundled
+// JSON file once. All subsequent reads/writes go through Redis only.
 
-const BLOB_PATHNAME = '1minutes/timeline/jobs.json'
+const KV_KEY = 'timeline:jobs'
 const SEED_FILE = path.join(
   process.cwd(),
   'data',
@@ -25,7 +28,15 @@ const SEED_FILE = path.join(
   'timeline',
   'jobs.json'
 )
-const HAS_BLOB = Boolean(process.env.BLOB_READ_WRITE_TOKEN)
+
+const HAS_KV = Boolean(
+  process.env.UPSTASH_REDIS_REST_URL && process.env.UPSTASH_REDIS_REST_TOKEN
+)
+// Instantiate once at module scope — Next.js keeps the route handler
+// warm between requests on the same instance, so we avoid re-creating
+// the HTTP client on every call. Reads from `UPSTASH_REDIS_REST_URL`
+// and `UPSTASH_REDIS_REST_TOKEN` by convention.
+const redis = HAS_KV ? Redis.fromEnv() : null
 
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
@@ -46,41 +57,37 @@ async function writeSeedFile(payload) {
   await fs.writeFile(SEED_FILE, JSON.stringify(payload, null, 2), 'utf-8')
 }
 
-async function readFromBlob() {
-  const { blobs } = await list({ prefix: BLOB_PATHNAME })
-  const match = blobs.find((b) => b.pathname === BLOB_PATHNAME)
-  if (!match) return null
-  // Cache-bust the CDN edge so a fresh PUT is visible immediately.
-  const res = await fetch(`${match.url}?t=${Date.now()}`, {
-    cache: 'no-store',
-  })
-  if (!res.ok) {
-    throw new Error(`Blob fetch failed: HTTP ${res.status}`)
-  }
-  return validatePayload(await res.json())
+async function readFromKv() {
+  // Upstash auto-parses JSON for object values, but if the value was
+  // stored as a raw string we handle that branch too — keeps the
+  // function tolerant to either write path.
+  const stored = await redis.get(KV_KEY)
+  if (!stored) return null
+  const payload = typeof stored === 'string' ? JSON.parse(stored) : stored
+  return validatePayload(payload)
 }
 
-async function writeToBlob(payload) {
-  await put(BLOB_PATHNAME, JSON.stringify(payload, null, 2), {
-    access: 'public',
-    addRandomSuffix: false,
-    allowOverwrite: true,
-    contentType: 'application/json',
-  })
+async function writeToKv(payload) {
+  await redis.set(KV_KEY, JSON.stringify(payload))
 }
 
 async function readPayload() {
-  if (HAS_BLOB) {
-    const fromBlob = await readFromBlob()
-    if (fromBlob) return fromBlob
+  if (HAS_KV) {
+    const fromKv = await readFromKv()
+    if (fromKv) return fromKv
+    // First boot: KV empty — seed it from the bundled JSON file so the
+    // very next read already comes from the consistent store.
+    const seed = await readSeedFile()
+    await writeToKv(seed)
+    return seed
   }
-  // Blob empty (first run) or local dev — use the bundled seed file.
+  // Local dev fallback: no KV configured, persist to the seed file.
   return await readSeedFile()
 }
 
 async function writePayload(payload) {
-  if (HAS_BLOB) {
-    await writeToBlob(payload)
+  if (HAS_KV) {
+    await writeToKv(payload)
   } else {
     await writeSeedFile(payload)
   }
