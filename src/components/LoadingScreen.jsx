@@ -6,13 +6,13 @@ import { useEffect, useState } from 'react'
 // Kept consistent so the loading state still feels on-brand.
 const LOADING_COLOR = '#ff69b4'
 
-// Matches TimelineShell's default solid fill (bgOn === false). The
-// loading overlay paints this color so the page header disappears
-// behind it visually — user only sees the gif + animated text.
+// Default solid page fill — matches both the timeline shell and the
+// food picker page so the overlay disappears any header / chrome
+// behind a clean fill until data is ready.
 const BG_FILL = '#dadef0'
 
 // Three-step dot cycle: ".", "..", "..." — keeps the text from looking
-// frozen while the initial fetch is in flight.
+// frozen while the initial fetch / preload is in flight.
 const DOT_SEQUENCE = ['.', '..', '...']
 const DOT_INTERVAL_MS = 400
 
@@ -27,16 +27,16 @@ export default function LoadingScreen() {
   }, [])
 
   return (
-    // Fixed full-viewport overlay so the parent's header / shell chrome
+    // Fixed full-viewport overlay so the parent's header / chrome
     // stays hidden behind a clean fill until data is ready. z-50 keeps
-    // it above any timeline content that may mount underneath.
+    // it above any content that may mount underneath.
     <div
       className="fixed inset-0 z-50 flex items-center justify-center"
       style={{ backgroundColor: BG_FILL }}
     >
       <div className="flex flex-col items-center gap-4">
         <img
-          src="/timeline/loading.gif"
+          src="/general/loading.gif"
           alt="Loading"
           style={{ width: '140px', height: 'auto' }}
         />

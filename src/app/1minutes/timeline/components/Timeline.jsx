@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { JobInfoCard, JobLane, ROW_HEIGHT_PX } from './JobRow'
 import EditPanel from './EditPanel'
-import LoadingScreen from './LoadingScreen'
+import LoadingScreen from '@/components/LoadingScreen'
 import {
   COMMISSION_TYPES,
   MILESTONES,
