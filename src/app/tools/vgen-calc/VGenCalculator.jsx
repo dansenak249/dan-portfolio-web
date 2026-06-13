@@ -8,7 +8,9 @@ import LoadingScreen from '@/components/LoadingScreen'
 // stay on the main panel.
 const DEFAULT_CONFIG = {
   extra: 0, // money dealt privately with client, excluded from cost
-  vgenPct: 5, // VGen platform fee, % of Client Paid
+  saleTaxPct: 10, // personal income tax, % of Client Paid (no fixed part)
+  vgenPct: 5, // VGen platform fee, % of Client Paid + fixed
+  vgenFixed: 0,
   paypalPct: 4.35, // Paypal: % of Client Paid + fixed
   paypalFixed: 0.5,
   stripePct: 2.9, // Stripe: % of Client Paid + fixed
@@ -59,19 +61,22 @@ function normalizeConfig(raw) {
   return out
 }
 
-// Pure calculation. Net = Client Paid - Extra - VGen - Gateway.
+// Pure calculation.
+// Net = Client Paid - Extra - Sale Tax - VGen - Gateway.
 function calculate(clientPaid, gateway, config) {
   const cp = toNumber(clientPaid, 0)
   const extra = config.extra
-  const vgen = cp * (config.vgenPct / 100)
+  const saleTax = cp * (config.saleTaxPct / 100)
+  const vgen = cp * (config.vgenPct / 100) + config.vgenFixed
   const gateway_fee =
     gateway === 'paypal'
       ? cp * (config.paypalPct / 100) + config.paypalFixed
       : cp * (config.stripePct / 100) + config.stripeFixed
-  const net = cp - extra - vgen - gateway_fee
+  const net = cp - extra - saleTax - vgen - gateway_fee
   return {
     clientPaid: cp,
     extra,
+    saleTax,
     vgen,
     gateway_fee,
     net,
@@ -83,6 +88,7 @@ function calculate(clientPaid, gateway, config) {
 const EMPTY_RESULT = {
   clientPaid: 0,
   extra: 0,
+  saleTax: 0,
   vgen: 0,
   gateway_fee: 0,
   net: 0,
@@ -321,8 +327,14 @@ function ResultPanel({ result, gatewayLabel, config }) {
         <BreakdownRow label="Client Paid" value={usd(result.clientPaid)} />
         <BreakdownRow label="Extra" value={`- ${usd(result.extra)}`} muted />
         <BreakdownRow
+          label="Sale Tax"
+          sub={`${config.saleTaxPct}%`}
+          value={`- ${usd(result.saleTax)}`}
+          muted
+        />
+        <BreakdownRow
           label="VGen"
-          sub={`${config.vgenPct}%`}
+          sub={`${config.vgenPct}% + ${usd(config.vgenFixed)}`}
           value={`- ${usd(result.vgen)}`}
           muted
         />
@@ -468,14 +480,25 @@ function ConfigModal({ config, onClose, onSave }) {
               value={draft.extra}
               onChange={setField('extra')}
             />
+            <ConfigInput
+              label="Sale Tax"
+              suffix="%"
+              value={draft.saleTaxPct}
+              onChange={setField('saleTaxPct')}
+            />
           </ConfigSection>
 
           <ConfigSection title="Transaction Fee">
-            <ConfigInput
-              label="VGen"
-              suffix="%"
-              value={draft.vgenPct}
-              onChange={setField('vgenPct')}
+            <GatewayFeeRow
+              name="VGen"
+              rate={{
+                value: draft.vgenPct,
+                onChange: setField('vgenPct'),
+              }}
+              fixed={{
+                value: draft.vgenFixed,
+                onChange: setField('vgenFixed'),
+              }}
             />
             <GatewayFeeRow
               name="Paypal"
