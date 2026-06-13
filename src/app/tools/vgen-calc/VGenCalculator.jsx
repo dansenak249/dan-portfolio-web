@@ -7,16 +7,24 @@ import LoadingScreen from '@/components/LoadingScreen'
 // configures rarely via the secondary panel. Client Paid + gateway pick
 // stay on the main panel.
 const DEFAULT_CONFIG = {
-  extra: 0, // money dealt privately with client, excluded from cost
-  saleTaxPct: 10, // personal income tax, % of Client Paid (no fixed part)
+  personalIncomeTax: 10, // % of Client Paid (no fixed part)
   vgenPct: 5, // VGen platform fee, % of Client Paid + fixed
   vgenFixed: 0,
   paypalPct: 4.35, // Paypal: % of Client Paid + fixed
   paypalFixed: 0.5,
   stripePct: 2.9, // Stripe: % of Client Paid + fixed
   stripeFixed: 0.3,
-  locPct: 40, // Loc share, % of Net
-  salaPct: 15, // Sala share, % of Net
+  locPct: 40, // Loc share, % of Revenue
+  salaPct: 15, // Sala share, % of Revenue
+}
+
+// All taxes are a flat % of Client Paid and get summed into one "Taxes"
+// line. Adding a new tax here wires it into the calc, the breakdown
+// total, and the config panel automatically.
+const TAX_FIELDS = [{ key: 'personalIncomeTax', label: 'Personal Income Tax' }]
+
+function totalTaxPct(config) {
+  return TAX_FIELDS.reduce((sum, f) => sum + (config[f.key] || 0), 0)
 }
 
 const STORAGE_KEY = 'vgen-calc-config'
@@ -62,42 +70,43 @@ function normalizeConfig(raw) {
 }
 
 // Pure calculation.
-// Net = Client Paid - Extra - Sale Tax - VGen - Gateway.
-function calculate(clientPaid, gateway, config) {
+// Revenue = Client Paid - Extra - Taxes - VGen - Gateway.
+function calculate(clientPaid, extra, gateway, config) {
   const cp = toNumber(clientPaid, 0)
-  const extra = config.extra
-  const saleTax = cp * (config.saleTaxPct / 100)
+  const extraNum = toNumber(extra, 0)
+  const taxes = cp * (totalTaxPct(config) / 100)
   const vgen = cp * (config.vgenPct / 100) + config.vgenFixed
   const gateway_fee =
     gateway === 'paypal'
       ? cp * (config.paypalPct / 100) + config.paypalFixed
       : cp * (config.stripePct / 100) + config.stripeFixed
-  const net = cp - extra - saleTax - vgen - gateway_fee
+  const revenue = cp - extraNum - taxes - vgen - gateway_fee
   return {
     clientPaid: cp,
-    extra,
-    saleTax,
+    extra: extraNum,
+    taxes,
     vgen,
     gateway_fee,
-    net,
-    loc: net * (config.locPct / 100),
-    sala: net * (config.salaPct / 100),
+    revenue,
+    loc: revenue * (config.locPct / 100),
+    sala: revenue * (config.salaPct / 100),
   }
 }
 
 const EMPTY_RESULT = {
   clientPaid: 0,
   extra: 0,
-  saleTax: 0,
+  taxes: 0,
   vgen: 0,
   gateway_fee: 0,
-  net: 0,
+  revenue: 0,
   loc: 0,
   sala: 0,
 }
 
 export default function VGenCalculator() {
   const [clientPaid, setClientPaid] = useState('')
+  const [extra, setExtra] = useState('')
   const [gateway, setGateway] = useState('paypal')
   const [config, setConfig] = useState(DEFAULT_CONFIG)
   const [showConfig, setShowConfig] = useState(false)
@@ -124,8 +133,8 @@ export default function VGenCalculator() {
   // instead of a negative number from the fixed gateway fee.
   const result = useMemo(() => {
     if (clientPaid.trim() === '') return EMPTY_RESULT
-    return calculate(clientPaid, gateway, config)
-  }, [clientPaid, gateway, config])
+    return calculate(clientPaid, extra, gateway, config)
+  }, [clientPaid, extra, gateway, config])
 
   const gatewayLabel = useMemo(
     () => GATEWAYS.find((g) => g.id === gateway)?.label ?? gateway,
@@ -210,6 +219,25 @@ export default function VGenCalculator() {
               />
             </div>
           </Field>
+
+          <div className="mt-5">
+            <Field label="Extra" hint="Extra deal before revenue share">
+              <div className="relative">
+                <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 font-semibold pointer-events-none">
+                  $
+                </span>
+                <input
+                  type="number"
+                  inputMode="decimal"
+                  step="1"
+                  value={extra}
+                  onChange={(e) => setExtra(e.target.value)}
+                  placeholder="0.00"
+                  className="w-full h-14 pl-9 pr-4 rounded-xl border border-slate-200 bg-slate-50 text-xl font-semibold text-slate-800 outline-none focus:border-indigo-500 focus:bg-white focus:ring-4 focus:ring-indigo-100 transition"
+                />
+              </div>
+            </Field>
+          </div>
 
           <div className="mt-5">
             <Field label="Gateway" hint="Payment gateway used">
@@ -327,9 +355,9 @@ function ResultPanel({ result, gatewayLabel, config }) {
         <BreakdownRow label="Client Paid" value={usd(result.clientPaid)} />
         <BreakdownRow label="Extra" value={`- ${usd(result.extra)}`} muted />
         <BreakdownRow
-          label="Sale Tax"
-          sub={`${config.saleTaxPct}%`}
-          value={`- ${usd(result.saleTax)}`}
+          label="Taxes"
+          sub={`${totalTaxPct(config)}%`}
+          value={`- ${usd(result.taxes)}`}
           muted
         />
         <BreakdownRow
@@ -349,12 +377,12 @@ function ResultPanel({ result, gatewayLabel, config }) {
           muted
         />
         <div className="flex items-center justify-between px-4 py-3 bg-slate-50">
-          <span className="text-sm font-bold text-slate-700">Net</span>
+          <span className="text-sm font-bold text-slate-700">Revenue</span>
           <span
             className="text-lg font-bold"
-            style={{ color: result.net < 0 ? '#dc2626' : '#0f766e' }}
+            style={{ color: result.revenue < 0 ? '#dc2626' : '#0f766e' }}
           >
-            {usd(result.net)}
+            {usd(result.revenue)}
           </span>
         </div>
       </div>
@@ -472,20 +500,16 @@ function ConfigModal({ config, onClose, onSave }) {
         </div>
 
         <div className="px-6 py-5 overflow-y-auto">
-          <ConfigSection title="General">
-            <ConfigInput
-              label="Extra"
-              suffix="$"
-              step="1"
-              value={draft.extra}
-              onChange={setField('extra')}
-            />
-            <ConfigInput
-              label="Sale Tax"
-              suffix="%"
-              value={draft.saleTaxPct}
-              onChange={setField('saleTaxPct')}
-            />
+          <ConfigSection title="Taxes">
+            {TAX_FIELDS.map((tax) => (
+              <ConfigInput
+                key={tax.key}
+                label={tax.label}
+                suffix="%"
+                value={draft[tax.key]}
+                onChange={setField(tax.key)}
+              />
+            ))}
           </ConfigSection>
 
           <ConfigSection title="Transaction Fee">
@@ -524,7 +548,7 @@ function ConfigModal({ config, onClose, onSave }) {
             />
           </ConfigSection>
 
-          <ConfigSection title="Revenue share">
+          <ConfigSection title="Revenue share percentage">
             <ConfigInput
               label={LOC_NAME}
               suffix="%"
