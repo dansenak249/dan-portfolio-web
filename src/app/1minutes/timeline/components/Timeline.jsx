@@ -58,6 +58,13 @@ const NEW_ROW_ANIM_MS = 320
 // Endpoint that backs the file-based JSON persistence layer.
 const JOBS_ENDPOINT = '/api/1minutes/timeline/jobs'
 
+// localStorage keys for per-user (per-browser) view preferences. These are
+// purely visual choices, so they live client-side rather than on the shared
+// server (which only stores the commission data + its order).
+const LS_COLOR_MODE = '1minutes:timeline:colorMode'
+const LS_ASSIGNEE_FILTER = '1minutes:timeline:assigneeFilter'
+const LS_VIEW_MODE = '1minutes:timeline:viewMode'
+
 // Fields compared to determine whether the form is dirty.
 const DIRTY_KEYS = [
   'type',
@@ -158,6 +165,30 @@ function isDraftDifferent(draft, baseline) {
   return !sameIdSet(draft.assignees, baseline.assignees)
 }
 
+// useState variant that mirrors its value into localStorage under `key`.
+// SSR-safe: the lazy initializer returns `defaultValue` on the server, then
+// hydrates from storage on the client. Writes are best-effort (private mode /
+// quota errors are swallowed so they never break the UI).
+function usePersistentState(key, defaultValue) {
+  const [value, setValue] = useState(() => {
+    if (typeof window === 'undefined') return defaultValue
+    try {
+      const raw = window.localStorage.getItem(key)
+      return raw !== null ? JSON.parse(raw) : defaultValue
+    } catch {
+      return defaultValue
+    }
+  })
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(key, JSON.stringify(value))
+    } catch {
+      // ignore write failures (private mode, quota, disabled storage)
+    }
+  }, [key, value])
+  return [value, setValue]
+}
+
 export default function Timeline({ bgOn, onSetBg }) {
   // ---- Data state ----
   // jobs === null  → not yet loaded from the server
@@ -174,10 +205,15 @@ export default function Timeline({ bgOn, onSetBg }) {
 
   // ---- Assignee filter state ----
   // Selected user ids. Empty = filter inactive (all jobs shown).
-  const [selectedAssignees, setSelectedAssignees] = useState([])
+  // Persisted per-browser so the filter survives reloads.
+  const [selectedAssignees, setSelectedAssignees] = usePersistentState(
+    LS_ASSIGNEE_FILTER,
+    []
+  )
 
-  // ---- Fill-bar color mode ---- ('none' | 'type')
-  const [colorMode, setColorMode] = useState('none')
+  // ---- Fill-bar color mode ---- ('type' | 'none'), defaults to 'type'
+  // Persisted per-browser.
+  const [colorMode, setColorMode] = usePersistentState(LS_COLOR_MODE, 'type')
 
   // ---- Drag-to-reorder state ----
   const [draggingIndex, setDraggingIndex] = useState(null)
@@ -205,7 +241,7 @@ export default function Timeline({ bgOn, onSetBg }) {
   const didInitialScrollRef = useRef(false)
   const [isDragging, setIsDragging] = useState(false)
   const [todayIso, setTodayIso] = useState(null)
-  const [viewMode, setViewMode] = useState('month')
+  const [viewMode, setViewMode] = usePersistentState(LS_VIEW_MODE, 'month')
   const [bodyScrollTop, setBodyScrollTop] = useState(0)
   const [bodyScrollLeft, setBodyScrollLeft] = useState(0)
   const [laneViewport, setLaneViewport] = useState(0)
@@ -1083,6 +1119,7 @@ export default function Timeline({ bgOn, onSetBg }) {
                                 job={job}
                                 isActive={editingId === job.id}
                                 onClick={() => openEditFor(job.id)}
+                                colorMode={colorMode}
                               />
                             </div>
                           </div>

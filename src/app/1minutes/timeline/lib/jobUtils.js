@@ -44,17 +44,18 @@ export const COMMISSION_TYPES = [
     label: 'Animated Illustration',
     milestoneKeys: ['layoutSketch', 'colorSketch', 'render1', 'render2', 'animation'],
     deadlineWeekOffset: 8,
-    barGradient: 'linear-gradient(90deg, #ffd9ec 0%, #ffb3d9 100%)',
+    barGradient: 'linear-gradient(90deg, #fcd4c6 0%, #ff6e7f 100%)',
     accent: '#ff69b4',
   },
   {
     value: 'Illustration',
     label: 'Illustration',
     // Same as Animated Illustration, minus the Animation milestone.
+    // Keyed to the Add button's blue (#5b8de8).
     milestoneKeys: ['layoutSketch', 'colorSketch', 'render1', 'render2'],
     deadlineWeekOffset: 8,
-    barGradient: 'linear-gradient(90deg, #ddd6f7 0%, #b3a6ec 100%)',
-    accent: '#7c5cdb',
+    barGradient: 'linear-gradient(90deg, #aecaf5 0%, #f5c2e2 100%)',
+    accent: '#7d6fe0',
   },
   {
     value: 'Animation Only',
@@ -62,8 +63,8 @@ export const COMMISSION_TYPES = [
     // No Progress milestones at all — just Start → Deadline (+4 weeks).
     milestoneKeys: [],
     deadlineWeekOffset: 4,
-    barGradient: 'linear-gradient(90deg, #ffe2c2 0%, #ffc191 100%)',
-    accent: '#ff8c42',
+    barGradient: 'linear-gradient(90deg, #c4f5d0 0%, #5cf0ee 100%)',
+    accent: '#18a6c8',
   },
 ]
 
@@ -85,17 +86,23 @@ export function getTypeBarGradient(typeValue) {
   return getTypeConfig(typeValue).barGradient
 }
 
+// The representative solid accent color for a type.
+export function getTypeAccent(typeValue) {
+  return getTypeConfig(typeValue).accent
+}
+
 // Default auto-filled deadline offset (weeks after Start) for a type.
 export function getTypeDeadlineOffset(typeValue) {
   return getTypeConfig(typeValue).deadlineWeekOffset ?? DEFAULT_DEADLINE_WEEK_OFFSET
 }
 
-// Fill-bar color modes for the toolbar Color picker.
-//   none → the default tri-color gradient (current behaviour)
+// Fill-bar color modes for the toolbar Color picker. "Type" is the default,
+// so it leads the list; "None" sits last.
 //   type → a lighter gradient keyed to each task's type
+//   none → the default tri-color gradient
 export const COLOR_MODES = [
-  { value: 'none', label: 'None' },
   { value: 'type', label: 'Type' },
+  { value: 'none', label: 'None' },
 ]
 
 // Team members available for assignment, in fixed display order. A commission

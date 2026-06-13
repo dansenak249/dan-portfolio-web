@@ -2,8 +2,12 @@ import {
   MILESTONES,
   dateToPercent,
   formatShort,
+  getTypeAccent,
   getTypeBarGradient,
 } from '../lib/jobUtils'
+
+// Default type-label color when color mode is 'none'.
+const DEFAULT_TYPE_LABEL_COLOR = '#ff69b4'
 
 // Default tri-color fill gradient (used when color mode is 'none').
 const DEFAULT_BAR_GRADIENT =
@@ -14,7 +18,11 @@ export const ROW_HEIGHT_PX = 116
 
 // Left-side card: commission metadata (fixed column). Clickable to open
 // the edit panel for this commission.
-export function JobInfoCard({ job, isActive, onClick }) {
+export function JobInfoCard({ job, isActive, onClick, colorMode }) {
+  // In 'type' color mode the type label takes the type's accent so the list
+  // is readable at a glance; otherwise it keeps the default pink.
+  const typeLabelColor =
+    colorMode === 'type' ? getTypeAccent(job.type) : DEFAULT_TYPE_LABEL_COLOR
   return (
     <div
       data-edit-zone="commission-cell"
@@ -32,7 +40,10 @@ export function JobInfoCard({ job, isActive, onClick }) {
       }`}
       style={{ height: `${ROW_HEIGHT_PX}px` }}
     >
-      <div className="text-[10px] uppercase tracking-wider text-[#ff69b4] font-bold mb-1">
+      <div
+        className="text-[10px] uppercase tracking-wider font-bold mb-1"
+        style={{ color: typeLabelColor }}
+      >
         {job.type}
       </div>
       <div className="text-sm font-bold text-[#2d2d3a] leading-tight truncate">
