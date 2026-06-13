@@ -5,14 +5,19 @@ import { JobInfoCard, JobLane, ROW_HEIGHT_PX } from './JobRow'
 import EditPanel from './EditPanel'
 import LoadingScreen from '@/components/LoadingScreen'
 import {
+  COLOR_MODES,
   COMMISSION_TYPES,
   MILESTONES,
+  USERS,
   VIEW_MODES,
   addWeeks,
   autoFillMilestones,
   dateToPercent,
+  filterJobsByAssignees,
+  getMilestonesForType,
   getNextMonday,
   getTimelineAxis,
+  getTypeDeadlineOffset,
 } from '../lib/jobUtils'
 
 const DRAG_HANDLE_WIDTH = 28
@@ -81,6 +86,8 @@ const BLANK_JOB = {
   render2: '',
   animation: '',
   deadline: '',
+  // User ids assigned to this commission. Empty = shared/common task.
+  assignees: [],
 }
 
 // Hide native scrollbars while preserving scroll behavior.
@@ -95,7 +102,7 @@ const HIDE_SCROLLBAR_STYLE = {
 //   milestones = +1..+5 weeks (auto-filled)
 function buildNewDraft() {
   const startDate = getNextMonday()
-  const deadline = addWeeks(startDate, 8)
+  const deadline = addWeeks(startDate, getTypeDeadlineOffset(BLANK_JOB.type))
   return autoFillMilestones({
     ...BLANK_JOB,
     startDate,
@@ -103,30 +110,52 @@ function buildNewDraft() {
   })
 }
 
-// Recompute milestones when startDate or deadline changes inside the form.
+// Recompute milestones when startDate, deadline, or type changes inside the
+// form. Scoped to the milestones the current type uses; milestones the type
+// does not use are always cleared.
 function recomputeMilestones(job) {
-  if (!job.startDate) return job
+  const typeMilestones = getMilestonesForType(job.type)
+  const activeKeys = new Set(typeMilestones.map((m) => m.key))
   const next = { ...job }
-  if (next.deadline) {
-    const minDeadlineMs = new Date(addWeeks(next.startDate, 5)).getTime()
-    const deadlineMs = new Date(next.deadline).getTime()
-    if (deadlineMs < minDeadlineMs) {
-      for (const m of MILESTONES) {
-        next[m.key] = ''
-      }
+  // Clear milestones not used by the current type.
+  for (const m of MILESTONES) {
+    if (!activeKeys.has(m.key)) next[m.key] = ''
+  }
+  if (!next.startDate) return next
+  const maxOffset = typeMilestones.reduce(
+    (acc, m) => Math.max(acc, m.weekOffset),
+    0
+  )
+  if (next.deadline && maxOffset > 0) {
+    const minDeadlineMs = new Date(addWeeks(next.startDate, maxOffset)).getTime()
+    if (new Date(next.deadline).getTime() < minDeadlineMs) {
+      for (const m of typeMilestones) next[m.key] = ''
       return next
     }
   }
-  for (const m of MILESTONES) {
+  for (const m of typeMilestones) {
     next[m.key] = addWeeks(next.startDate, m.weekOffset)
   }
   return next
 }
 
+// Order-insensitive equality for two id arrays (used for assignees).
+function sameIdSet(a, b) {
+  const arrA = Array.isArray(a) ? a : []
+  const arrB = Array.isArray(b) ? b : []
+  if (arrA.length !== arrB.length) return false
+  const setB = new Set(arrB)
+  return arrA.every((id) => setB.has(id))
+}
+
 // Shallow value comparison across the fields users can edit.
 function isDraftDifferent(draft, baseline) {
   if (!draft || !baseline) return false
-  return DIRTY_KEYS.some((k) => (draft[k] ?? '') !== (baseline[k] ?? ''))
+  if (DIRTY_KEYS.some((k) => (draft[k] ?? '') !== (baseline[k] ?? ''))) {
+    return true
+  }
+  // assignees is an array — compare by membership, ignoring order.
+  return !sameIdSet(draft.assignees, baseline.assignees)
 }
 
 export default function Timeline({ bgOn, onSetBg }) {
@@ -142,6 +171,13 @@ export default function Timeline({ bgOn, onSetBg }) {
   // dirty-state comparison when creating.
   const [createBaseline, setCreateBaseline] = useState(null)
   const [confirmDeleteId, setConfirmDeleteId] = useState(null)
+
+  // ---- Assignee filter state ----
+  // Selected user ids. Empty = filter inactive (all jobs shown).
+  const [selectedAssignees, setSelectedAssignees] = useState([])
+
+  // ---- Fill-bar color mode ---- ('none' | 'type')
+  const [colorMode, setColorMode] = useState('none')
 
   // ---- Drag-to-reorder state ----
   const [draggingIndex, setDraggingIndex] = useState(null)
@@ -177,13 +213,18 @@ export default function Timeline({ bgOn, onSetBg }) {
   // slide-in animation, then resets to null so re-renders behave normally.
   const [newlyAddedId, setNewlyAddedId] = useState(null)
 
-  // Use an empty list while data is loading so derived axis calculations
-  // (which expect an array) don't throw. The actual render is gated on
-  // loadFailed / jobs === null further down.
-  const jobsForAxis = jobs ?? []
+  // Jobs currently visible given the assignee filter. Drives both the axis
+  // range and the rendered rows so the timeline fits what's on screen.
+  // Falls back to an empty list while data is loading so derived axis
+  // calculations (which expect an array) don't throw. The actual render is
+  // gated on loadFailed / jobs === null further down.
+  const visibleJobs = useMemo(
+    () => filterJobsByAssignees(jobs ?? [], selectedAssignees),
+    [jobs, selectedAssignees]
+  )
   const axis = useMemo(
-    () => getTimelineAxis(jobsForAxis, viewMode),
-    [jobsForAxis, viewMode]
+    () => getTimelineAxis(visibleJobs, viewMode),
+    [visibleJobs, viewMode]
   )
   const { minMs, maxMs, ticks, monthSegments, timelineWidth, cellWidth } = axis
 
@@ -366,6 +407,14 @@ export default function Timeline({ bgOn, onSetBg }) {
     setBodyScrollLeft(scrollRef.current.scrollLeft)
   }, [])
 
+  // ---- Assignee filter actions ----
+  const toggleAssigneeFilter = (id) => {
+    setSelectedAssignees((prev) =>
+      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
+    )
+  }
+  const clearAssigneeFilter = () => setSelectedAssignees([])
+
   // ---- Toolbar actions ----
   const scrollByMonth = (direction) => {
     if (!scrollRef.current) return
@@ -462,7 +511,7 @@ export default function Timeline({ bgOn, onSetBg }) {
     const rect = rowsRef.current.getBoundingClientRect()
     const y = e.clientY - rect.top
     const idx = Math.floor(y / ROW_HEIGHT_PX)
-    const clamped = Math.max(0, Math.min(jobs.length - 1, idx))
+    const clamped = Math.max(0, Math.min(visibleJobs.length - 1, idx))
     if (dragOverIndex !== clamped) setDragOverIndex(clamped)
   }
 
@@ -474,9 +523,19 @@ export default function Timeline({ bgOn, onSetBg }) {
     }
     const dropIndex = dragOverIndex ?? draggingIndex
     if (draggingIndex !== dropIndex && jobs) {
-      const next = [...jobs]
-      const [moved] = next.splice(draggingIndex, 1)
-      next.splice(dropIndex, 0, moved)
+      // draggingIndex/dropIndex are positions within the visible (filtered)
+      // list. Reorder that subset, then splice the result back into the full
+      // jobs array at the slots the visible rows originally occupied so any
+      // filtered-out jobs keep their absolute positions. With no filter
+      // active, visibleJobs === jobs and this is a plain reorder.
+      const reorderedVisible = [...visibleJobs]
+      const [moved] = reorderedVisible.splice(draggingIndex, 1)
+      reorderedVisible.splice(dropIndex, 0, moved)
+      const visibleIds = new Set(visibleJobs.map((j) => j.id))
+      let vi = 0
+      const next = jobs.map((job) =>
+        visibleIds.has(job.id) ? reorderedVisible[vi++] : job
+      )
       setJobs(next)
       // Array order IS the persisted position — write the new order
       // immediately so a refresh always reflects the latest layout.
@@ -527,8 +586,15 @@ export default function Timeline({ bgOn, onSetBg }) {
     setDrafts((prev) => {
       const current = prev[id] ?? baselineFor(id) ?? BLANK_JOB
       let next = { ...current, [key]: value }
-      // When the date frame changes, keep the +1..+5 progression in sync.
-      if (key === 'startDate' || key === 'deadline') {
+      // Switching type re-derives the default deadline for that type
+      // (e.g. Animation Only auto-fills +4 weeks instead of +8) before the
+      // milestone progression is recomputed.
+      if (key === 'type' && next.startDate) {
+        next.deadline = addWeeks(next.startDate, getTypeDeadlineOffset(value))
+      }
+      // When the date frame OR the type changes, re-derive the milestone
+      // progression so it matches the (possibly new) type's schema.
+      if (key === 'startDate' || key === 'deadline' || key === 'type') {
         next = recomputeMilestones(next)
       }
       return { ...prev, [id]: next }
@@ -647,7 +713,7 @@ export default function Timeline({ bgOn, onSetBg }) {
   const activeRowIndex =
     editingId === null || editingId === 'new'
       ? -1
-      : jobs.findIndex((j) => j.id === editingId)
+      : visibleJobs.findIndex((j) => j.id === editingId)
 
   const currentDraft =
     editingId !== null
@@ -665,8 +731,8 @@ export default function Timeline({ bgOn, onSetBg }) {
   const isPanelOpen = editingId !== null && currentDraft !== null
 
   // Blank rows fill to keep the body at exactly VISIBLE_ROWS.
-  const blankRowCount = Math.max(0, VISIBLE_ROWS - jobs.length)
-  const totalRowCount = jobs.length + blankRowCount
+  const blankRowCount = Math.max(0, VISIBLE_ROWS - visibleJobs.length)
+  const totalRowCount = visibleJobs.length + blankRowCount
 
   // The active row gradient frame is positioned relative to the body section
   // (which starts at TOTAL_HEADER_HEIGHT inside the body container).
@@ -678,7 +744,7 @@ export default function Timeline({ bgOn, onSetBg }) {
   // Allow vertical scrolling only when there are more rows than the visible
   // window. With exactly VISIBLE_ROWS or fewer, force overflow hidden so the
   // user can't nudge the body into a half-pixel scroll.
-  const allowYScroll = jobs.length > VISIBLE_ROWS
+  const allowYScroll = visibleJobs.length > VISIBLE_ROWS
 
   // Add button visual state — dim/inactive look when the create panel is
   // already open, so it reads as "you're already in this mode" instead of
@@ -701,7 +767,7 @@ export default function Timeline({ bgOn, onSetBg }) {
           className="inline-flex items-center justify-center min-w-[28px] h-6 px-2 rounded bg-white text-[#2d2d3a] text-sm font-bold leading-none"
           style={{ boxShadow: '0 2px 8px rgba(75, 0, 130, 0.12)' }}
         >
-          {jobs.length}
+          {visibleJobs.length}
         </span>
       </div>
 
@@ -735,7 +801,7 @@ export default function Timeline({ bgOn, onSetBg }) {
                 </button>
               </div>
 
-              {/* Right: BG toggle + view + pan controls */}
+              {/* Right: BG toggle + view + pan controls + color/filter */}
               <div className="flex items-center gap-3">
                 {/* BG toggle (ON / OFF) — ON sits on the left, OFF is the
                     default selection on the right. */}
@@ -797,6 +863,20 @@ export default function Timeline({ bgOn, onSetBg }) {
                   >
                     <ChevronRight />
                   </ToolbarButton>
+                </div>
+                <div className="w-px h-6 bg-[#e9ecf5]" />
+                <div className="flex items-center gap-1.5">
+                  <ColorPicker
+                    modes={COLOR_MODES}
+                    value={colorMode}
+                    onChange={setColorMode}
+                  />
+                  <AssigneeFilter
+                    users={USERS}
+                    selected={selectedAssignees}
+                    onToggle={toggleAssigneeFilter}
+                    onClear={clearAssigneeFilter}
+                  />
                 </div>
               </div>
             </div>
@@ -961,7 +1041,7 @@ export default function Timeline({ bgOn, onSetBg }) {
                     className="sticky left-0 z-20 flex-none border-r border-[#e9ecf5] bg-white"
                     style={{ width: `${LEFT_TOTAL_WIDTH}px` }}
                   >
-                    {jobs.map((job, index) => {
+                    {visibleJobs.map((job, index) => {
                       const isBeingDragged = draggingIndex === index
                       const isNewlyAdded = job.id === newlyAddedId
                       const isHovered =
@@ -1039,7 +1119,7 @@ export default function Timeline({ bgOn, onSetBg }) {
                       ))}
                     </div>
 
-                    {jobs.map((job, index) => {
+                    {visibleJobs.map((job, index) => {
                       const isBeingDragged = draggingIndex === index
                       const isNewlyAdded = job.id === newlyAddedId
                       const isHovered =
@@ -1075,6 +1155,7 @@ export default function Timeline({ bgOn, onSetBg }) {
                               maxMs={maxMs}
                               isDragging={isDragging}
                               isActive={editingId === job.id}
+                              colorMode={colorMode}
                             />
                           </div>
                         </div>
@@ -1362,6 +1443,226 @@ function DragIcon() {
       <line x1="4" y1="8" x2="20" y2="8" />
       <line x1="4" y1="12" x2="20" y2="12" />
       <line x1="4" y1="16" x2="20" y2="16" />
+    </svg>
+  )
+}
+
+// Square toolbar button that opens a dropdown of team members. Ticking a
+// member narrows the timeline to their tasks (plus unassigned/common tasks).
+// Manages its own open state and closes on an outside click.
+function AssigneeFilter({ users, selected, onToggle, onClear }) {
+  const [open, setOpen] = useState(false)
+  const ref = useRef(null)
+
+  useEffect(() => {
+    if (!open) return
+    const handler = (e) => {
+      if (ref.current && !ref.current.contains(e.target)) setOpen(false)
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [open])
+
+  const activeCount = selected.length
+
+  return (
+    <div className="relative" ref={ref}>
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        aria-label="Filter by assignee"
+        aria-expanded={open}
+        className={`relative w-8 h-8 flex items-center justify-center rounded transition-colors ${
+          activeCount > 0
+            ? 'bg-[#5b5bd6] text-white hover:bg-[#4a4ac4]'
+            : open
+              ? 'bg-[#eef2fc] text-[#2d2d3a]'
+              : 'text-[#6b6b8a] hover:bg-[#f4f6fc] hover:text-[#2d2d3a]'
+        }`}
+      >
+        <FilterIcon />
+        {activeCount > 0 && (
+          <span className="absolute -top-1 -right-1 min-w-[15px] h-[15px] px-1 rounded-full bg-[#ff69b4] text-white text-[9px] font-bold flex items-center justify-center leading-none">
+            {activeCount}
+          </span>
+        )}
+      </button>
+
+      {open && (
+        <div className="absolute z-50 right-0 mt-2 w-60 rounded-lg border border-[#e9ecf5] bg-white py-1 shadow-xl">
+          <div className="flex items-center justify-between px-3 py-2 border-b border-[#e9ecf5]">
+            <span className="text-[10px] uppercase tracking-wider font-bold text-[#6b6b8a]">
+              Filter by assignee
+            </span>
+            {activeCount > 0 && (
+              <button
+                type="button"
+                onClick={onClear}
+                className="text-[10px] uppercase tracking-wider font-bold text-[#5b8de8] hover:text-[#4a78d6] transition-colors"
+              >
+                Clear
+              </button>
+            )}
+          </div>
+          {users.map((u) => {
+            const checked = selected.includes(u.id)
+            return (
+              <button
+                key={u.id}
+                type="button"
+                onClick={() => onToggle(u.id)}
+                className="w-full flex items-center gap-2.5 px-3 h-9 text-sm text-left hover:bg-[#f4f6fc] transition-colors"
+              >
+                <CheckBox checked={checked} />
+                <span className="text-[#2d2d3a]">{u.name}</span>
+              </button>
+            )
+          })}
+          <div className="px-3 pt-1.5 pb-1 mt-1 border-t border-[#e9ecf5] text-[10px] text-[#a7a7b8] italic leading-snug">
+            Common (unassigned) tasks always stay visible.
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function CheckBox({ checked }) {
+  return (
+    <span
+      className={`w-4 h-4 rounded flex items-center justify-center border transition-colors flex-none ${
+        checked ? 'bg-[#5b5bd6] border-[#5b5bd6]' : 'bg-white border-[#c8cee0]'
+      }`}
+    >
+      {checked && (
+        <svg
+          width="10"
+          height="10"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="white"
+          strokeWidth="3.5"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        >
+          <polyline points="20 6 9 17 4 12" />
+        </svg>
+      )}
+    </span>
+  )
+}
+
+function FilterIcon() {
+  return (
+    <svg
+      width="15"
+      height="15"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3" />
+    </svg>
+  )
+}
+
+// Square toolbar button that opens a single-select dropdown controlling how
+// the timeline fill bars are colored. Closes on an outside click.
+function ColorPicker({ modes, value, onChange }) {
+  const [open, setOpen] = useState(false)
+  const ref = useRef(null)
+
+  useEffect(() => {
+    if (!open) return
+    const handler = (e) => {
+      if (ref.current && !ref.current.contains(e.target)) setOpen(false)
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [open])
+
+  const isActive = value !== 'none'
+
+  return (
+    <div className="relative" ref={ref}>
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        aria-label="Fill bar color mode"
+        aria-expanded={open}
+        className={`w-8 h-8 flex items-center justify-center rounded transition-colors ${
+          isActive
+            ? 'bg-[#5b5bd6] text-white hover:bg-[#4a4ac4]'
+            : open
+              ? 'bg-[#eef2fc] text-[#2d2d3a]'
+              : 'text-[#6b6b8a] hover:bg-[#f4f6fc] hover:text-[#2d2d3a]'
+        }`}
+      >
+        <PaletteIcon />
+      </button>
+
+      {open && (
+        <div className="absolute z-50 right-0 mt-2 w-44 rounded-lg border border-[#e9ecf5] bg-white py-1 shadow-xl">
+          <div className="px-3 py-2 border-b border-[#e9ecf5]">
+            <span className="text-[10px] uppercase tracking-wider font-bold text-[#6b6b8a]">
+              Fill bar color
+            </span>
+          </div>
+          {modes.map((m) => {
+            const selected = value === m.value
+            return (
+              <button
+                key={m.value}
+                type="button"
+                onClick={() => {
+                  onChange(m.value)
+                  setOpen(false)
+                }}
+                className="w-full flex items-center gap-2.5 px-3 h-9 text-sm text-left hover:bg-[#f4f6fc] transition-colors"
+              >
+                <RadioDot selected={selected} />
+                <span className="text-[#2d2d3a]">{m.label}</span>
+              </button>
+            )
+          })}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function RadioDot({ selected }) {
+  return (
+    <span
+      className={`w-4 h-4 rounded-full flex items-center justify-center border transition-colors flex-none ${
+        selected ? 'border-[#5b5bd6]' : 'border-[#c8cee0]'
+      }`}
+    >
+      {selected && <span className="w-2 h-2 rounded-full bg-[#5b5bd6]" />}
+    </span>
+  )
+}
+
+function PaletteIcon() {
+  return (
+    <svg
+      width="15"
+      height="15"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <circle cx="13.5" cy="6.5" r=".5" fill="currentColor" />
+      <circle cx="17.5" cy="10.5" r=".5" fill="currentColor" />
+      <circle cx="8.5" cy="7.5" r=".5" fill="currentColor" />
+      <circle cx="6.5" cy="12.5" r=".5" fill="currentColor" />
+      <path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.926 0 1.648-.746 1.648-1.688 0-.437-.18-.835-.437-1.125-.29-.289-.438-.652-.438-1.125a1.64 1.64 0 0 1 1.668-1.668h1.996c3.051 0 5.555-2.503 5.555-5.554C21.965 6.012 17.461 2 12 2z" />
     </svg>
   )
 }

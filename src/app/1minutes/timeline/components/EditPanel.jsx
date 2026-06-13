@@ -1,12 +1,16 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import {
   COMMISSION_TYPES,
   FIELD_LABELS,
-  MILESTONES,
+  USERS,
+  getMilestonesForType,
   validateJobDates,
 } from '../lib/jobUtils'
+
+// Assignee dropdown options, derived from the fixed team list.
+const ASSIGNEE_OPTIONS = USERS.map((u) => ({ value: u.id, label: u.name }))
 
 // Right-hand edit/create form. Pure-presentational: it reads from `draft`,
 // emits field changes via `onFieldChange`, and delegates Save / Restore /
@@ -22,6 +26,10 @@ export default function EditPanel({
   onClose, // () => void
 }) {
   const [isProgressOpen, setIsProgressOpen] = useState(false)
+
+  // Milestones this commission's type uses. Empty (e.g. Animation Only) hides
+  // the Progress group entirely.
+  const typeMilestones = getMilestonesForType(draft?.type)
 
   const validation = validateJobDates(draft)
   // Save is enabled only when (a) the draft differs from the baseline
@@ -102,6 +110,15 @@ export default function EditPanel({
           </div>
         </Field>
 
+        <Field label="Assignee">
+          <MultiSelectInput
+            value={draft?.assignees ?? []}
+            onChange={(v) => onFieldChange('assignees', v)}
+            options={ASSIGNEE_OPTIONS}
+            placeholder="Unassigned (common task)"
+          />
+        </Field>
+
         <Field label={FIELD_LABELS.startDate} required>
           <input
             type="date"
@@ -111,52 +128,51 @@ export default function EditPanel({
           />
         </Field>
 
-        {/* Progress group — collapsed by default. Holds the +1..+5 week
-            milestones. Pre-filled from startDate; cleared automatically
-            when the deadline is too tight to fit them. */}
-        <div>
-          <button
-            type="button"
-            onClick={() => setIsProgressOpen((v) => !v)}
-            className="w-full flex items-center justify-between gap-2 px-3 h-9 rounded bg-[#f4f6fc] hover:bg-[#eef2fc] transition-colors"
-          >
-            <span className="text-[11px] uppercase tracking-wider font-bold text-[#5b5bd6]">
-              Progress
-            </span>
-            <span
-              className="text-[#5b5bd6] transition-transform"
-              style={{
-                transform: isProgressOpen ? 'rotate(180deg)' : 'rotate(0deg)',
-              }}
+        {/* Progress group — collapsed by default. Holds the milestones the
+            current type uses. Pre-filled from startDate; cleared automatically
+            when the deadline is too tight to fit them. Hidden entirely for
+            types with no milestones (e.g. Animation Only). */}
+        {typeMilestones.length > 0 && (
+          <div>
+            <button
+              type="button"
+              onClick={() => setIsProgressOpen((v) => !v)}
+              className="w-full flex items-center justify-between gap-2 px-3 h-9 rounded bg-[#f4f6fc] hover:bg-[#eef2fc] transition-colors"
             >
-              <ChevronDownSmall />
-            </span>
-          </button>
-          {isProgressOpen && (
-            <div className="mt-3 pl-3 border-l-2 border-[#e9ecf5] space-y-3">
-              {MILESTONES.map((m) => (
-                <Field key={m.key} label={FIELD_LABELS[m.key]}>
-                  <input
-                    type="date"
-                    value={draft?.[m.key] ?? ''}
-                    onChange={(e) => onFieldChange(m.key, e.target.value)}
-                    className="w-full h-9 px-3 rounded border border-[#e0e4ee] bg-white text-sm text-[#2d2d3a] focus:outline-none focus:border-[#5b5bd6] focus:ring-2 focus:ring-[#5b5bd6]/15"
-                  />
-                </Field>
-              ))}
-              {(!draft?.layoutSketch ||
-                !draft?.colorSketch ||
-                !draft?.render1 ||
-                !draft?.render2 ||
-                !draft?.animation) && (
-                <div className="text-[11px] text-[#a7a7b8] italic">
-                  Some milestones are empty — usually because the deadline is
-                  too tight for the standard +1..+5 week progression.
-                </div>
-              )}
-            </div>
-          )}
-        </div>
+              <span className="text-[11px] uppercase tracking-wider font-bold text-[#5b5bd6]">
+                Progress
+              </span>
+              <span
+                className="text-[#5b5bd6] transition-transform"
+                style={{
+                  transform: isProgressOpen ? 'rotate(180deg)' : 'rotate(0deg)',
+                }}
+              >
+                <ChevronDownSmall />
+              </span>
+            </button>
+            {isProgressOpen && (
+              <div className="mt-3 pl-3 border-l-2 border-[#e9ecf5] space-y-3">
+                {typeMilestones.map((m) => (
+                  <Field key={m.key} label={FIELD_LABELS[m.key]}>
+                    <input
+                      type="date"
+                      value={draft?.[m.key] ?? ''}
+                      onChange={(e) => onFieldChange(m.key, e.target.value)}
+                      className="w-full h-9 px-3 rounded border border-[#e0e4ee] bg-white text-sm text-[#2d2d3a] focus:outline-none focus:border-[#5b5bd6] focus:ring-2 focus:ring-[#5b5bd6]/15"
+                    />
+                  </Field>
+                ))}
+                {typeMilestones.some((m) => !draft?.[m.key]) && (
+                  <div className="text-[11px] text-[#a7a7b8] italic">
+                    Some milestones are empty — usually because the deadline is
+                    too tight for the standard weekly progression.
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        )}
 
         <Field label={FIELD_LABELS.deadline} required>
           <input
@@ -250,6 +266,104 @@ function SelectInput({ value, onChange, options }) {
         <ChevronDownSmall />
       </span>
     </div>
+  )
+}
+
+// Multi-select dropdown with tickable options. `value` is an array of option
+// values; `onChange` receives the next array. Closes on an outside click.
+function MultiSelectInput({ value, onChange, options, placeholder }) {
+  const [open, setOpen] = useState(false)
+  const ref = useRef(null)
+  const selected = Array.isArray(value) ? value : []
+
+  useEffect(() => {
+    if (!open) return
+    const handler = (e) => {
+      if (ref.current && !ref.current.contains(e.target)) setOpen(false)
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [open])
+
+  const toggle = (id) => {
+    if (selected.includes(id)) {
+      onChange(selected.filter((x) => x !== id))
+    } else {
+      onChange([...selected, id])
+    }
+  }
+
+  const summary =
+    selected.length === 0
+      ? placeholder
+      : options
+          .filter((o) => selected.includes(o.value))
+          .map((o) => o.label)
+          .join(', ')
+
+  return (
+    <div className="relative" ref={ref}>
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        aria-expanded={open}
+        className="w-full h-9 pl-3 pr-8 rounded border border-[#e0e4ee] bg-white text-sm text-left flex items-center focus:outline-none focus:border-[#5b5bd6] focus:ring-2 focus:ring-[#5b5bd6]/15"
+      >
+        <span
+          className={`truncate ${
+            selected.length === 0 ? 'text-[#a7a7b8]' : 'text-[#2d2d3a]'
+          }`}
+        >
+          {summary}
+        </span>
+      </button>
+      <span className="absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none text-[#a7a7b8]">
+        <ChevronDownSmall />
+      </span>
+      {open && (
+        <div className="absolute z-50 left-0 right-0 mt-1 rounded border border-[#e0e4ee] bg-white py-1 shadow-lg">
+          {options.map((opt) => {
+            const checked = selected.includes(opt.value)
+            return (
+              <button
+                key={opt.value}
+                type="button"
+                onClick={() => toggle(opt.value)}
+                className="w-full flex items-center gap-2.5 px-3 h-9 text-sm text-left hover:bg-[#f4f6fc] transition-colors"
+              >
+                <CheckBox checked={checked} />
+                <span className="text-[#2d2d3a]">{opt.label}</span>
+              </button>
+            )
+          })}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function CheckBox({ checked }) {
+  return (
+    <span
+      className={`w-4 h-4 rounded flex items-center justify-center border transition-colors flex-none ${
+        checked ? 'bg-[#5b5bd6] border-[#5b5bd6]' : 'bg-white border-[#c8cee0]'
+      }`}
+    >
+      {checked && (
+        <svg
+          width="10"
+          height="10"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="white"
+          strokeWidth="3.5"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        >
+          <polyline points="20 6 9 17 4 12" />
+        </svg>
+      )}
+    </span>
   )
 }
 

@@ -29,11 +29,104 @@ export const FIELD_LABELS = {
   deadline: 'Deadline',
 }
 
-// Commission types — dropdown options. Each entry may later carry its own
-// milestone schema; for now they share the standard 5-week progression.
+// Default auto-filled deadline offset (weeks after Start) when a type does
+// not specify its own.
+export const DEFAULT_DEADLINE_WEEK_OFFSET = 8
+
+// Commission types — dropdown options. Each entry declares:
+//   - milestoneKeys:        which Progress milestones it uses (subset of MILESTONES)
+//   - deadlineWeekOffset:   default auto-filled deadline (weeks after Start)
+//   - barGradient:          the subtle fill-bar gradient used in "Type" color mode
+//   - accent:               the type's representative solid color
 export const COMMISSION_TYPES = [
-  { value: 'Animated Illustration', label: 'Animated Illustration' },
+  {
+    value: 'Animated Illustration',
+    label: 'Animated Illustration',
+    milestoneKeys: ['layoutSketch', 'colorSketch', 'render1', 'render2', 'animation'],
+    deadlineWeekOffset: 8,
+    barGradient: 'linear-gradient(90deg, #ffd9ec 0%, #ffb3d9 100%)',
+    accent: '#ff69b4',
+  },
+  {
+    value: 'Illustration',
+    label: 'Illustration',
+    // Same as Animated Illustration, minus the Animation milestone.
+    milestoneKeys: ['layoutSketch', 'colorSketch', 'render1', 'render2'],
+    deadlineWeekOffset: 8,
+    barGradient: 'linear-gradient(90deg, #ddd6f7 0%, #b3a6ec 100%)',
+    accent: '#7c5cdb',
+  },
+  {
+    value: 'Animation Only',
+    label: 'Animation Only',
+    // No Progress milestones at all — just Start → Deadline (+4 weeks).
+    milestoneKeys: [],
+    deadlineWeekOffset: 4,
+    barGradient: 'linear-gradient(90deg, #ffe2c2 0%, #ffc191 100%)',
+    accent: '#ff8c42',
+  },
 ]
+
+// Look up a type's full config, defaulting to the first type when unknown.
+export function getTypeConfig(typeValue) {
+  return (
+    COMMISSION_TYPES.find((t) => t.value === typeValue) ?? COMMISSION_TYPES[0]
+  )
+}
+
+// The ordered milestone definitions a given type actually uses.
+export function getMilestonesForType(typeValue) {
+  const keys = new Set(getTypeConfig(typeValue).milestoneKeys)
+  return MILESTONES.filter((m) => keys.has(m.key))
+}
+
+// The subtle fill-bar gradient for a type (used in "Type" color mode).
+export function getTypeBarGradient(typeValue) {
+  return getTypeConfig(typeValue).barGradient
+}
+
+// Default auto-filled deadline offset (weeks after Start) for a type.
+export function getTypeDeadlineOffset(typeValue) {
+  return getTypeConfig(typeValue).deadlineWeekOffset ?? DEFAULT_DEADLINE_WEEK_OFFSET
+}
+
+// Fill-bar color modes for the toolbar Color picker.
+//   none → the default tri-color gradient (current behaviour)
+//   type → a lighter gradient keyed to each task's type
+export const COLOR_MODES = [
+  { value: 'none', label: 'None' },
+  { value: 'type', label: 'Type' },
+]
+
+// Team members available for assignment, in fixed display order. A commission
+// may be assigned to one or more of these. A commission with no assignees is
+// treated as a shared/common task that is visible to everyone.
+export const USERS = [
+  { id: 'duy-anh-nguyen', name: 'Duy Anh Nguyen' },
+  { id: 'le-van-nguyen-dan', name: 'Le Van Nguyen Dan' },
+  { id: 'phan-thien-loc', name: 'Phan Thien Loc' },
+]
+
+// Map a user id to its display name (falls back to the id when unknown).
+export function getUserName(id) {
+  const user = USERS.find((u) => u.id === id)
+  return user ? user.name : id
+}
+
+// Filter jobs by a set of selected assignee ids.
+// Visibility rules:
+//   - empty selection      → filter inactive, every job is visible
+//   - job has no assignees  → "common" task, always visible
+//   - otherwise             → visible when it shares at least one selected id
+export function filterJobsByAssignees(jobs, selectedIds) {
+  if (!selectedIds || selectedIds.length === 0) return jobs
+  const selected = new Set(selectedIds)
+  return jobs.filter((job) => {
+    const assignees = job.assignees
+    if (!Array.isArray(assignees) || assignees.length === 0) return true
+    return assignees.some((id) => selected.has(id))
+  })
+}
 
 // Cell widths per axis unit.
 export const WEEK_WIDTH_MONTH_VIEW = 100 // px per week, in Month view
@@ -62,40 +155,50 @@ export function getNextMonday(fromDate = new Date()) {
   return d.toISOString().slice(0, 10)
 }
 
-// Auto-fill milestone fields from startDate + weekOffset.
-// If the deadline is too tight to accommodate the full +5-week progression,
-// all milestones are cleared instead.
+// Auto-fill milestone fields from startDate + weekOffset, scoped to the
+// milestones the job's type actually uses. Milestones not used by the type
+// are always cleared. If the deadline is too tight to accommodate the type's
+// full progression, that type's milestones are cleared too.
 export function autoFillMilestones(job) {
-  if (!job.startDate) return job
-  if (job.deadline) {
-    const minDeadline = addWeeks(job.startDate, 5)
-    if (new Date(job.deadline).getTime() < new Date(minDeadline).getTime()) {
-      const cleared = { ...job }
-      for (const m of MILESTONES) {
-        cleared[m.key] = ''
-      }
-      return cleared
-    }
-  }
-  const filled = { ...job }
+  const typeMilestones = getMilestonesForType(job.type)
+  const activeKeys = new Set(typeMilestones.map((m) => m.key))
+  const result = { ...job }
+  // Clear any milestone the current type does not use.
   for (const m of MILESTONES) {
-    if (!filled[m.key]) {
-      filled[m.key] = addWeeks(job.startDate, m.weekOffset)
+    if (!activeKeys.has(m.key)) result[m.key] = ''
+  }
+  if (!job.startDate) return result
+  const maxOffset = typeMilestones.reduce(
+    (acc, m) => Math.max(acc, m.weekOffset),
+    0
+  )
+  if (job.deadline && maxOffset > 0) {
+    const minDeadline = addWeeks(job.startDate, maxOffset)
+    if (new Date(job.deadline).getTime() < new Date(minDeadline).getTime()) {
+      for (const m of typeMilestones) result[m.key] = ''
+      return result
     }
   }
-  return filled
+  for (const m of typeMilestones) {
+    if (!result[m.key]) {
+      result[m.key] = addWeeks(job.startDate, m.weekOffset)
+    }
+  }
+  return result
 }
 
-// Validate that every date field is in the correct chronological order.
+// Validate that every PRESENT date field is in chronological order. Empty
+// fields (e.g. milestones a type skips) are ignored, and ordering is checked
+// across consecutive present fields so gaps don't hide an invalid sequence.
 export function validateJobDates(job) {
   const errors = []
-  for (let i = 1; i < DATE_FIELDS_ORDER.length; i++) {
-    const prevField = DATE_FIELDS_ORDER[i - 1]
-    const currField = DATE_FIELDS_ORDER[i]
-    const prev = job[prevField]
-    const curr = job[currField]
-    if (!prev || !curr) continue
-    if (new Date(curr).getTime() < new Date(prev).getTime()) {
+  const present = DATE_FIELDS_ORDER.filter((f) => job[f])
+  for (let i = 1; i < present.length; i++) {
+    const prevField = present[i - 1]
+    const currField = present[i]
+    if (
+      new Date(job[currField]).getTime() < new Date(job[prevField]).getTime()
+    ) {
       errors.push(
         `${FIELD_LABELS[currField]} must be on or after ${FIELD_LABELS[prevField]}`
       )

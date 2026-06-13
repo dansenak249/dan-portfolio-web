@@ -1,4 +1,13 @@
-import { MILESTONES, dateToPercent, formatShort } from '../lib/jobUtils'
+import {
+  MILESTONES,
+  dateToPercent,
+  formatShort,
+  getTypeBarGradient,
+} from '../lib/jobUtils'
+
+// Default tri-color fill gradient (used when color mode is 'none').
+const DEFAULT_BAR_GRADIENT =
+  'linear-gradient(90deg, #b1d5ff 0%, #C8E6F5 50%, #ffc4e4 100%)'
 
 // Row height shared by left info card and right lane.
 export const ROW_HEIGHT_PX = 116
@@ -42,10 +51,21 @@ export function JobInfoCard({ job, isActive, onClick }) {
 
 // Right-side lane: the bar + caps + milestone dots positioned inside the
 // scrollable timeline column.
-export function JobLane({ job, minMs, maxMs, isDragging, isActive }) {
+export function JobLane({ job, minMs, maxMs, isDragging, isActive, colorMode }) {
   const startPct = dateToPercent(job.startDate, minMs, maxMs)
   const endPct = dateToPercent(job.deadline, minMs, maxMs)
   const widthPct = Math.max(endPct - startPct, 0.3)
+
+  // 'type' mode tints the bar with a lighter, type-specific gradient; 'none'
+  // (default) keeps the original tri-color gradient. The shadow is softened
+  // in type mode so the lighter fills don't carry a heavy blue glow.
+  const isTypeMode = colorMode === 'type'
+  const barBackground = isTypeMode
+    ? getTypeBarGradient(job.type)
+    : DEFAULT_BAR_GRADIENT
+  const barShadow = isTypeMode
+    ? '0 2px 8px rgba(45, 45, 58, 0.12), inset 0 1px 0 rgba(255,255,255,0.6)'
+    : '0 4px 12px rgba(177, 213, 255, 0.45), inset 0 1px 0 rgba(255,255,255,0.6)'
 
   return (
     <div
@@ -61,10 +81,8 @@ export function JobLane({ job, minMs, maxMs, isDragging, isActive }) {
           left: `${startPct}%`,
           width: `${widthPct}%`,
           borderRadius: '3px',
-          background:
-            'linear-gradient(90deg, #b1d5ff 0%, #C8E6F5 50%, #ffc4e4 100%)',
-          boxShadow:
-            '0 4px 12px rgba(177, 213, 255, 0.45), inset 0 1px 0 rgba(255,255,255,0.6)',
+          background: barBackground,
+          boxShadow: barShadow,
         }}
       />
 
