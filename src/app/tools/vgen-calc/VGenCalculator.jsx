@@ -70,20 +70,18 @@ function normalizeConfig(raw) {
 }
 
 // Pure calculation.
-// Revenue = Client Paid - Extra - Taxes - VGen - Gateway.
-function calculate(clientPaid, extra, gateway, config) {
+// Revenue = Client Paid - Taxes - VGen - Gateway.
+function calculate(clientPaid, gateway, config) {
   const cp = toNumber(clientPaid, 0)
-  const extraNum = toNumber(extra, 0)
   const taxes = cp * (totalTaxPct(config) / 100)
   const vgen = cp * (config.vgenPct / 100) + config.vgenFixed
   const gateway_fee =
     gateway === 'paypal'
       ? cp * (config.paypalPct / 100) + config.paypalFixed
       : cp * (config.stripePct / 100) + config.stripeFixed
-  const revenue = cp - extraNum - taxes - vgen - gateway_fee
+  const revenue = cp - taxes - vgen - gateway_fee
   return {
     clientPaid: cp,
-    extra: extraNum,
     taxes,
     vgen,
     gateway_fee,
@@ -95,7 +93,6 @@ function calculate(clientPaid, extra, gateway, config) {
 
 const EMPTY_RESULT = {
   clientPaid: 0,
-  extra: 0,
   taxes: 0,
   vgen: 0,
   gateway_fee: 0,
@@ -106,7 +103,6 @@ const EMPTY_RESULT = {
 
 export default function VGenCalculator() {
   const [clientPaid, setClientPaid] = useState('')
-  const [extra, setExtra] = useState('')
   const [gateway, setGateway] = useState('paypal')
   const [config, setConfig] = useState(DEFAULT_CONFIG)
   const [showConfig, setShowConfig] = useState(false)
@@ -133,8 +129,8 @@ export default function VGenCalculator() {
   // instead of a negative number from the fixed gateway fee.
   const result = useMemo(() => {
     if (clientPaid.trim() === '') return EMPTY_RESULT
-    return calculate(clientPaid, extra, gateway, config)
-  }, [clientPaid, extra, gateway, config])
+    return calculate(clientPaid, gateway, config)
+  }, [clientPaid, gateway, config])
 
   const gatewayLabel = useMemo(
     () => GATEWAYS.find((g) => g.id === gateway)?.label ?? gateway,
@@ -219,25 +215,6 @@ export default function VGenCalculator() {
               />
             </div>
           </Field>
-
-          <div className="mt-5">
-            <Field label="Extra" hint="Extra deal before revenue share">
-              <div className="relative">
-                <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 font-semibold pointer-events-none">
-                  $
-                </span>
-                <input
-                  type="number"
-                  inputMode="decimal"
-                  step="1"
-                  value={extra}
-                  onChange={(e) => setExtra(e.target.value)}
-                  placeholder="0.00"
-                  className="w-full h-14 pl-9 pr-4 rounded-xl border border-slate-200 bg-slate-50 text-xl font-semibold text-slate-800 outline-none focus:border-indigo-500 focus:bg-white focus:ring-4 focus:ring-indigo-100 transition"
-                />
-              </div>
-            </Field>
-          </div>
 
           <div className="mt-5">
             <Field label="Gateway" hint="Payment gateway used">
@@ -353,7 +330,6 @@ function ResultPanel({ result, gatewayLabel, config }) {
           Rate hints sit in a left-aligned column hugging the value column. */}
       <div className="rounded-xl border border-slate-200 divide-y divide-slate-100 overflow-hidden">
         <BreakdownRow label="Client Paid" value={usd(result.clientPaid)} />
-        <BreakdownRow label="Extra" value={`- ${usd(result.extra)}`} muted />
         <BreakdownRow
           label="Taxes"
           sub={`${totalTaxPct(config)}%`}
@@ -548,7 +524,7 @@ function ConfigModal({ config, onClose, onSave }) {
             />
           </ConfigSection>
 
-          <ConfigSection title="Revenue share percentage">
+          <ConfigSection title="Revenue share amount">
             <ConfigInput
               label={LOC_NAME}
               suffix="%"
