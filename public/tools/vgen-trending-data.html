@@ -1,0 +1,844 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="robots" content="noindex, nofollow" />
+<title>VGen Trending - Data Viewer</title>
+<style>
+  :root {
+    --bg: oklch(16% 0.02 270);
+    --surface: oklch(21% 0.025 270);
+    --surface-2: oklch(26% 0.03 270);
+    --text: oklch(94% 0.01 270);
+    --muted: oklch(68% 0.02 270);
+    --accent: oklch(72% 0.18 200);
+    --accent-2: oklch(74% 0.19 330);
+    --good: oklch(74% 0.17 150);
+    --warn: oklch(80% 0.16 80);
+    --bad: oklch(63% 0.21 25);
+    --line: oklch(32% 0.02 270);
+    --radius: 12px;
+    --brand: #ff69b4;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font: 14px/1.5 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  header {
+    padding: 20px 28px; border-bottom: 1px solid var(--line);
+    display: flex; align-items: baseline; gap: 16px; flex-wrap: wrap;
+    background: linear-gradient(180deg, var(--surface), transparent);
+  }
+  header h1 { font-size: 18px; margin: 0; letter-spacing: -0.01em; }
+  header .meta { color: var(--muted); font-size: 12px; }
+  header button {
+    margin-left: auto; background: var(--accent); color: oklch(14% 0.02 270);
+    border: 0; padding: 8px 16px; border-radius: 8px; font-weight: 600;
+    cursor: pointer;
+  }
+  header button:hover { filter: brightness(1.08); }
+  nav { display: flex; gap: 4px; padding: 0 28px; border-bottom: 1px solid var(--line); }
+  nav a {
+    padding: 12px 16px; color: var(--muted); cursor: pointer;
+    border-bottom: 2px solid transparent; user-select: none; font-weight: 500;
+  }
+  nav a.active { color: var(--text); border-bottom-color: var(--accent); }
+  main { padding: 24px 28px; max-width: 1200px; }
+  .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 14px; margin-bottom: 24px; }
+  .card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 16px; }
+  .card .k { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: 0.04em; }
+  .card .v { font-size: 26px; font-weight: 700; margin-top: 4px; letter-spacing: -0.02em; }
+  .panel { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 18px; margin-bottom: 20px; }
+  .panel h2 { font-size: 14px; margin: 0 0 14px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; }
+  select {
+    background: var(--surface-2); color: var(--text); border: 1px solid var(--line);
+    border-radius: 8px; padding: 7px 10px; font: inherit; margin-right: 10px;
+  }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+  th { color: var(--muted); font-weight: 600; position: sticky; top: 0; background: var(--surface); cursor: pointer; }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+  .title-cell { max-width: 320px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .scroll { max-height: 520px; overflow: auto; border-radius: 8px; }
+  .pill { display: inline-block; padding: 1px 8px; border-radius: 999px; font-size: 11px; font-weight: 600; }
+  .pill.up { background: oklch(74% 0.17 150 / 0.18); color: var(--good); }
+  .pill.down { background: oklch(70% 0.18 25 / 0.18); color: oklch(75% 0.18 25); }
+  .pill.flat { background: var(--surface-2); color: var(--muted); }
+  .pill.near { background: oklch(80% 0.16 80 / 0.18); color: var(--warn); }
+  .legend { display: flex; gap: 18px; margin: 6px 0 12px; font-size: 12px; color: var(--muted); }
+  .legend span::before { content: ""; display: inline-block; width: 12px; height: 3px; border-radius: 2px; margin-right: 6px; vertical-align: middle; }
+  .legend .views::before { background: var(--accent); }
+  .legend .si::before { background: var(--accent-2); }
+  .legend .floor::before { background: var(--warn); }
+  .legend .thr::before { background: var(--warn); height: 0; border-top: 2px dashed var(--warn); }
+  svg { width: 100%; height: auto; display: block; }
+  .empty { color: var(--muted); padding: 40px; text-align: center; }
+  .hint { color: var(--muted); font-size: 12px; margin-top: 6px; }
+  text { fill: var(--muted); font-size: 11px; }
+  #chart { position: relative; }
+  #chart svg * { pointer-events: none; }
+  #chart svg #hoverArea { pointer-events: all; }
+  .ctrl-row { display: flex; align-items: center; gap: 0; }
+  .tgl {
+    margin-left: auto; height: 34px; padding: 0 14px; flex: 0 0 auto;
+    background: var(--surface-2); color: var(--text); border: 1px solid var(--line);
+    border-radius: 8px; cursor: pointer; font: inherit; font-weight: 600;
+  }
+  .tgl:hover { filter: brightness(1.12); }
+  .tgl.on { border-color: var(--accent); color: var(--accent); background: oklch(72% 0.18 200 / 0.12); }
+  .sq {
+    margin-left: 8px; width: 34px; height: 34px; flex: 0 0 auto;
+    background: var(--surface-2); color: var(--text); border: 1px solid var(--line);
+    border-radius: 8px; cursor: pointer; font-size: 16px; line-height: 1;
+  }
+  .sq:hover { filter: brightness(1.12); }
+  .sq.on { border-color: var(--accent); color: var(--accent); }
+  .cfg { margin-top: 12px; padding: 14px; background: var(--surface-2); border: 1px solid var(--line); border-radius: 8px; }
+  .cfg .field { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+  .cfg .field label { min-width: 190px; color: var(--muted); }
+  .cfg input[type="number"] {
+    background: var(--surface); color: var(--text); border: 1px solid var(--line);
+    border-radius: 6px; padding: 6px 8px; font: inherit; width: 140px;
+  }
+  /* Full-viewport loading overlay (mirrors the site's LoadingScreen brand). */
+  #loadingOverlay {
+    position: fixed; inset: 0; z-index: 100;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 16px; background: var(--bg); transition: opacity 0.25s ease;
+  }
+  #loadingOverlay.hidden { opacity: 0; pointer-events: none; }
+  #loadingOverlay img { width: 140px; height: auto; }
+  .lo-text {
+    color: var(--brand); font-weight: 700; font-size: 16px;
+    text-transform: uppercase; letter-spacing: 0.18em;
+    display: flex; align-items: baseline;
+  }
+  .lo-text .dots { display: inline-block; width: 22px; text-align: left; margin-left: 4px; }
+  /* Health status dot in the header + inline dots in the log table. */
+  .status-dot {
+    width: 11px; height: 11px; border-radius: 50%; display: inline-block;
+    cursor: pointer; flex: 0 0 auto; align-self: center;
+    box-shadow: 0 0 0 3px transparent; transition: box-shadow 0.2s;
+  }
+  .status-dot:hover { box-shadow: 0 0 0 3px var(--surface-2); }
+  .status-dot.ok { background: var(--good); }
+  .status-dot.warn { background: var(--warn); }
+  .status-dot.err { background: var(--bad); }
+  .status-dot.warn, .status-dot.err { animation: dotPulse 1.6s ease-in-out infinite; }
+  @keyframes dotPulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+  .dot-inline {
+    width: 9px; height: 9px; border-radius: 50%; display: inline-block;
+    margin-right: 6px; vertical-align: middle;
+  }
+  .dot-inline.ok { background: var(--good); }
+  .dot-inline.warn { background: var(--warn); }
+  .dot-inline.err { background: var(--bad); }
+  /* Collapsible status log. */
+  details.logbox > summary {
+    cursor: pointer; color: var(--muted); font-size: 14px; font-weight: 600;
+    text-transform: uppercase; letter-spacing: 0.04em; list-style: none;
+    display: flex; align-items: center; gap: 8px;
+  }
+  details.logbox > summary::-webkit-details-marker { display: none; }
+  details.logbox > summary::before {
+    content: "\25B8"; display: inline-block; transition: transform 0.15s; color: var(--muted);
+  }
+  details.logbox[open] > summary::before { transform: rotate(90deg); }
+</style>
+</head>
+<body>
+<div id="loadingOverlay">
+  <img src="/general/loading.gif" alt="Loading" />
+  <div class="lo-text">Loading<span class="dots" id="loadDots">.</span></div>
+</div>
+<header>
+  <h1>VGen Trending - Data Viewer</h1>
+  <span class="status-dot warn" id="statusDot" title="Initializing"></span>
+  <span class="meta" id="meta">loading...</span>
+  <button id="refresh">Refresh</button>
+</header>
+<nav>
+  <a data-tab="overview" class="active">Overview</a>
+  <a data-tab="profiles">Profiles (tracking)</a>
+  <a data-tab="trending">Trending</a>
+  <a data-tab="cross">Cross-reference</a>
+</nav>
+<main id="main"><div class="empty">Loading data...</div></main>
+
+<script>
+let DATA = { trending: [], profiles: [] };
+// Persist UI state in localStorage so Refresh AND F5 both keep your view.
+let TAB = localStorage.getItem("vg_tab") || "overview";
+let SEL_USER = localStorage.getItem("vg_user") || null;
+let SEL_POST = localStorage.getItem("vg_post") || null;
+let CHART = { pts: [], W: 0, padT: 0 }; // geometry for the hover handler
+// Chart axis / threshold config (persisted). justify=true => auto-fit to data
+// (current behaviour) and the two max fields are ignored.
+// thr is a TRENDING RANK COUNT (top N): the chart converts it to the searchIndex
+// of the post sitting at rank N in the latest snapshot.
+const CFG_VERSION = 3;
+const CFG_DEFAULT = { v: CFG_VERSION, maxViews: 50000, thr: 1000, justify: true };
+let CFG = (() => {
+  try {
+    const s = { ...CFG_DEFAULT, ...JSON.parse(localStorage.getItem("vg_cfg") || "{}") };
+    // bump resets thr from any earlier (searchIndex-based) value to the new rank meaning
+    if (s.v !== CFG_VERSION) { s.thr = CFG_DEFAULT.thr; s.v = CFG_VERSION; }
+    return s;
+  } catch { return { ...CFG_DEFAULT }; }
+})();
+const saveCfg = () => localStorage.setItem("vg_cfg", JSON.stringify(CFG));
+const saveSel = () => {
+  SEL_USER ? localStorage.setItem("vg_user", SEL_USER) : localStorage.removeItem("vg_user");
+  SEL_POST ? localStorage.setItem("vg_post", SEL_POST) : localStorage.removeItem("vg_post");
+};
+const syncNav = () => document.querySelectorAll("nav a")
+  .forEach(x => x.classList.toggle("active", x.dataset.tab === TAB));
+
+// ---- Health monitoring + status log --------------------------------------
+// The collector runs hourly. We judge health by how old the newest stored
+// snapshot is: if no fresh snapshot arrives, the collection pipeline (GitHub
+// Actions -> /collect -> Redis) has likely stalled, timed out, or been blocked.
+const COLLECT_INTERVAL_MIN = 60;
+const STALE_WARN_MIN = 90;   // a run or two may have slipped -> yellow
+const STALE_ERR_MIN = 180;   // pipeline almost certainly stopped -> red
+const HEALTH_POLL_MS = 60000; // re-evaluate age once a minute (no refetch)
+const FETCH_TIMEOUT_MS = 30000;
+const LOG_MAX = 60;
+let LAST_LEVEL = null;
+let dotTimer = null;
+
+const getLog = () => { try { return JSON.parse(localStorage.getItem("vg_log") || "[]"); } catch { return []; } };
+function pushLog(level, msg) {
+  const log = getLog();
+  log.unshift({ t: new Date().toISOString(), level, msg });
+  if (log.length > LOG_MAX) log.length = LOG_MAX;
+  localStorage.setItem("vg_log", JSON.stringify(log));
+}
+const lvlText = (l) => l === "ok" ? "OK" : l === "warn" ? "Warning" : "Error";
+function humanAge(min) {
+  if (min < 60) return min + "m";
+  const h = Math.floor(min / 60), m = min % 60;
+  if (h < 24) return h + "h" + (m ? " " + m + "m" : "");
+  const d = Math.floor(h / 24);
+  return d + "d " + (h % 24) + "h";
+}
+function setStatus(level, title) {
+  const d = document.getElementById("statusDot");
+  if (!d) return;
+  d.className = "status-dot " + level;
+  d.title = title;
+}
+function latestSnapshotAgeMin() {
+  let newest = null;
+  for (const r of DATA.trending) if (r.snapshot_ts && (!newest || r.snapshot_ts > newest)) newest = r.snapshot_ts;
+  for (const r of DATA.profiles) if (r.snapshot_ts && (!newest || r.snapshot_ts > newest)) newest = r.snapshot_ts;
+  if (!newest) return null;
+  return Math.round((Date.now() - new Date(newest).getTime()) / 60000);
+}
+// Map snapshot age -> traffic-light status. Logs on every fetch, and on idle
+// polls only when the level changes (so an open tab quietly turns yellow/red
+// if the collector dies, without spamming the log).
+function evaluateHealth(fromFetch) {
+  const ageMin = latestSnapshotAgeMin();
+  let level, note;
+  if (ageMin === null) {
+    level = "warn"; note = "No snapshots yet \u2013 waiting for the first collector run";
+  } else if (ageMin <= STALE_WARN_MIN) {
+    level = "ok"; note = "Healthy \u2013 last snapshot " + humanAge(ageMin) + " ago";
+  } else if (ageMin <= STALE_ERR_MIN) {
+    level = "warn"; note = "Collector delayed \u2013 last snapshot " + humanAge(ageMin) + " ago";
+  } else {
+    level = "err"; note = "Collector likely stopped \u2013 last snapshot " + humanAge(ageMin) + " ago";
+  }
+  setStatus(level, note);
+  const changed = level !== LAST_LEVEL;
+  if (fromFetch || changed) {
+    pushLog(level, note + (fromFetch
+      ? " (" + DATA.trending.length + " trending / " + DATA.profiles.length + " profile rows)"
+      : ""));
+    if (!fromFetch && changed && TAB === "overview") render();
+  }
+  LAST_LEVEL = level;
+}
+
+// ---- loading overlay -----------------------------------------------------
+function showOverlay() {
+  const o = document.getElementById("loadingOverlay");
+  if (!o) return;
+  o.classList.remove("hidden");
+  const dots = document.getElementById("loadDots");
+  const seq = [".", "..", "..."];
+  let i = 0;
+  clearInterval(dotTimer);
+  dotTimer = setInterval(() => { if (dots) dots.textContent = seq[i++ % 3]; }, 400);
+}
+function hideOverlay() {
+  const o = document.getElementById("loadingOverlay");
+  if (o) o.classList.add("hidden");
+  clearInterval(dotTimer);
+  dotTimer = null;
+}
+
+const fmt = (n) => (n === null || n === undefined || n === "") ? "-" : Number(n).toLocaleString();
+const fmtSi = (n) => (n === null || n === undefined || n === "") ? "-" : Number(n).toFixed(4);
+const byTs = (a, b) => a.snapshot_ts < b.snapshot_ts ? -1 : a.snapshot_ts > b.snapshot_ts ? 1 : 0;
+const uniq = (arr) => [...new Set(arr)];
+
+// Latest trending snapshot: its searchIndex floor (lowest SI still on the list)
+// and the set of showcaseIDs currently on trending. This is the REAL threshold,
+// computed from data, not a hardcoded guess.
+function latestTrending() {
+  const snaps = uniq(DATA.trending.map(r => r.snapshot_ts)).sort();
+  if (!snaps.length) return { floor: null, set: new Set(), ts: null, count: 0 };
+  const ts = snaps.at(-1);
+  const rows = DATA.trending.filter(r => r.snapshot_ts === ts);
+  let floor = Infinity;
+  for (const r of rows) if (typeof r.searchIndex === "number" && r.searchIndex < floor) floor = r.searchIndex;
+  return { floor: isFinite(floor) ? floor : null, set: new Set(rows.map(r => r.showcaseID)), ts, count: rows.length };
+}
+
+// searchIndex sitting at each trending rank cutoff in the latest snapshot.
+function thresholdTable() {
+  const snaps = uniq(DATA.trending.map(r => r.snapshot_ts)).sort();
+  if (!snaps.length) return "";
+  const ts = snaps.at(-1);
+  const rows = DATA.trending
+    .filter(r => r.snapshot_ts === ts && typeof r.searchIndex === "number")
+    .sort((a, b) => a.rank - b.rank);
+  if (!rows.length) return "";
+  const cuts = [10, 20, 50, 100, 200, 300, 500, 1000];
+  const body = cuts.map(n => {
+    const have = n <= rows.length;
+    const r = rows[Math.min(n, rows.length) - 1];
+    return '<tr><td class="num">' + n + '</td>' +
+      '<td class="num">' + (r ? fmtSi(r.searchIndex) : "-") + '</td>' +
+      '<td class="num">' + (r ? fmt(r.viewCount) : "-") + '</td>' +
+      '<td>' + (have ? "" : '<span class="pill flat">only ' + rows.length + ' posts</span>') + '</td></tr>';
+  }).join("");
+  return '<table style="margin-top:12px"><thead><tr>' +
+    '<th class="num">Top N</th><th class="num">searchIndex</th>' +
+    '<th class="num">views</th><th></th></tr></thead><tbody>' + body + '</tbody></table>';
+}
+
+// Convert a trending rank cutoff (top N) to the searchIndex sitting at that rank
+// in the latest snapshot. N is clamped to the available list size.
+function rankToSi(n) {
+  const snaps = uniq(DATA.trending.map(r => r.snapshot_ts)).sort();
+  if (!snaps.length) return null;
+  const ts = snaps.at(-1);
+  const rows = DATA.trending
+    .filter(r => r.snapshot_ts === ts && typeof r.searchIndex === "number")
+    .sort((a, b) => a.rank - b.rank);
+  if (!rows.length) return null;
+  const idx = Math.min(Math.max(1, Math.round(n)), rows.length) - 1;
+  return rows[idx].searchIndex;
+}
+
+async function load() {
+  const meta = document.getElementById("meta");
+  meta.textContent = "loading...";
+  setStatus("warn", "Loading\u2026");
+  showOverlay();
+  const ctrl = new AbortController();
+  const to = setTimeout(() => ctrl.abort(), FETCH_TIMEOUT_MS);
+  try {
+    const res = await fetch("/api/vgen-trending/data", { cache: "no-store", signal: ctrl.signal });
+    clearTimeout(to);
+    if (!res.ok) throw new Error("HTTP " + res.status);
+    DATA = await res.json();
+    const tSnaps = uniq(DATA.trending.map(r => r.snapshot_ts)).length;
+    const pSnaps = uniq(DATA.profiles.map(r => r.snapshot_ts)).length;
+    meta.textContent =
+      DATA.trending.length + " trending rows / " + tSnaps + " snaps  |  " +
+      DATA.profiles.length + " profile rows / " + pSnaps + " snaps  |  read " +
+      new Date(DATA.generated).toLocaleTimeString();
+    render();
+    evaluateHealth(true);
+  } catch (err) {
+    clearTimeout(to);
+    const msg = err && err.name === "AbortError"
+      ? "Request timed out (no response in " + (FETCH_TIMEOUT_MS / 1000) + "s)"
+      : (err && err.message) || "Unknown error";
+    meta.textContent = "load failed";
+    setStatus("err", "Load failed: " + msg);
+    pushLog("err", "Load failed: " + msg);
+    LAST_LEVEL = "err";
+    document.getElementById("main").innerHTML =
+      '<div class="empty">Could not load data: <b>' + esc(msg) + '</b><br><br>' +
+      'The hourly collector may not have run yet, or the data API is unavailable. ' +
+      'Wait a minute, then click Refresh.</div>';
+  } finally {
+    hideOverlay();
+  }
+}
+
+function render() {
+  const main = document.getElementById("main");
+  if (TAB === "overview") { main.innerHTML = viewOverview(); wireOverview(); }
+  else if (TAB === "profiles") { main.innerHTML = viewProfiles(); wireProfiles(); }
+  else if (TAB === "trending") { main.innerHTML = viewTrending(); wireTrending(); }
+  else if (TAB === "cross") main.innerHTML = viewCross();
+}
+
+// ---- Overview ------------------------------------------------------------
+// Status log panel (collapsible). Renders from localStorage so it survives
+// refresh and F5, and is shown even when there is no chart data yet.
+function logSection() {
+  const open = localStorage.getItem("vg_log_open") === "1";
+  const log = getLog();
+  const rows = log.length
+    ? log.map(e =>
+        '<tr><td>' + new Date(e.t).toLocaleString() + '</td>' +
+        '<td><span class="dot-inline ' + e.level + '"></span>' + lvlText(e.level) + '</td>' +
+        '<td>' + esc(e.msg) + '</td></tr>').join("")
+    : '<tr><td colspan="3" class="hint">No events logged yet.</td></tr>';
+  return '<div class="panel"><details class="logbox" id="logBox"' + (open ? " open" : "") + '>' +
+    '<summary>Status log (' + log.length + ')' +
+      '<button id="clearLog" class="sq" style="margin-left:8px;width:auto;height:26px;padding:0 10px;font-size:12px">Clear</button>' +
+    '</summary>' +
+    '<div class="hint" style="margin-top:10px">Green = fresh data (last snapshot under ' + STALE_WARN_MIN +
+      'm). Yellow = collector delayed or loading. Red = collector likely stopped (over ' + STALE_ERR_MIN +
+      'm) or the data API failed. Expected cadence: every ' + COLLECT_INTERVAL_MIN + ' min.</div>' +
+    '<div class="scroll" style="max-height:260px;margin-top:10px"><table><thead><tr>' +
+      '<th>Time</th><th>Status</th><th>Detail</th></tr></thead><tbody>' + rows + '</tbody></table></div>' +
+    '</details></div>';
+}
+
+function wireOverview() {
+  const box = document.getElementById("logBox");
+  if (box) box.ontoggle = () => localStorage.setItem("vg_log_open", box.open ? "1" : "0");
+  const clr = document.getElementById("clearLog");
+  if (clr) clr.onclick = (e) => {
+    e.preventDefault(); e.stopPropagation();
+    localStorage.removeItem("vg_log");
+    render();
+  };
+}
+
+function viewOverview() {
+  const t = DATA.trending, p = DATA.profiles;
+  if (!t.length && !p.length)
+    return '<div class="empty">No data yet. The hourly collector will populate this automatically &mdash; check back after the next run, then click Refresh.</div>' +
+      logSection();
+  const tSnaps = uniq(t.map(r => r.snapshot_ts)).sort();
+  const pSnaps = uniq(p.map(r => r.snapshot_ts)).sort();
+  const tPosts = uniq(t.map(r => r.showcaseID)).length;
+  const pPosts = uniq(p.map(r => r.showcaseID)).length;
+  const users = uniq(p.map(r => r.watch_label));
+  const LT = latestTrending();
+  const span = (s) => s.length < 2 ? "-" :
+    Math.round((new Date(s[s.length-1]) - new Date(s[0])) / 36e5 * 10) / 10 + "h";
+  const card = (k, v) => '<div class="card"><div class="k">'+k+'</div><div class="v">'+v+'</div></div>';
+  return '<div class="cards">' +
+    card("Trending snapshots", tSnaps.length) +
+    card("Trending span", span(tSnaps)) +
+    card("Unique trending posts", fmt(tPosts)) +
+    card("Trending floor (SI)", LT.floor != null ? fmtSi(LT.floor) : "-") +
+    card("Trending list size", fmt(LT.count)) +
+    card("Profile snapshots", pSnaps.length) +
+    card("Tracked accounts", users.length) +
+    card("Tracked posts", fmt(pPosts)) +
+    '</div>' +
+    '<div class="panel"><h2>searchIndex by trending rank (latest snapshot)</h2>' +
+    (LT.floor != null
+      ? '<div class="hint">searchIndex of the post sitting at each rank in the latest trending snapshot' +
+        (LT.ts ? ' (' + new Date(LT.ts).toLocaleString() + ')' : '') +
+        '. To rank within the top N, a post needs roughly the searchIndex shown for that row.</div>' +
+        thresholdTable() +
+        '<div class="hint">Live floor (lowest SI still on the list): <b>' + fmtSi(LT.floor) +
+        '</b> across ' + fmt(LT.count) + ' posts. The Profiles table compares each tracked post against this floor.</div>'
+      : '<div class="hint">No trending snapshot loaded yet.</div>') +
+    '</div>' +
+    '<div class="panel"><h2>Tracked accounts</h2>' +
+    (users.length ? '<div>' + users.map(u => '<span class="pill flat" style="margin:3px">'+esc(u)+'</span>').join("") + '</div>'
+                  : '<div class="hint">No profile data yet.</div>') +
+    '</div>' +
+    logSection();
+}
+
+// ---- Profiles ------------------------------------------------------------
+function viewProfiles() {
+  const p = DATA.profiles;
+  if (!p.length)
+    return '<div class="empty">No profile data yet. Waiting for the first collection run.</div>';
+  const users = uniq(p.map(r => r.watch_label)).sort();
+  return '<div class="panel">' +
+    '<h2>Per-post trajectory</h2>' +
+    '<div class="ctrl-row"><select id="selUser"></select><select id="selPost"></select>' +
+    '<button id="justBtn" class="tgl" title="Auto-fit the views axis to this post&rsquo;s data">Justify</button>' +
+    '<button id="cfgBtn" class="sq" title="Chart settings">&#9881;</button></div>' +
+    '<div id="cfgPanel" class="cfg" style="display:none">' +
+      '<div class="field"><label>Max column height - views</label>' +
+        '<input type="number" id="cfgMaxV" min="1" step="1000"></div>' +
+      '<div class="field"><label>Trending threshold (top N rank)</label>' +
+        '<input type="number" id="cfgThr" min="1" step="1"></div>' +
+      '<div class="hint">searchIndex axis is fixed 0&ndash;1. <b>Justify</b> (button on the right) ' +
+        'auto-fits only the views line; while it is on, the views max above is ignored.</div>' +
+    '</div>' +
+    '<div id="chart"></div>' +
+    '</div>' +
+    '<div class="panel"><h2>Latest values (all tracked posts)</h2>' +
+    '<div class="hint">Delta = change in viewCount since the previous snapshot. Tags compare each post against the live trending floor: ' +
+    '<span class="pill up">on trending</span> = currently in the trending feed; ' +
+    '<span class="pill near">qualifies</span> = SI is at/above the floor; ' +
+    '<span class="pill near">near</span> = within ~7% of the floor.</div>' +
+    '<div class="scroll" id="tbl"></div></div>';
+}
+
+function postsByUser(label) {
+  const rows = DATA.profiles.filter(r => r.watch_label === label);
+  const ids = uniq(rows.map(r => r.showcaseID));
+  return ids.map(id => {
+    const rs = rows.filter(r => r.showcaseID === id).sort(byTs);
+    return { id, title: rs[0].title || id, series: rs };
+  }).sort((a, b) => (b.series.at(-1).viewCount||0) - (a.series.at(-1).viewCount||0));
+}
+
+function wireProfiles() {
+  const users = uniq(DATA.profiles.map(r => r.watch_label)).sort();
+  const selU = document.getElementById("selUser");
+  const selP = document.getElementById("selPost");
+  selU.innerHTML = users.map(u => '<option>'+esc(u)+'</option>').join("");
+  // restore remembered account if it still exists
+  if (SEL_USER && users.includes(SEL_USER)) selU.value = SEL_USER;
+  SEL_USER = selU.value;
+  const fillPosts = () => {
+    const posts = postsByUser(selU.value);
+    selP.innerHTML = posts.map(p => '<option value="'+p.id+'">'+esc(trim(p.title,60))+'</option>').join("");
+    // restore remembered post if it still exists for this account
+    if (SEL_POST && posts.some(p => p.id === SEL_POST)) selP.value = SEL_POST;
+    SEL_POST = selP.value;
+    saveSel();
+    drawPost();
+  };
+  const drawPost = () => {
+    const posts = postsByUser(selU.value);
+    const post = posts.find(p => p.id === selP.value) || posts[0];
+    const chart = document.getElementById("chart");
+    if (!post) { chart.innerHTML = '<div class="hint">No post.</div>'; return; }
+    chart.innerHTML = dualChart(post.series);
+    wireChart();
+  };
+  selU.onchange = () => { SEL_USER = selU.value; SEL_POST = null; saveSel(); fillPosts(); };
+  selP.onchange = () => { SEL_POST = selP.value; saveSel(); drawPost(); };
+
+  // settings panel + external justify toggle
+  const justBtn = document.getElementById("justBtn");
+  const cfgBtn = document.getElementById("cfgBtn");
+  const cfgPanel = document.getElementById("cfgPanel");
+  const cMaxV = document.getElementById("cfgMaxV");
+  const cThr = document.getElementById("cfgThr");
+  // thr is a top-N rank: clamp it to the live trending list size (e.g. 1200 -> 1000).
+  const cnt0 = latestTrending().count || 0;
+  if (cnt0) {
+    if (CFG.thr == null) CFG.thr = cnt0;
+    CFG.thr = Math.min(Math.max(1, Math.round(CFG.thr)), cnt0);
+    saveCfg();
+  }
+  cMaxV.value = CFG.maxViews;
+  cThr.value = CFG.thr;
+  justBtn.classList.toggle("on", CFG.justify);
+  justBtn.onclick = () => {
+    CFG.justify = !CFG.justify;
+    justBtn.classList.toggle("on", CFG.justify);
+    saveCfg(); drawPost();
+  };
+  cfgBtn.onclick = () => {
+    const open = cfgPanel.style.display === "none";
+    cfgPanel.style.display = open ? "block" : "none";
+    cfgBtn.classList.toggle("on", open);
+  };
+  // fields are never locked; they simply have no effect while Justify is on.
+  cMaxV.oninput = () => {
+    CFG.maxViews = Math.max(1, Number(cMaxV.value) || CFG_DEFAULT.maxViews);
+    saveCfg(); drawPost();
+  };
+  // top-N threshold: clamp to the live list size; reflect the clamp back on change
+  const applyThr = (reflect) => {
+    const cnt = latestTrending().count || 1;
+    let n = Math.round(Number(cThr.value) || 1);
+    if (n < 1) n = 1;
+    if (n > cnt) n = cnt;          // e.g. 1200 entered with 1000 posts -> 1000
+    CFG.thr = n;
+    if (reflect) cThr.value = n;
+    saveCfg(); drawPost();
+  };
+  cThr.oninput = () => applyThr(false);
+  cThr.onchange = () => applyThr(true);
+
+  fillPosts();
+  renderProfileTable();
+}
+
+function renderProfileTable() {
+  const users = uniq(DATA.profiles.map(r => r.watch_label)).sort();
+  const rows = [];
+  for (const u of users) {
+    for (const post of postsByUser(u)) {
+      const s = post.series;
+      const last = s.at(-1), prev = s.length > 1 ? s.at(-2) : null;
+      const dv = prev ? (last.viewCount||0) - (prev.viewCount||0) : null;
+      rows.push({ u, title: post.title, last, dv });
+    }
+  }
+  rows.sort((a, b) => (b.last.searchIndex||0) - (a.last.searchIndex||0));
+  const LT = latestTrending();
+  const delta = (d) => d === null ? '<span class="pill flat">new</span>'
+    : d > 0 ? '<span class="pill up">+'+fmt(d)+'</span>'
+    : d < 0 ? '<span class="pill down">'+fmt(d)+'</span>'
+    : '<span class="pill flat">0</span>';
+  const siCell = (v, id) => {
+    let tag = "";
+    if (LT.set.has(id)) tag = ' <span class="pill up">on trending</span>';
+    else if (LT.floor != null && (v||0) >= LT.floor) tag = ' <span class="pill near">qualifies</span>';
+    else if (LT.floor != null && (v||0) >= LT.floor * 0.93) tag = ' <span class="pill near">near</span>';
+    return fmtSi(v) + tag;
+  };
+  const body = rows.map(r =>
+    '<tr><td>'+esc(r.u)+'</td><td class="title-cell" title="'+esc(r.last.title||"")+'">'+esc(trim(r.last.title||r.last.showcaseID,48))+'</td>' +
+    '<td class="num">'+fmt(r.last.viewCount)+'</td><td class="num">'+delta(r.dv)+'</td>' +
+    '<td class="num">'+fmt(r.last.likeCount)+'</td><td class="num">'+siCell(r.last.searchIndex, r.last.showcaseID)+'</td></tr>'
+  ).join("");
+  document.getElementById("tbl").innerHTML =
+    '<table><thead><tr><th>Account</th><th>Post</th><th class="num">Views</th>' +
+    '<th class="num">&Delta; views</th><th class="num">Likes</th><th class="num">searchIndex</th></tr></thead>' +
+    '<tbody>'+body+'</tbody></table>';
+}
+
+// ---- Trending ------------------------------------------------------------
+function viewTrending() {
+  const t = DATA.trending;
+  if (!t.length)
+    return '<div class="empty">No trending data yet. Waiting for the first collection run.</div>';
+  return '<div class="panel"><h2>Snapshot</h2><div><select id="selSnap"></select></div>' +
+    '<div class="hint" id="snapInfo"></div></div>' +
+    '<div class="panel"><h2>Top posts</h2><div class="scroll" id="ttbl"></div></div>' +
+    '<div class="panel"><h2>Churn between consecutive snapshots</h2><div class="scroll" id="churn"></div></div>';
+}
+
+function wireTrending() {
+  const snaps = uniq(DATA.trending.map(r => r.snapshot_ts)).sort();
+  const sel = document.getElementById("selSnap");
+  sel.innerHTML = snaps.map(s => '<option value="'+s+'">'+new Date(s).toLocaleString()+'</option>').join("");
+  sel.value = snaps.at(-1);
+  const draw = () => {
+    const rows = DATA.trending.filter(r => r.snapshot_ts === sel.value).sort((a,b)=>a.rank-b.rank);
+    const floor = rows.length ? rows.at(-1).searchIndex : null;
+    document.getElementById("snapInfo").textContent =
+      rows.length + " posts  |  searchIndex floor: " + fmtSi(floor);
+    const body = rows.map(r =>
+      '<tr><td class="num">'+(r.rank+1)+'</td><td class="title-cell" title="'+esc(r.title||"")+'">'+esc(trim(r.title||"",48))+'</td>' +
+      '<td>'+esc(r.displayName||r.username||"")+'</td><td class="num">'+fmt(r.viewCount)+'</td>' +
+      '<td class="num">'+fmt(r.likeCount)+'</td><td class="num">'+fmtSi(r.searchIndex)+'</td>' +
+      '<td>'+(r.isBoosted?'<span class="pill near">boost</span>':'')+'</td></tr>'
+    ).join("");
+    document.getElementById("ttbl").innerHTML =
+      '<table><thead><tr><th class="num">#</th><th>Title</th><th>Author</th>' +
+      '<th class="num">Views</th><th class="num">Likes</th><th class="num">searchIndex</th><th></th></tr></thead>' +
+      '<tbody>'+body+'</tbody></table>' +
+      '<div class="hint">showing all '+rows.length+' posts</div>';
+  };
+  sel.onchange = draw;
+  draw();
+  renderChurn(snaps);
+}
+
+function renderChurn(snaps) {
+  if (snaps.length < 2) {
+    document.getElementById("churn").innerHTML = '<div class="hint">Need at least 2 snapshots to compute churn.</div>';
+    return;
+  }
+  const setOf = (ts) => new Set(DATA.trending.filter(r => r.snapshot_ts === ts).map(r => r.showcaseID));
+  const rows = [];
+  for (let i = 1; i < snaps.length; i++) {
+    const a = setOf(snaps[i-1]), b = setOf(snaps[i]);
+    let entries = 0, exits = 0, stay = 0;
+    for (const id of b) (a.has(id) ? stay++ : entries++);
+    for (const id of a) if (!b.has(id)) exits++;
+    const inter = stay, union = a.size + b.size - stay;
+    rows.push({ ts: snaps[i], entries, exits, jaccard: union ? inter/union : 0 });
+  }
+  const body = rows.map(r =>
+    '<tr><td>'+new Date(r.ts).toLocaleString()+'</td><td class="num">'+r.entries+'</td>' +
+    '<td class="num">'+r.exits+'</td><td class="num">'+r.jaccard.toFixed(3)+'</td></tr>'
+  ).join("");
+  document.getElementById("churn").innerHTML =
+    '<div class="hint">Jaccard ~1.0 = list barely changed (supports "no continuous refresh"); lower = big reshuffle.</div>' +
+    '<table><thead><tr><th>At snapshot</th><th class="num">Entered</th><th class="num">Exited</th><th class="num">Jaccard</th></tr></thead>' +
+    '<tbody>'+body+'</tbody></table>';
+}
+
+// ---- Cross-reference -----------------------------------------------------
+function viewCross() {
+  const tIds = new Set(DATA.trending.map(r => r.showcaseID));
+  const pRows = DATA.profiles.filter(r => tIds.has(r.showcaseID));
+  if (!pRows.length)
+    return '<div class="empty">No tracked post has appeared in trending yet (or one of the two feeds is empty).<br>' +
+      'This panel confirms profile.searchIndex == trending.searchIndex once a post shows in both.</div>';
+  const ids = uniq(pRows.map(r => r.showcaseID));
+  const rows = ids.map(id => {
+    const pr = DATA.profiles.filter(r => r.showcaseID === id).sort(byTs).at(-1);
+    const tr = DATA.trending.filter(r => r.showcaseID === id).sort(byTs).at(-1);
+    return { pr, tr, match: Math.abs((pr.searchIndex||0)-(tr.searchIndex||0)) < 1e-9 };
+  });
+  rows.sort((a, b) => (a.tr.rank ?? 1e9) - (b.tr.rank ?? 1e9));
+  const body = rows.map(r =>
+    '<tr><td class="num">#'+((r.tr.rank ?? 0) + 1)+'</td>' +
+    '<td>'+esc(r.pr.watch_label||"")+'</td><td class="title-cell" title="'+esc(r.tr.title||"")+'">'+esc(trim(r.tr.title||"",40))+'</td>' +
+    '<td class="num">'+fmtSi(r.pr.searchIndex)+'</td><td class="num">'+fmtSi(r.tr.searchIndex)+'</td>' +
+    '<td>'+(r.match?'<span class="pill up">match</span>':'<span class="pill down">differ</span>')+'</td></tr>'
+  ).join("");
+  return '<div class="panel"><h2>Posts seen in BOTH feeds</h2>' +
+    '<div class="hint">Validates the core hypothesis that the two feeds share one global searchIndex. Trending # is the rank of the post in its latest trending snapshot.</div>' +
+    '<table><thead><tr><th class="num">Trending #</th><th>Account</th><th>Post</th><th class="num">profile SI</th><th class="num">trending SI</th><th>?</th></tr></thead>' +
+    '<tbody>'+body+'</tbody></table></div>';
+}
+
+// ---- mini SVG dual-axis line chart ---------------------------------------
+function dualChart(series) {
+  if (series.length < 2)
+    return '<div class="hint">Only one snapshot for this post so far - need 2+ to draw a line.</div>';
+  const W = 940, H = 300, padL = 48, padR = 122, padT = 26, padB = 34;
+  const xs = series.map(r => new Date(r.snapshot_ts).getTime());
+  const views = series.map(r => r.viewCount || 0);
+  const sis = series.map(r => r.searchIndex || 0);
+  const xmin = Math.min(...xs), xmax = Math.max(...xs);
+  const vmax = Math.max(...views), vmin = Math.min(...views);
+  const smax = Math.max(...sis), smin = Math.min(...sis);
+  // CFG.thr is a top-N rank -> searchIndex at that rank in the latest snapshot.
+  const thrSi = rankToSi(CFG.thr);
+  const sx = (x) => padL + (xmax===xmin?0.5:(x-xmin)/(xmax-xmin)) * (W-padL-padR);
+  const plotH = H - padT - padB;
+  const clamp01 = (f) => f < 0 ? 0 : f > 1 ? 1 : f;
+  // searchIndex axis is ALWAYS fixed 0..1 so posts and the threshold line share one
+  // absolute scale. Justify auto-fits ONLY the views axis; otherwise views is fixed
+  // to 0..maxViews (0 at the baseline, the configured max at the top).
+  const syS = (s) => H-padB - clamp01(s) * plotH;
+  const syV = CFG.justify
+    ? (v) => H-padB - (vmax===vmin?0.60:(v-vmin)/(vmax-vmin)) * plotH
+    : (v) => H-padB - clamp01(v / (CFG.maxViews || 1)) * plotH;
+  const pts = series.map((r,i) => ({
+    px: sx(xs[i]), t: r.snapshot_ts, view: views[i], si: sis[i],
+    yv: syV(views[i]), ys: syS(sis[i]),
+  }));
+  CHART = { pts, W, padT };
+  const path = (key) => pts.map((p,i)=>(i?"L":"M")+p.px.toFixed(1)+" "+p[key].toFixed(1)).join(" ");
+  const last = pts[pts.length-1];
+  const tFmt = (t) => new Date(t).toLocaleString([], {month:"numeric",day:"numeric",hour:"2-digit",minute:"2-digit"});
+  // keep the two end labels from overlapping when the lines end close together
+  let lvY = last.yv, lsY = last.ys;
+  if (Math.abs(lvY - lsY) < 12) { const m = (lvY + lsY) / 2; lvY = m - 7; lsY = m + 7; }
+  // faint dashed line marking the trending threshold. Justify mode now folds the
+  // threshold into the SI range above, so syS(thrSi) is always on-plot; fixed mode
+  // clamps it. So the line is effectively always visible when data exists.
+  const thrLabel = "top " + CFG.thr + " \u2248 " + fmtSi(thrSi);
+  let thrLine = "", thrHidden = false;
+  if (thrSi != null && thrSi > 0) {
+    const yThr = syS(thrSi);
+    if (yThr >= padT - 0.5 && yThr <= H - padB + 0.5) {
+      thrLine =
+        '<line x1="'+padL+'" y1="'+yThr.toFixed(1)+'" x2="'+(W-padR)+'" y2="'+yThr.toFixed(1)+'" ' +
+        'stroke="var(--warn)" stroke-width="1.5" stroke-dasharray="6 5" opacity="0.55"/>' +
+        '<text x="'+(W-padR)+'" y="'+(yThr-5).toFixed(1)+'" text-anchor="end" fill="var(--warn)">'+thrLabel+'</text>';
+    } else {
+      thrHidden = true;
+    }
+  }
+  const scaleNote = "views " + (CFG.justify ? "auto-fit" : "0\u2013"+fmt(CFG.maxViews)) + " \u00b7 SI 0\u20131";
+  return '<div class="legend"><span class="views">viewCount ('+fmt(vmin)+'-'+fmt(vmax)+')</span>' +
+    '<span class="si">searchIndex ('+fmtSi(smin)+'-'+fmtSi(smax)+')</span>' +
+    (thrSi != null ? '<span class="thr">trending '+thrLabel+'</span>' : '') +
+    '<span style="margin-left:auto">scale: '+scaleNote+'</span></div>' +
+    '<svg viewBox="0 0 '+W+' '+H+'" preserveAspectRatio="xMidYMid meet">' +
+    '<line x1="'+padL+'" y1="'+(H-padB)+'" x2="'+(W-padR)+'" y2="'+(H-padB)+'" stroke="var(--line)"/>' +
+    thrLine +
+    '<path d="'+path("yv")+'" fill="none" stroke="var(--accent)" stroke-width="2"/>' +
+    '<path d="'+path("ys")+'" fill="none" stroke="var(--accent-2)" stroke-width="2"/>' +
+    '<text x="'+(last.px+8).toFixed(1)+'" y="'+(lvY+4).toFixed(1)+'" fill="var(--accent)">views</text>' +
+    '<text x="'+(last.px+8).toFixed(1)+'" y="'+(lsY+4).toFixed(1)+'" fill="var(--accent-2)">searchIndex</text>' +
+    '<text x="'+padL+'" y="'+(H-12)+'" text-anchor="start">'+tFmt(pts[0].t)+'</text>' +
+    '<text x="'+(W-padR)+'" y="'+(H-12)+'" text-anchor="end">'+tFmt(last.t)+'</text>' +
+    '<line id="hoverLine" y1="'+padT+'" y2="'+(H-padB)+'" stroke="var(--muted)" stroke-dasharray="3 3" style="display:none"/>' +
+    '<circle id="hoverDotV" r="4" fill="var(--accent)" style="display:none"/>' +
+    '<circle id="hoverDotS" r="4" fill="var(--accent-2)" style="display:none"/>' +
+    '<g id="hoverTip" style="display:none">' +
+      '<rect id="hoverTipBg" width="190" height="60" rx="8" fill="var(--surface-2)" stroke="var(--line)"/>' +
+      '<text id="hoverTipTime" x="11" y="21" fill="var(--text)"></text>' +
+      '<text id="hoverTipViews" x="11" y="39" fill="var(--accent)"></text>' +
+      '<text id="hoverTipSi" x="11" y="55" fill="var(--accent-2)"></text>' +
+    '</g>' +
+    '<rect id="hoverArea" x="'+padL+'" y="'+padT+'" width="'+(W-padL-padR)+'" height="'+(H-padT-padB)+'" fill="transparent" style="cursor:crosshair"/>' +
+    '</svg>' +
+    (thrHidden
+      ? '<div class="hint">Trending '+thrLabel+' is off the 0\u20131 searchIndex axis.</div>'
+      : '');
+}
+
+function wireChart() {
+  const svg = document.querySelector("#chart svg");
+  if (!svg) return;
+  const $ = (id) => svg.querySelector("#" + id);
+  const area = $("hoverArea"), vline = $("hoverLine");
+  const dotV = $("hoverDotV"), dotS = $("hoverDotS");
+  const tip = $("hoverTip"), tipT = $("hoverTipTime"), tipV = $("hoverTipViews"), tipS = $("hoverTipSi");
+  const pts = CHART.pts;
+  if (!area || !pts.length) return;
+  const show = (on) => {
+    const d = on ? "" : "none";
+    for (const el of [vline, dotV, dotS, tip]) el.style.display = d;
+  };
+  const move = (e) => {
+    const p = svg.createSVGPoint();
+    p.x = e.clientX; p.y = e.clientY;
+    const loc = p.matrixTransform(svg.getScreenCTM().inverse());
+    let best = 0, bd = Infinity;
+    for (let i = 0; i < pts.length; i++) {
+      const d = Math.abs(pts[i].px - loc.x);
+      if (d < bd) { bd = d; best = i; }
+    }
+    const pt = pts[best];
+    vline.setAttribute("x1", pt.px); vline.setAttribute("x2", pt.px);
+    dotV.setAttribute("cx", pt.px); dotV.setAttribute("cy", pt.yv);
+    dotS.setAttribute("cx", pt.px); dotS.setAttribute("cy", pt.ys);
+    tipT.textContent = new Date(pt.t).toLocaleString();
+    tipV.textContent = "views: " + Number(pt.view).toLocaleString();
+    tipS.textContent = "searchIndex: " + Number(pt.si).toFixed(4);
+    const tw = 190;
+    let tx = pt.px + 12;
+    if (tx + tw > CHART.W) tx = pt.px - 12 - tw;
+    tip.setAttribute("transform", "translate(" + tx.toFixed(1) + "," + CHART.padT + ")");
+    show(true);
+  };
+  area.addEventListener("mousemove", move);
+  area.addEventListener("mouseleave", () => show(false));
+}
+
+// ---- helpers -------------------------------------------------------------
+function esc(s) { return String(s).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
+function trim(s, n) { s = String(s); return s.length > n ? s.slice(0, n-1) + "\u2026" : s; }
+
+document.querySelectorAll("nav a").forEach(a => a.onclick = () => {
+  TAB = a.dataset.tab; localStorage.setItem("vg_tab", TAB);
+  syncNav(); render();
+});
+document.getElementById("refresh").onclick = load;
+// Clicking the health dot jumps to Overview and opens the status log.
+document.getElementById("statusDot").onclick = () => {
+  TAB = "overview";
+  localStorage.setItem("vg_tab", TAB);
+  localStorage.setItem("vg_log_open", "1");
+  syncNav();
+  render();
+};
+// Idle health monitor: re-check snapshot age once a minute (no refetch) so an
+// open tab still flips to yellow/red if the collector silently dies.
+setInterval(() => {
+  if (DATA.trending.length || DATA.profiles.length) evaluateHealth(false);
+}, HEALTH_POLL_MS);
+syncNav();
+load();
+</script>
+</body>
+</html>
