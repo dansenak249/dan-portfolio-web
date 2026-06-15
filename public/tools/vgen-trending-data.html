@@ -175,17 +175,25 @@
   <a data-tab="overview" class="active">Overview</a>
   <a data-tab="profiles">Profiles (tracking)</a>
   <a data-tab="trending">Trending</a>
-  <a data-tab="threshold">Threshold</a>
   <a data-tab="cross">Cross-reference</a>
 </nav>
 <main id="main"><div class="empty">Loading data...</div></main>
 
 <script>
 // DATA.trending holds only the LATEST trending snapshot's rows; older snapshots
-// load on demand (see wireTrending). trendingSnapshots lists every kept ts for
-// the picker. SNAP_CACHE memoizes on-demand snapshot fetches by ts.
-let DATA = { trending: [], profiles: [], threshold: [], trendingSnapshots: [] };
+// load on demand (see wireTrending). DATA.profiles holds only the last 2 profile
+// snapshots (enough for the delta table); a post's full history loads on demand
+// (see fetchPostSeries). trendingSnapshots / profileSnapshots list every kept ts
+// for the pickers. SNAP_CACHE / POST_CACHE memoize on-demand fetches.
+let DATA = { trending: [], profiles: [], threshold: [], trendingSnapshots: [], profileSnapshots: [] };
 const SNAP_CACHE = new Map();
+const POST_CACHE = new Map();
+// localStorage cache of the last /data payload. On load we first ask /status for
+// the newest snapshot ts per kind; if it matches this cache we render from here
+// and skip the heavy /data download (avoids a wasteful refresh when nothing
+// changed). Bump CACHE_VERSION whenever the payload shape changes.
+const CACHE_KEY = "vg_data_cache";
+const CACHE_VERSION = 1;
 // Persist UI state in localStorage so Refresh AND F5 both keep your view.
 let TAB = localStorage.getItem("vg_tab") || "overview";
 let SEL_USER = localStorage.getItem("vg_user") || null;
@@ -364,6 +372,46 @@ function rankToSi(n) {
   return rows[idx].searchIndex;
 }
 
+// Read the cached /data payload, validating its version. Returns null on any
+// problem so the caller falls back to a network fetch.
+function readCache() {
+  try {
+    const raw = localStorage.getItem(CACHE_KEY);
+    if (!raw) return null;
+    const obj = JSON.parse(raw);
+    if (!obj || obj.v !== CACHE_VERSION || !obj.data) return null;
+    return obj.data;
+  } catch { return null; }
+}
+// Persist the latest /data payload. Wrapped because localStorage can throw
+// (QuotaExceeded / disabled) - a cache miss is harmless, so we just skip it.
+function writeCache(data) {
+  try {
+    localStorage.setItem(CACHE_KEY, JSON.stringify({ v: CACHE_VERSION, data }));
+  } catch { /* quota exceeded or disabled - run without the cache */ }
+}
+// Apply a /data payload to DATA + the in-memory caches, then render.
+function applyData(data, sourceLabel) {
+  DATA = data;
+  if (!Array.isArray(DATA.trendingSnapshots)) DATA.trendingSnapshots = [];
+  if (!Array.isArray(DATA.profileSnapshots)) DATA.profileSnapshots = [];
+  SNAP_CACHE.clear();
+  POST_CACHE.clear();
+  // The latest trending snapshot is what /data ships; cache it so re-selecting
+  // it in the picker is instant and needs no extra round-trip.
+  const latestTs = DATA.trendingSnapshots.at(-1);
+  if (latestTs) SNAP_CACHE.set(latestTs, DATA.trending);
+  const tSnaps = DATA.trendingSnapshots.length;
+  const pSnaps = DATA.profileSnapshots.length;
+  const pInline = uniq(DATA.profiles.map(r => r.snapshot_ts)).length;
+  document.getElementById("meta").textContent =
+    DATA.trending.length + " trending rows (latest of " + tSnaps + " snaps)  |  " +
+    DATA.profiles.length + " profile rows (" + pInline + " of " + pSnaps + " snaps inline)  |  " +
+    sourceLabel + " " + new Date(DATA.generated).toLocaleTimeString();
+  render();
+  evaluateHealth(true);
+}
+
 async function load() {
   const meta = document.getElementById("meta");
   meta.textContent = "loading...";
@@ -372,24 +420,35 @@ async function load() {
   const ctrl = new AbortController();
   const to = setTimeout(() => ctrl.abort(), FETCH_TIMEOUT_MS);
   try {
+    // 1) Cheap sync check: ask the server only for the newest snapshot ts per
+    //    kind. If our cached payload already matches, skip the heavy /data
+    //    download and render straight from localStorage.
+    const cached = readCache();
+    if (cached && cached.latest) {
+      const sCtrl = new AbortController();
+      const sTo = setTimeout(() => sCtrl.abort(), 8000);
+      try {
+        const sres = await fetch("/api/vgen-trending/status", { cache: "no-store", signal: sCtrl.signal });
+        clearTimeout(sTo);
+        if (sres.ok) {
+          const status = await sres.json();
+          if (status.trending === cached.latest.trending &&
+              status.profiles === cached.latest.profiles) {
+            clearTimeout(to);
+            applyData(cached, "cached");
+            pushLog("ok", "In sync with server \u2013 loaded from local cache");
+            return;
+          }
+        }
+      } catch { clearTimeout(sTo); /* status check failed - fall through to full fetch */ }
+    }
+    // 2) Out of sync (or no usable cache): pull the full light payload and cache it.
     const res = await fetch("/api/vgen-trending/data", { cache: "no-store", signal: ctrl.signal });
     clearTimeout(to);
     if (!res.ok) throw new Error("HTTP " + res.status);
-    DATA = await res.json();
-    if (!Array.isArray(DATA.trendingSnapshots)) DATA.trendingSnapshots = [];
-    SNAP_CACHE.clear();
-    // The latest trending snapshot is what /data ships; cache it so re-selecting
-    // it in the picker is instant and needs no extra round-trip.
-    const latestTs = DATA.trendingSnapshots.at(-1);
-    if (latestTs) SNAP_CACHE.set(latestTs, DATA.trending);
-    const tSnaps = DATA.trendingSnapshots.length;
-    const pSnaps = uniq(DATA.profiles.map(r => r.snapshot_ts)).length;
-    meta.textContent =
-      DATA.trending.length + " trending rows (latest of " + tSnaps + " snaps)  |  " +
-      DATA.profiles.length + " profile rows / " + pSnaps + " snaps  |  read " +
-      new Date(DATA.generated).toLocaleTimeString();
-    render();
-    evaluateHealth(true);
+    const data = await res.json();
+    writeCache(data);
+    applyData(data, "read");
   } catch (err) {
     clearTimeout(to);
     const msg = err && err.name === "AbortError"
@@ -408,12 +467,15 @@ async function load() {
   }
 }
 
+const TABS = ["overview", "profiles", "trending", "cross"];
 function render() {
   const main = document.getElementById("main");
+  // The standalone "threshold" tab was folded into the per-post chart; coerce any
+  // stale saved tab back to overview so the view never goes blank.
+  if (!TABS.includes(TAB)) { TAB = "overview"; localStorage.setItem("vg_tab", TAB); syncNav(); }
   if (TAB === "overview") { main.innerHTML = viewOverview(); wireOverview(); }
   else if (TAB === "profiles") { main.innerHTML = viewProfiles(); wireProfiles(); }
   else if (TAB === "trending") { main.innerHTML = viewTrending(); wireTrending(); }
-  else if (TAB === "threshold") main.innerHTML = viewThreshold();
   else if (TAB === "cross") main.innerHTML = viewCross();
 }
 
@@ -533,6 +595,19 @@ function postsByUser(label) {
   }).sort((a, b) => (b.series.at(-1).viewCount||0) - (a.series.at(-1).viewCount||0));
 }
 
+// Fetch one post's full time series on demand (memoized). /data ships only the
+// last 2 profile snapshots, so the per-post chart pulls the whole history here.
+async function fetchPostSeries(id) {
+  if (POST_CACHE.has(id)) return POST_CACHE.get(id);
+  const res = await fetch("/api/vgen-trending/post?id=" + encodeURIComponent(id),
+    { cache: "no-store" });
+  if (!res.ok) throw new Error("HTTP " + res.status);
+  const json = await res.json();
+  const series = Array.isArray(json.series) ? json.series : [];
+  POST_CACHE.set(id, series);
+  return series;
+}
+
 function wireProfiles() {
   const users = uniq(DATA.profiles.map(r => r.watch_label)).sort();
   const selU = document.getElementById("selUser");
@@ -550,12 +625,19 @@ function wireProfiles() {
     saveSel();
     drawPost();
   };
-  const drawPost = () => {
+  const drawPost = async () => {
     const posts = postsByUser(selU.value);
     const post = posts.find(p => p.id === selP.value) || posts[0];
     const chart = document.getElementById("chart");
     if (!post) { chart.innerHTML = '<div class="hint">No post.</div>'; return; }
-    chart.innerHTML = dualChart(post.series);
+    const id = post.id;
+    chart.innerHTML = '<div class="hint">Loading series\u2026</div>';
+    let series;
+    try { series = await fetchPostSeries(id); }
+    catch (e) { chart.innerHTML = '<div class="hint">Failed to load series: '+esc((e&&e.message)||e)+'</div>'; return; }
+    // Guard: the user may have switched posts while this was loading.
+    if (selP.value && selP.value !== id) return;
+    chart.innerHTML = dualChart(series.length ? series : post.series);
     wireChart();
   };
   selU.onchange = () => { SEL_USER = selU.value; SEL_POST = null; saveSel(); fillPosts(); };
@@ -761,110 +843,6 @@ function viewCross() {
     '<div class="hint">Validates the core hypothesis that the two feeds share one global searchIndex. Trending # is the rank of the post in its latest trending snapshot.</div>' +
     '<table><thead><tr><th class="num">Trending #</th><th>Account</th><th>Post</th><th class="num">profile SI</th><th class="num">trending SI</th><th>?</th></tr></thead>' +
     '<tbody>'+body+'</tbody></table></div>';
-}
-
-// ---- Threshold over time -------------------------------------------------
-// Tracks whether the trending searchIndex floor (and rank cutoffs) is a fixed
-// number or drifts over time. Reads the compact long-retention series.
-function viewThreshold() {
-  const s = (DATA.threshold || []).slice().sort(
-    (a, b) => a.ts < b.ts ? -1 : a.ts > b.ts ? 1 : 0
-  );
-  if (!s.length)
-    return '<div class="empty">No threshold history yet. Each hourly collection appends one compact record ' +
-      '(searchIndex floor + rank cutoffs). Come back after a few runs.</div>';
-  const get = (r, k) => k === "floor" ? r.floor : (r.cuts ? r.cuts[k] : undefined);
-  const lines = [
-    { k: "10", label: "top 10", color: "var(--accent)" },
-    { k: "50", label: "top 50", color: "var(--accent-2)" },
-    { k: "100", label: "top 100", color: "var(--good)" },
-    { k: "500", label: "top 500", color: "var(--warn)" },
-    { k: "floor", label: "floor (last rank)", color: "var(--bad)" },
-  ];
-  const recent = s.slice(-80).reverse();
-  const body = recent.map(r =>
-    '<tr><td>' + new Date(r.ts).toLocaleString() + '</td>' +
-    '<td class="num">' + fmt(r.count) + '</td>' +
-    '<td class="num">' + fmtSi(get(r, "10")) + '</td>' +
-    '<td class="num">' + fmtSi(get(r, "100")) + '</td>' +
-    '<td class="num">' + fmtSi(get(r, "500")) + '</td>' +
-    '<td class="num">' + fmtSi(r.floor) + '</td>' +
-    '<td class="num">' + fmt(r.floorViews) + '</td></tr>').join("");
-  return '<div class="panel"><h2>searchIndex threshold over time</h2>' +
-    '<div class="hint">Each line is the searchIndex sitting at a given rank cutoff in each snapshot. ' +
-    'If the <b>floor</b> line is flat, the threshold is effectively fixed; if it drifts, it is not. ' +
-    s.length + ' records, ' + new Date(s[0].ts).toLocaleString() + ' \u2192 ' +
-    new Date(s.at(-1).ts).toLocaleString() + '.</div>' +
-    thresholdChart(s, lines, get) +
-    '</div>' +
-    '<div class="panel"><h2>Records (latest ' + recent.length + ')</h2>' +
-    '<div class="scroll"><table><thead><tr><th>Time</th><th class="num">List size</th>' +
-    '<th class="num">top 10</th><th class="num">top 100</th><th class="num">top 500</th>' +
-    '<th class="num">floor SI</th><th class="num">floor views</th></tr></thead>' +
-    '<tbody>' + body + '</tbody></table></div></div>';
-}
-
-// Generic multi-line chart on a single auto-fitted Y axis (all values are
-// searchIndex, so they share one scale). X is time. No hover - the table
-// below gives exact numbers.
-function thresholdChart(series, lines, get) {
-  if (series.length < 2)
-    return '<div class="hint">Only one record so far \u2013 need 2+ to draw lines.</div>';
-  const W = 940, H = 320, padL = 64, padR = 128, padT = 20, padB = 34;
-  const xs = series.map(r => new Date(r.ts).getTime());
-  const xmin = Math.min(...xs), xmax = Math.max(...xs);
-  let ymin = Infinity, ymax = -Infinity;
-  for (const r of series) for (const ln of lines) {
-    const v = get(r, ln.k);
-    if (typeof v === "number") { if (v < ymin) ymin = v; if (v > ymax) ymax = v; }
-  }
-  if (!isFinite(ymin) || !isFinite(ymax))
-    return '<div class="hint">No numeric threshold values to plot.</div>';
-  if (ymin === ymax) { const e = ymin * 0.05 || 0.001; ymin -= e; ymax += e; }
-  const padY = (ymax - ymin) * 0.08;
-  ymin = Math.max(0, ymin - padY); ymax += padY;
-  const sx = (x) => padL + (xmax === xmin ? 0.5 : (x - xmin) / (xmax - xmin)) * (W - padL - padR);
-  const sy = (v) => H - padB - (v - ymin) / (ymax - ymin) * (H - padT - padB);
-  let grid = "";
-  for (let i = 0; i <= 4; i++) {
-    const v = ymin + (ymax - ymin) * i / 4, y = sy(v);
-    grid += '<line x1="' + padL + '" y1="' + y.toFixed(1) + '" x2="' + (W - padR) + '" y2="' + y.toFixed(1) +
-      '" stroke="var(--line)" opacity="0.5"/>' +
-      '<text x="' + (padL - 6) + '" y="' + (y + 4).toFixed(1) + '" text-anchor="end">' + v.toFixed(4) + '</text>';
-  }
-  let paths = "", labels = "";
-  // spread end labels so close lines do not overlap
-  const ends = [];
-  for (const ln of lines) {
-    let d = "", lastY = null;
-    series.forEach((r, i) => {
-      const v = get(r, ln.k);
-      if (typeof v !== "number") return;
-      const x = sx(xs[i]), y = sy(v);
-      d += (d ? "L" : "M") + x.toFixed(1) + " " + y.toFixed(1) + " ";
-      lastY = y;
-    });
-    if (d) {
-      paths += '<path d="' + d + '" fill="none" stroke="' + ln.color + '" stroke-width="2"/>';
-      if (lastY != null) ends.push({ y: lastY, color: ln.color, label: ln.label });
-    }
-  }
-  ends.sort((a, b) => a.y - b.y);
-  for (let i = 1; i < ends.length; i++)
-    if (ends[i].y - ends[i - 1].y < 13) ends[i].y = ends[i - 1].y + 13;
-  for (const e of ends)
-    labels += '<text x="' + (W - padR + 6) + '" y="' + (e.y + 4).toFixed(1) + '" fill="' + e.color + '">' + e.label + '</text>';
-  const tFmt = (t) => new Date(t).toLocaleString([], { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" });
-  const legend = '<div style="display:flex;gap:18px;margin:6px 0 12px;font-size:12px;flex-wrap:wrap">' +
-    lines.map(ln => '<span style="color:' + ln.color + '">\u25CF ' + ln.label + '</span>').join("") + '</div>';
-  return legend +
-    '<svg viewBox="0 0 ' + W + ' ' + H + '" preserveAspectRatio="xMidYMid meet">' +
-    grid +
-    '<line x1="' + padL + '" y1="' + (H - padB) + '" x2="' + (W - padR) + '" y2="' + (H - padB) + '" stroke="var(--line)"/>' +
-    paths + labels +
-    '<text x="' + padL + '" y="' + (H - 12) + '" text-anchor="start">' + tFmt(series[0].ts) + '</text>' +
-    '<text x="' + (W - padR) + '" y="' + (H - 12) + '" text-anchor="end">' + tFmt(series.at(-1).ts) + '</text>' +
-    '</svg>';
 }
 
 // ---- mini SVG dual-axis line chart ---------------------------------------

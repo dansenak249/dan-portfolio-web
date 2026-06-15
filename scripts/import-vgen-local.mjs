@@ -17,9 +17,9 @@ import { readFileSync, readdirSync, existsSync } from 'node:fs'
 import { join } from 'node:path'
 
 const NS = 'vgen'
-// Mirror store.js per-kind retention (profiles 30d, trending 10d).
-const MAX_SNAPSHOTS = { trending: 240, profiles: 720 }
-const DEFAULT_MAX_SNAPSHOTS = 240
+// Mirror store.js per-kind retention (720 = ~30 days at hourly cadence).
+const MAX_SNAPSHOTS = { trending: 720, profiles: 720 }
+const DEFAULT_MAX_SNAPSHOTS = 720
 const CUTS = [10, 20, 50, 100, 200, 300, 500, 1000]
 const DATA_DIR =
   process.argv[2] || 'D:/Projects/dan-vgen-trending-research/data'

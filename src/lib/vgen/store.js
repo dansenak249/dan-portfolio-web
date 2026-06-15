@@ -17,24 +17,17 @@
 import { Redis } from '@upstash/redis'
 
 const NS = 'vgen'
-// Per-kind snapshot retention (hourly cadence => 24/day).
-// NOTE: storage is NOT the binding constraint -- the plan allows 100 GB data, so
-// a full month of everything (~480 MB) is trivial. The real limits are the
-// ~10 MB per-request cap (see listSnapshotRows batching) and the per-command
-// billing, plus how much we ship to the browser in one /data response.
-//   profiles: 720 ~= 30 days. The per-post trajectory charts read PROFILES, so
-//             the watchlist needs a full month to meet the ">= 1 month" goal.
-//             ~200 rows/snapshot (~128 KB) => ~92 MB at 720.
-//   trending: 240 ~= 10 days. Heavy (1000 rows, ~538 KB/snapshot, ~129 MB at
-//             240). Kept lower for now ONLY because /data currently flattens all
-//             trending history to the browser; raise this once the read path
-//             ships just the latest snapshot + a compact churn summary. The
-//             long-term floor/cut signal is preserved ~1 year in the threshold
-//             series regardless.
-const MAX_SNAPSHOTS = { trending: 240, profiles: 720 }
-const DEFAULT_MAX_SNAPSHOTS = 240
-// Compact threshold records are tiny (~250 bytes each), so keep a much longer
-// history than the heavy full snapshots: ~1 year at hourly cadence is ~2 MB.
+// Per-kind snapshot retention (hourly cadence => 24/day). 720 = ~30 days: rows
+// older than that are dropped to save space (appendSnapshot trims past the cap).
+// Storage is NOT the binding constraint (plan allows 100 GB); the real limits
+// are the ~10 MB per-request cap (see batching below) and per-command billing.
+// Both kinds are now lazy-read by the dashboard (latest snapshot up front, older
+// loaded on demand), so trending can keep a full month like profiles.
+const MAX_SNAPSHOTS = { trending: 720, profiles: 720 }
+const DEFAULT_MAX_SNAPSHOTS = 720
+// Compact threshold records are tiny (~250 bytes each) and ARE the long-term
+// searchIndex-floor-drift signal the project tracks, so they are kept far longer
+// than the heavy snapshots: ~1 year at hourly cadence is only ~2 MB.
 const MAX_THRESHOLD = 8760
 const LOCK_TTL_SEC = 300 // a collect run must finish within 5 min
 
@@ -250,6 +243,67 @@ export async function getSnapshotRows(kind, ts) {
   const r = ensureRedis()
   const list = parseMaybe(await r.get(snapKey(kind, ts)))
   return Array.isArray(list) ? list : []
+}
+
+/**
+ * The timestamp of the most recent snapshot for a kind (one tiny Redis read).
+ * Used by the /status sync check so the client can skip a full /data refresh
+ * when its cached latest snapshot already matches the server.
+ * @param {'trending'|'profiles'} kind
+ * @returns {Promise<string|null>}
+ */
+export async function lastSnapshotId(kind) {
+  const r = ensureRedis()
+  return (await r.lindex(indexKey(kind), -1)) ?? null
+}
+
+/**
+ * Rows of the last N snapshots for a kind, flattened oldest -> newest. Used to
+ * ship just the recent profile snapshots to the dashboard (it needs the latest
+ * plus the previous one to compute per-post deltas) without pulling the whole
+ * history. N stays small so the single mget response is well under ~10 MB.
+ * @param {'trending'|'profiles'} kind
+ * @param {number} n how many of the most recent snapshots to read
+ * @returns {Promise<object[]>}
+ */
+export async function listRecentSnapshotRows(kind, n) {
+  const r = ensureRedis()
+  const ids = (await r.lrange(indexKey(kind), -n, -1)) || []
+  if (ids.length === 0) return []
+  const rows = []
+  for (let i = 0; i < ids.length; i += MGET_BATCH) {
+    const batch = ids.slice(i, i + MGET_BATCH).map((ts) => snapKey(kind, ts))
+    const values = await r.mget(...batch)
+    for (const value of values) {
+      const list = parseMaybe(value)
+      if (Array.isArray(list)) rows.push(...list)
+    }
+  }
+  return rows
+}
+
+/**
+ * Full time series for one profile post across every kept profiles snapshot,
+ * oldest -> newest. Powers the per-post chart, fetched on demand so the heavy
+ * profiles history never ships to the browser up front. Reads are batched via
+ * iterateSnapshots (<10 MB/request).
+ * NOTE: this scans all profiles snapshots; cheap at the current count but O(N)
+ * in snapshots. If profiles retention grows large, append a per-post series at
+ * collect time instead (mirrors the threshold series).
+ * @param {string} showcaseID
+ * @returns {Promise<object[]>}
+ */
+export async function getPostSeries(showcaseID) {
+  const out = []
+  for await (const { rows } of iterateSnapshots('profiles')) {
+    for (const row of rows) {
+      if (row && row.showcaseID === showcaseID) out.push(row)
+    }
+  }
+  out.sort((a, b) =>
+    String(a.snapshot_ts ?? '').localeCompare(String(b.snapshot_ts ?? ''))
+  )
+  return out
 }
 
 /**

@@ -3,21 +3,25 @@
 // Returns a LIGHT payload for the initial dashboard render:
 //   {
 //     trending: [...latest snapshot rows only],
-//     trendingSnapshots: [ ...all kept ISO timestamps ],  // for the picker
-//     profiles: [...all profile rows],                    // small; per-post charts need history
+//     trendingSnapshots: [ ...all kept trending ISO timestamps ], // for the picker
+//     profiles: [...last 2 profile snapshots only],               // latest + prev for deltas
+//     profileSnapshots: [ ...all kept profiles ISO timestamps ],  // for the picker
+//     latest: { trending, profiles },                             // newest ts per kind (sync check)
 //     threshold: [...compact floor/cut series],
 //     generated,
 //   }
-// Older trending snapshots are NOT shipped here -- the dashboard loads them on
-// demand from /snapshot. This keeps one response from ballooning to ~100+ MB
-// (240 trending snapshots x 1000 rows) and blowing past Upstash's ~10 MB request
-// limit and the browser/Vercel response limits. Public read-only (no secret).
+// Neither the full trending NOR the full profiles history is shipped here -- the
+// dashboard loads older snapshots on demand (/snapshot) and per-post series on
+// demand (/post). Profiles ships only the latest 2 snapshots because the
+// "Latest values" table needs the previous snapshot to compute per-post deltas.
+// This keeps one response from ballooning to ~100+ MB and blowing past Upstash's
+// ~10 MB request limit and the browser/Vercel response limits. Public read-only.
 
 import { NextResponse } from 'next/server'
 import {
   listLatestSnapshotRows,
   listSnapshotIds,
-  listSnapshotRows,
+  listRecentSnapshotRows,
   listThreshold,
 } from '@/lib/vgen/store'
 
@@ -25,21 +29,35 @@ export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
 
+// How many recent profile snapshots to ship: latest for current values, plus
+// one prior so the dashboard can compute per-post view/like deltas.
+const PROFILE_SNAPSHOTS_INLINE = 2
+
 export async function GET() {
   try {
-    const [trending, trendingSnapshots, profiles, threshold] = await Promise.all(
-      [
-        listLatestSnapshotRows('trending'),
-        listSnapshotIds('trending'),
-        listSnapshotRows('profiles'),
-        listThreshold(),
-      ]
-    )
+    const [
+      trending,
+      trendingSnapshots,
+      profiles,
+      profileSnapshots,
+      threshold,
+    ] = await Promise.all([
+      listLatestSnapshotRows('trending'),
+      listSnapshotIds('trending'),
+      listRecentSnapshotRows('profiles', PROFILE_SNAPSHOTS_INLINE),
+      listSnapshotIds('profiles'),
+      listThreshold(),
+    ])
     return NextResponse.json(
       {
         trending,
         trendingSnapshots,
         profiles,
+        profileSnapshots,
+        latest: {
+          trending: trendingSnapshots.at(-1) ?? null,
+          profiles: profileSnapshots.at(-1) ?? null,
+        },
         threshold,
         generated: new Date().toISOString(),
       },
