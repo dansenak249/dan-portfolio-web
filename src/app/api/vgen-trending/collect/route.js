@@ -18,11 +18,20 @@ import {
   getWatchlist,
   appendSnapshot,
   appendThreshold,
+  lastSnapshotId,
 } from '@/lib/vgen/store'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60 // trending = up to 50 paged fetches
+
+// Self-throttle window. We deliberately fire this endpoint SEVERAL times an hour
+// (the GitHub Actions cron is best-effort and frequently drops the top-of-hour
+// slot), but only actually collect when the newest snapshot is older than this.
+// So redundant triggers are cheap no-ops and we still get ~1 snapshot/hour, with
+// any missed slot covered by the next trigger. Pass ?force=1 to bypass (manual
+// runs / testing). 45 min < 60 min cadence so a slightly late run still collects.
+const MIN_INTERVAL_MS = 45 * 60 * 1000
 
 function isAuthorized(request) {
   const secret = process.env.VGEN_COLLECT_SECRET
@@ -70,8 +79,30 @@ export async function POST(request) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
+  const force = request.nextUrl.searchParams.get('force') === '1'
+
   let locked = false
   try {
+    // Throttle: if a recent snapshot already exists, skip this trigger cheaply
+    // (one Redis read). This is what makes firing multiple times an hour safe.
+    if (!force) {
+      const lastTs = await lastSnapshotId('trending')
+      if (lastTs) {
+        const ageMs = Date.now() - new Date(lastTs).getTime()
+        if (ageMs < MIN_INTERVAL_MS) {
+          return NextResponse.json(
+            {
+              ok: true,
+              skipped: 'fresh snapshot exists',
+              last_snapshot_ts: lastTs,
+              age_min: Math.round(ageMs / 60000),
+            },
+            { headers: { 'Cache-Control': 'no-store' } }
+          )
+        }
+      }
+    }
+
     locked = await acquireLock()
     if (!locked) {
       return NextResponse.json(

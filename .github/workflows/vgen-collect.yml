@@ -6,12 +6,16 @@ name: VGen Trending Collector
 
 on:
   schedule:
-    # Hourly, at minute 17 (UTC) on purpose. The top of the hour ("0 * * * *")
-    # is GitHub's most congested slot, where scheduled runs are frequently
-    # DELAYED or DROPPED entirely (scheduled triggers are best-effort, not
-    # guaranteed). An off-peak minute is far more reliable. Each snapshot still
-    # stores its real timestamp, so a late run just records its true time.
-    - cron: "17 * * * *"
+    # Fire THREE times an hour at off-peak minutes. GitHub's scheduled triggers
+    # are best-effort: the top of the hour ("0 * * * *") is its most congested
+    # slot and runs there are frequently DELAYED or DROPPED. Firing at :07, :27
+    # and :47 means a dropped slot is covered by the next one. This does NOT
+    # produce three snapshots/hour: the /collect endpoint self-throttles and
+    # skips (cheap no-op) unless the newest snapshot is older than ~45 min, so
+    # the result is still ~1 snapshot/hour with far higher reliability.
+    - cron: "7 * * * *"
+    - cron: "27 * * * *"
+    - cron: "47 * * * *"
   # Manual "Run workflow" button in the Actions tab, for testing.
   workflow_dispatch: {}
 
@@ -28,10 +32,36 @@ jobs:
         env:
           SITE_URL: ${{ secrets.VGEN_SITE_URL }}
           COLLECT_SECRET: ${{ secrets.VGEN_COLLECT_SECRET }}
+          EVENT_NAME: ${{ github.event_name }}
         run: |
           set -euo pipefail
-          curl --fail-with-body --silent --show-error \
-            --max-time 120 \
-            -X POST "${SITE_URL%/}/api/vgen-trending/collect" \
-            -H "Authorization: Bearer ${COLLECT_SECRET}" \
-            -H "Content-Type: application/json"
+          BASE="${SITE_URL%/}"
+          # Manual "Run workflow" bypasses the server-side throttle so it always
+          # collects immediately; scheduled runs respect the ~45 min throttle.
+          URL="${BASE}/api/vgen-trending/collect"
+          if [ "${EVENT_NAME}" = "workflow_dispatch" ]; then
+            URL="${URL}?force=1"
+          fi
+          # /collect is synchronous: a 2xx response means the snapshot is already
+          # stored in Redis. So validation == the HTTP result. Retry up to 3 times
+          # on transient failure (timeout / 5xx / lock contention) within this run.
+          max=3
+          attempt=1
+          while [ "$attempt" -le "$max" ]; do
+            echo "Attempt ${attempt}/${max}: POST ${URL}"
+            if curl --fail-with-body --silent --show-error \
+                --max-time 120 \
+                -X POST "${URL}" \
+                -H "Authorization: Bearer ${COLLECT_SECRET}" \
+                -H "Content-Type: application/json"; then
+              echo ""
+              echo "Collection confirmed stored."
+              exit 0
+            fi
+            echo ""
+            echo "Attempt ${attempt} failed."
+            attempt=$((attempt + 1))
+            if [ "$attempt" -le "$max" ]; then sleep 30; fi
+          done
+          echo "All ${max} attempts failed."
+          exit 1
