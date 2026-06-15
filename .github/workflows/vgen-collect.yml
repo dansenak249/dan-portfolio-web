@@ -1,0 +1,34 @@
+name: VGen Trending Collector
+
+# Runs on GitHub's servers (not your PC), so the machine can stay off.
+# It just pings the deployed /api/vgen-trending/collect endpoint, which does
+# the actual fetching + Redis storage on Vercel.
+
+on:
+  schedule:
+    # Every hour, at minute 0 (UTC). GitHub may delay scheduled runs a few
+    # minutes under load; each snapshot stores its real timestamp anyway.
+    - cron: "0 * * * *"
+  # Manual "Run workflow" button in the Actions tab, for testing.
+  workflow_dispatch: {}
+
+# If a previous run is still going, don't pile up a second one.
+concurrency:
+  group: vgen-collect
+  cancel-in-progress: false
+
+jobs:
+  collect:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger collection
+        env:
+          SITE_URL: ${{ secrets.VGEN_SITE_URL }}
+          COLLECT_SECRET: ${{ secrets.VGEN_COLLECT_SECRET }}
+        run: |
+          set -euo pipefail
+          curl --fail-with-body --silent --show-error \
+            --max-time 120 \
+            -X POST "${SITE_URL%/}/api/vgen-trending/collect" \
+            -H "Authorization: Bearer ${COLLECT_SECRET}" \
+            -H "Content-Type: application/json"
