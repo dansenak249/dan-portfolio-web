@@ -6,9 +6,12 @@ name: VGen Trending Collector
 
 on:
   schedule:
-    # Every hour, at minute 0 (UTC). GitHub may delay scheduled runs a few
-    # minutes under load; each snapshot stores its real timestamp anyway.
-    - cron: "0 * * * *"
+    # Hourly, at minute 17 (UTC) on purpose. The top of the hour ("0 * * * *")
+    # is GitHub's most congested slot, where scheduled runs are frequently
+    # DELAYED or DROPPED entirely (scheduled triggers are best-effort, not
+    # guaranteed). An off-peak minute is far more reliable. Each snapshot still
+    # stores its real timestamp, so a late run just records its true time.
+    - cron: "17 * * * *"
   # Manual "Run workflow" button in the Actions tab, for testing.
   workflow_dispatch: {}
 
