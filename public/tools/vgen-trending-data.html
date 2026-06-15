@@ -39,6 +39,8 @@
     cursor: pointer;
   }
   header button:hover { filter: brightness(1.08); }
+  header button + button { margin-left: 8px; }
+  header #export { background: var(--surface-2); color: var(--text); border: 1px solid var(--line); }
   nav { display: flex; gap: 4px; padding: 0 28px; border-bottom: 1px solid var(--line); }
   nav a {
     padding: 12px 16px; color: var(--muted); cursor: pointer;
@@ -102,6 +104,15 @@
     background: var(--surface); color: var(--text); border: 1px solid var(--line);
     border-radius: 6px; padding: 6px 8px; font: inherit; width: 140px;
   }
+  /* Discrete node slider for the trending top-N threshold. Nodes are evenly
+     spaced (a readable approximation), not linear in rank value. */
+  .thr-slider { flex: 1; min-width: 260px; }
+  .thr-slider input[type="range"] {
+    width: 100%; margin: 0; accent-color: var(--accent); cursor: pointer;
+  }
+  .thr-ticks { display: flex; justify-content: space-between; margin-top: 4px; }
+  .thr-ticks span { font-size: 11px; color: var(--muted); }
+  .thr-ticks span.on { color: var(--accent); font-weight: 700; }
   /* Full-viewport loading overlay (mirrors the site's LoadingScreen brand). */
   #loadingOverlay {
     position: fixed; inset: 0; z-index: 100;
@@ -157,18 +168,20 @@
   <h1>VGen Trending - Data Viewer</h1>
   <span class="status-dot warn" id="statusDot" title="Initializing"></span>
   <span class="meta" id="meta">loading...</span>
+  <button id="export">Export</button>
   <button id="refresh">Refresh</button>
 </header>
 <nav>
   <a data-tab="overview" class="active">Overview</a>
   <a data-tab="profiles">Profiles (tracking)</a>
   <a data-tab="trending">Trending</a>
+  <a data-tab="threshold">Threshold</a>
   <a data-tab="cross">Cross-reference</a>
 </nav>
 <main id="main"><div class="empty">Loading data...</div></main>
 
 <script>
-let DATA = { trending: [], profiles: [] };
+let DATA = { trending: [], profiles: [], threshold: [] };
 // Persist UI state in localStorage so Refresh AND F5 both keep your view.
 let TAB = localStorage.getItem("vg_tab") || "overview";
 let SEL_USER = localStorage.getItem("vg_user") || null;
@@ -178,13 +191,24 @@ let CHART = { pts: [], W: 0, padT: 0 }; // geometry for the hover handler
 // (current behaviour) and the two max fields are ignored.
 // thr is a TRENDING RANK COUNT (top N): the chart converts it to the searchIndex
 // of the post sitting at rank N in the latest snapshot.
-const CFG_VERSION = 3;
-const CFG_DEFAULT = { v: CFG_VERSION, maxViews: 50000, thr: 1000, justify: true };
+const CFG_VERSION = 4;
+// The trending threshold is no longer a free-form rank; it snaps to the 8 cut
+// points the collector actually stores (vgen:threshold:series .cuts keys), so
+// the dashboard can plot a real per-cut SI line over time.
+const THR_NODES = [10, 20, 50, 100, 200, 300, 500, 1000];
+const CFG_DEFAULT = { v: CFG_VERSION, maxViews: 50000, thr: 100, justify: true };
+// Snap any number to the nearest stored cut node.
+function snapNode(n) {
+  let best = THR_NODES[0];
+  for (const v of THR_NODES) if (Math.abs(v - n) < Math.abs(best - n)) best = v;
+  return best;
+}
 let CFG = (() => {
   try {
     const s = { ...CFG_DEFAULT, ...JSON.parse(localStorage.getItem("vg_cfg") || "{}") };
-    // bump resets thr from any earlier (searchIndex-based) value to the new rank meaning
+    // bump resets thr from any earlier (free-form rank) value to a stored cut node
     if (s.v !== CFG_VERSION) { s.thr = CFG_DEFAULT.thr; s.v = CFG_VERSION; }
+    s.thr = snapNode(Number(s.thr) || CFG_DEFAULT.thr);
     return s;
   } catch { return { ...CFG_DEFAULT }; }
 })();
@@ -379,6 +403,7 @@ function render() {
   if (TAB === "overview") { main.innerHTML = viewOverview(); wireOverview(); }
   else if (TAB === "profiles") { main.innerHTML = viewProfiles(); wireProfiles(); }
   else if (TAB === "trending") { main.innerHTML = viewTrending(); wireTrending(); }
+  else if (TAB === "threshold") main.innerHTML = viewThreshold();
   else if (TAB === "cross") main.innerHTML = viewCross();
 }
 
@@ -473,8 +498,10 @@ function viewProfiles() {
       '<div class="field"><label>Max column height - views</label>' +
         '<input type="number" id="cfgMaxV" min="1" step="1000"></div>' +
       '<div class="field"><label>Trending threshold (top N rank)</label>' +
-        '<input type="number" id="cfgThr" min="1" step="1"></div>' +
-      '<div class="hint">searchIndex axis is fixed 0&ndash;1. <b>Justify</b> (button on the right) ' +
+        '<div class="thr-slider"><input type="range" id="cfgThr" min="0" max="7" step="1">' +
+        '<div class="thr-ticks" id="thrTicks"></div></div></div>' +
+      '<div class="hint">searchIndex axis is fixed 0&ndash;1. The threshold line now follows ' +
+        'the chosen cut&rsquo;s searchIndex over time. <b>Justify</b> (button on the right) ' +
         'auto-fits only the views line; while it is on, the views max above is ignored.</div>' +
     '</div>' +
     '<div id="chart"></div>' +
@@ -530,15 +557,20 @@ function wireProfiles() {
   const cfgPanel = document.getElementById("cfgPanel");
   const cMaxV = document.getElementById("cfgMaxV");
   const cThr = document.getElementById("cfgThr");
-  // thr is a top-N rank: clamp it to the live trending list size (e.g. 1200 -> 1000).
-  const cnt0 = latestTrending().count || 0;
-  if (cnt0) {
-    if (CFG.thr == null) CFG.thr = cnt0;
-    CFG.thr = Math.min(Math.max(1, Math.round(CFG.thr)), cnt0);
-    saveCfg();
-  }
+  const thrTicks = document.getElementById("thrTicks");
+  // thr snaps to one of the 8 stored cut nodes; the slider value is the node index.
+  CFG.thr = snapNode(CFG.thr);
+  saveCfg();
   cMaxV.value = CFG.maxViews;
-  cThr.value = CFG.thr;
+  // Ticks are spaced evenly (one slot per node) regardless of the real rank gap -
+  // a readability simulation, not a true 1:1 scale, as requested.
+  const renderTicks = () => {
+    thrTicks.innerHTML = THR_NODES
+      .map(n => '<span class="' + (n === CFG.thr ? "on" : "") + '">' + n + '</span>')
+      .join("");
+  };
+  cThr.value = String(THR_NODES.indexOf(CFG.thr));
+  renderTicks();
   justBtn.classList.toggle("on", CFG.justify);
   justBtn.onclick = () => {
     CFG.justify = !CFG.justify;
@@ -555,18 +587,14 @@ function wireProfiles() {
     CFG.maxViews = Math.max(1, Number(cMaxV.value) || CFG_DEFAULT.maxViews);
     saveCfg(); drawPost();
   };
-  // top-N threshold: clamp to the live list size; reflect the clamp back on change
-  const applyThr = (reflect) => {
-    const cnt = latestTrending().count || 1;
-    let n = Math.round(Number(cThr.value) || 1);
-    if (n < 1) n = 1;
-    if (n > cnt) n = cnt;          // e.g. 1200 entered with 1000 posts -> 1000
-    CFG.thr = n;
-    if (reflect) cThr.value = n;
+  // slider value is the node index (0..7); map it back to the rank node.
+  const applyThr = () => {
+    const i = Math.min(Math.max(0, Math.round(Number(cThr.value) || 0)), THR_NODES.length - 1);
+    CFG.thr = THR_NODES[i];
+    renderTicks();
     saveCfg(); drawPost();
   };
-  cThr.oninput = () => applyThr(false);
-  cThr.onchange = () => applyThr(true);
+  cThr.oninput = applyThr;
 
   fillPosts();
   renderProfileTable();
@@ -696,6 +724,110 @@ function viewCross() {
     '<tbody>'+body+'</tbody></table></div>';
 }
 
+// ---- Threshold over time -------------------------------------------------
+// Tracks whether the trending searchIndex floor (and rank cutoffs) is a fixed
+// number or drifts over time. Reads the compact long-retention series.
+function viewThreshold() {
+  const s = (DATA.threshold || []).slice().sort(
+    (a, b) => a.ts < b.ts ? -1 : a.ts > b.ts ? 1 : 0
+  );
+  if (!s.length)
+    return '<div class="empty">No threshold history yet. Each hourly collection appends one compact record ' +
+      '(searchIndex floor + rank cutoffs). Come back after a few runs.</div>';
+  const get = (r, k) => k === "floor" ? r.floor : (r.cuts ? r.cuts[k] : undefined);
+  const lines = [
+    { k: "10", label: "top 10", color: "var(--accent)" },
+    { k: "50", label: "top 50", color: "var(--accent-2)" },
+    { k: "100", label: "top 100", color: "var(--good)" },
+    { k: "500", label: "top 500", color: "var(--warn)" },
+    { k: "floor", label: "floor (last rank)", color: "var(--bad)" },
+  ];
+  const recent = s.slice(-80).reverse();
+  const body = recent.map(r =>
+    '<tr><td>' + new Date(r.ts).toLocaleString() + '</td>' +
+    '<td class="num">' + fmt(r.count) + '</td>' +
+    '<td class="num">' + fmtSi(get(r, "10")) + '</td>' +
+    '<td class="num">' + fmtSi(get(r, "100")) + '</td>' +
+    '<td class="num">' + fmtSi(get(r, "500")) + '</td>' +
+    '<td class="num">' + fmtSi(r.floor) + '</td>' +
+    '<td class="num">' + fmt(r.floorViews) + '</td></tr>').join("");
+  return '<div class="panel"><h2>searchIndex threshold over time</h2>' +
+    '<div class="hint">Each line is the searchIndex sitting at a given rank cutoff in each snapshot. ' +
+    'If the <b>floor</b> line is flat, the threshold is effectively fixed; if it drifts, it is not. ' +
+    s.length + ' records, ' + new Date(s[0].ts).toLocaleString() + ' \u2192 ' +
+    new Date(s.at(-1).ts).toLocaleString() + '.</div>' +
+    thresholdChart(s, lines, get) +
+    '</div>' +
+    '<div class="panel"><h2>Records (latest ' + recent.length + ')</h2>' +
+    '<div class="scroll"><table><thead><tr><th>Time</th><th class="num">List size</th>' +
+    '<th class="num">top 10</th><th class="num">top 100</th><th class="num">top 500</th>' +
+    '<th class="num">floor SI</th><th class="num">floor views</th></tr></thead>' +
+    '<tbody>' + body + '</tbody></table></div></div>';
+}
+
+// Generic multi-line chart on a single auto-fitted Y axis (all values are
+// searchIndex, so they share one scale). X is time. No hover - the table
+// below gives exact numbers.
+function thresholdChart(series, lines, get) {
+  if (series.length < 2)
+    return '<div class="hint">Only one record so far \u2013 need 2+ to draw lines.</div>';
+  const W = 940, H = 320, padL = 64, padR = 128, padT = 20, padB = 34;
+  const xs = series.map(r => new Date(r.ts).getTime());
+  const xmin = Math.min(...xs), xmax = Math.max(...xs);
+  let ymin = Infinity, ymax = -Infinity;
+  for (const r of series) for (const ln of lines) {
+    const v = get(r, ln.k);
+    if (typeof v === "number") { if (v < ymin) ymin = v; if (v > ymax) ymax = v; }
+  }
+  if (!isFinite(ymin) || !isFinite(ymax))
+    return '<div class="hint">No numeric threshold values to plot.</div>';
+  if (ymin === ymax) { const e = ymin * 0.05 || 0.001; ymin -= e; ymax += e; }
+  const padY = (ymax - ymin) * 0.08;
+  ymin = Math.max(0, ymin - padY); ymax += padY;
+  const sx = (x) => padL + (xmax === xmin ? 0.5 : (x - xmin) / (xmax - xmin)) * (W - padL - padR);
+  const sy = (v) => H - padB - (v - ymin) / (ymax - ymin) * (H - padT - padB);
+  let grid = "";
+  for (let i = 0; i <= 4; i++) {
+    const v = ymin + (ymax - ymin) * i / 4, y = sy(v);
+    grid += '<line x1="' + padL + '" y1="' + y.toFixed(1) + '" x2="' + (W - padR) + '" y2="' + y.toFixed(1) +
+      '" stroke="var(--line)" opacity="0.5"/>' +
+      '<text x="' + (padL - 6) + '" y="' + (y + 4).toFixed(1) + '" text-anchor="end">' + v.toFixed(4) + '</text>';
+  }
+  let paths = "", labels = "";
+  // spread end labels so close lines do not overlap
+  const ends = [];
+  for (const ln of lines) {
+    let d = "", lastY = null;
+    series.forEach((r, i) => {
+      const v = get(r, ln.k);
+      if (typeof v !== "number") return;
+      const x = sx(xs[i]), y = sy(v);
+      d += (d ? "L" : "M") + x.toFixed(1) + " " + y.toFixed(1) + " ";
+      lastY = y;
+    });
+    if (d) {
+      paths += '<path d="' + d + '" fill="none" stroke="' + ln.color + '" stroke-width="2"/>';
+      if (lastY != null) ends.push({ y: lastY, color: ln.color, label: ln.label });
+    }
+  }
+  ends.sort((a, b) => a.y - b.y);
+  for (let i = 1; i < ends.length; i++)
+    if (ends[i].y - ends[i - 1].y < 13) ends[i].y = ends[i - 1].y + 13;
+  for (const e of ends)
+    labels += '<text x="' + (W - padR + 6) + '" y="' + (e.y + 4).toFixed(1) + '" fill="' + e.color + '">' + e.label + '</text>';
+  const tFmt = (t) => new Date(t).toLocaleString([], { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" });
+  const legend = '<div style="display:flex;gap:18px;margin:6px 0 12px;font-size:12px;flex-wrap:wrap">' +
+    lines.map(ln => '<span style="color:' + ln.color + '">\u25CF ' + ln.label + '</span>').join("") + '</div>';
+  return legend +
+    '<svg viewBox="0 0 ' + W + ' ' + H + '" preserveAspectRatio="xMidYMid meet">' +
+    grid +
+    '<line x1="' + padL + '" y1="' + (H - padB) + '" x2="' + (W - padR) + '" y2="' + (H - padB) + '" stroke="var(--line)"/>' +
+    paths + labels +
+    '<text x="' + padL + '" y="' + (H - 12) + '" text-anchor="start">' + tFmt(series[0].ts) + '</text>' +
+    '<text x="' + (W - padR) + '" y="' + (H - 12) + '" text-anchor="end">' + tFmt(series.at(-1).ts) + '</text>' +
+    '</svg>';
+}
+
 // ---- mini SVG dual-axis line chart ---------------------------------------
 function dualChart(series) {
   if (series.length < 2)
@@ -707,8 +839,6 @@ function dualChart(series) {
   const xmin = Math.min(...xs), xmax = Math.max(...xs);
   const vmax = Math.max(...views), vmin = Math.min(...views);
   const smax = Math.max(...sis), smin = Math.min(...sis);
-  // CFG.thr is a top-N rank -> searchIndex at that rank in the latest snapshot.
-  const thrSi = rankToSi(CFG.thr);
   const sx = (x) => padL + (xmax===xmin?0.5:(x-xmin)/(xmax-xmin)) * (W-padL-padR);
   const plotH = H - padT - padB;
   const clamp01 = (f) => f < 0 ? 0 : f > 1 ? 1 : f;
@@ -730,26 +860,38 @@ function dualChart(series) {
   // keep the two end labels from overlapping when the lines end close together
   let lvY = last.yv, lsY = last.ys;
   if (Math.abs(lvY - lsY) < 12) { const m = (lvY + lsY) / 2; lvY = m - 7; lsY = m + 7; }
-  // faint dashed line marking the trending threshold. Justify mode now folds the
-  // threshold into the SI range above, so syS(thrSi) is always on-plot; fixed mode
-  // clamps it. So the line is effectively always visible when data exists.
-  const thrLabel = "top " + CFG.thr + " \u2248 " + fmtSi(thrSi);
-  let thrLine = "", thrHidden = false;
-  if (thrSi != null && thrSi > 0) {
-    const yThr = syS(thrSi);
-    if (yThr >= padT - 0.5 && yThr <= H - padB + 0.5) {
-      thrLine =
-        '<line x1="'+padL+'" y1="'+yThr.toFixed(1)+'" x2="'+(W-padR)+'" y2="'+yThr.toFixed(1)+'" ' +
-        'stroke="var(--warn)" stroke-width="1.5" stroke-dasharray="6 5" opacity="0.55"/>' +
-        '<text x="'+(W-padR)+'" y="'+(yThr-5).toFixed(1)+'" text-anchor="end" fill="var(--warn)">'+thrLabel+'</text>';
-    } else {
-      thrHidden = true;
-    }
+  // Trending threshold line. CFG.thr is one of the stored cut nodes; its searchIndex
+  // drifts over time, so we draw the cut's SI series (from DATA.threshold) clipped to
+  // this post's time window instead of a single flat line. Falls back to a flat line
+  // at the latest snapshot's cut SI when there are <2 threshold points in the window.
+  const thrKey = String(CFG.thr);
+  const thrPts = (DATA.threshold || [])
+    .map(r => ({ t: new Date(r.ts).getTime(), si: r.cuts ? r.cuts[thrKey] : null }))
+    .filter(p => typeof p.si === "number" && p.t >= xmin && p.t <= xmax)
+    .sort((a, b) => a.t - b.t);
+  const thrFallbackSi = rankToSi(CFG.thr);
+  const thrLegendSi = thrPts.length ? thrPts.at(-1).si : thrFallbackSi;
+  const thrLabel = "top " + CFG.thr + " \u2248 " + fmtSi(thrLegendSi);
+  let thrLine = "";
+  if (thrPts.length >= 2) {
+    const d = thrPts
+      .map((p, i) => (i ? "L" : "M") + sx(p.t).toFixed(1) + " " + syS(clamp01(p.si)).toFixed(1))
+      .join(" ");
+    const yEnd = syS(clamp01(thrPts.at(-1).si));
+    thrLine =
+      '<path d="'+d+'" fill="none" stroke="var(--warn)" stroke-width="1.5" stroke-dasharray="6 5" opacity="0.7"/>' +
+      '<text x="'+(W-padR)+'" y="'+(yEnd-5).toFixed(1)+'" text-anchor="end" fill="var(--warn)">'+thrLabel+'</text>';
+  } else if (thrFallbackSi != null && thrFallbackSi > 0) {
+    const yThr = syS(clamp01(thrFallbackSi));
+    thrLine =
+      '<line x1="'+padL+'" y1="'+yThr.toFixed(1)+'" x2="'+(W-padR)+'" y2="'+yThr.toFixed(1)+'" ' +
+      'stroke="var(--warn)" stroke-width="1.5" stroke-dasharray="6 5" opacity="0.55"/>' +
+      '<text x="'+(W-padR)+'" y="'+(yThr-5).toFixed(1)+'" text-anchor="end" fill="var(--warn)">'+thrLabel+'</text>';
   }
   const scaleNote = "views " + (CFG.justify ? "auto-fit" : "0\u2013"+fmt(CFG.maxViews)) + " \u00b7 SI 0\u20131";
   return '<div class="legend"><span class="views">viewCount ('+fmt(vmin)+'-'+fmt(vmax)+')</span>' +
     '<span class="si">searchIndex ('+fmtSi(smin)+'-'+fmtSi(smax)+')</span>' +
-    (thrSi != null ? '<span class="thr">trending '+thrLabel+'</span>' : '') +
+    (thrLegendSi != null ? '<span class="thr">trending '+thrLabel+'</span>' : '') +
     '<span style="margin-left:auto">scale: '+scaleNote+'</span></div>' +
     '<svg viewBox="0 0 '+W+' '+H+'" preserveAspectRatio="xMidYMid meet">' +
     '<line x1="'+padL+'" y1="'+(H-padB)+'" x2="'+(W-padR)+'" y2="'+(H-padB)+'" stroke="var(--line)"/>' +
@@ -770,10 +912,7 @@ function dualChart(series) {
       '<text id="hoverTipSi" x="11" y="55" fill="var(--accent-2)"></text>' +
     '</g>' +
     '<rect id="hoverArea" x="'+padL+'" y="'+padT+'" width="'+(W-padL-padR)+'" height="'+(H-padT-padB)+'" fill="transparent" style="cursor:crosshair"/>' +
-    '</svg>' +
-    (thrHidden
-      ? '<div class="hint">Trending '+thrLabel+' is off the 0\u20131 searchIndex axis.</div>'
-      : '');
+    '</svg>';
 }
 
 function wireChart() {
@@ -824,6 +963,25 @@ document.querySelectorAll("nav a").forEach(a => a.onclick = () => {
   syncNav(); render();
 });
 document.getElementById("refresh").onclick = load;
+// Export every loaded snapshot + threshold series as one minified JSON file.
+document.getElementById("export").onclick = () => {
+  const payload = {
+    exported_at: new Date().toISOString(),
+    generated: DATA.generated || null,
+    trending: DATA.trending || [],
+    profiles: DATA.profiles || [],
+    threshold: DATA.threshold || [],
+  };
+  const blob = new Blob([JSON.stringify(payload)], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = "vgen-data-" + new Date().toISOString().replace(/[:.]/g, "-") + ".json";
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+};
 // Clicking the health dot jumps to Overview and opens the status log.
 document.getElementById("statusDot").onclick = () => {
   TAB = "overview";

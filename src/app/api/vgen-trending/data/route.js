@@ -7,7 +7,7 @@
 // time series. This endpoint is public read-only (no secret needed).
 
 import { NextResponse } from 'next/server'
-import { listSnapshotRows } from '@/lib/vgen/store'
+import { listSnapshotRows, listThreshold } from '@/lib/vgen/store'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -15,12 +15,18 @@ export const revalidate = 0
 
 export async function GET() {
   try {
-    const [trending, profiles] = await Promise.all([
+    const [trending, profiles, threshold] = await Promise.all([
       listSnapshotRows('trending'),
       listSnapshotRows('profiles'),
+      listThreshold(),
     ])
     return NextResponse.json(
-      { trending, profiles, generated: new Date().toISOString() },
+      {
+        trending,
+        profiles,
+        threshold,
+        generated: new Date().toISOString(),
+      },
       { headers: { 'Cache-Control': 'no-store' } }
     )
   } catch (error) {

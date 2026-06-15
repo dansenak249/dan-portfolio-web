@@ -158,6 +158,39 @@ export async function fetchTrending(snapshotTs) {
   }
 }
 
+// Rank cutoffs whose searchIndex we track over time (matches the dashboard).
+const THRESHOLD_CUTS = [10, 20, 50, 100, 200, 300, 500, 1000]
+
+/**
+ * Build a tiny "threshold over time" record from a trending snapshot's rows.
+ * The full snapshot already contains every searchIndex, but those heavy
+ * snapshots are retention-capped (~10 days). This compact record (a handful
+ * of numbers) is stored in a separate long-retention series so the trending
+ * searchIndex floor / cutoffs can be tracked for months without bloat.
+ * @param {object[]} rows trending rows in rank order (rank 0..N-1)
+ * @param {string} ts ISO snapshot timestamp
+ * @returns {null | { ts: string, count: number, floor: number, floorViews: number|null, topViews: number|null, cuts: Record<string, number> }}
+ */
+export function thresholdRecord(rows, ts) {
+  const sorted = rows
+    .filter((r) => typeof r.searchIndex === 'number')
+    .sort((a, b) => a.rank - b.rank)
+  if (!sorted.length) return null
+  const last = sorted[sorted.length - 1]
+  const cuts = {}
+  for (const n of THRESHOLD_CUTS) {
+    cuts[n] = sorted[Math.min(n, sorted.length) - 1].searchIndex
+  }
+  return {
+    ts,
+    count: sorted.length,
+    floor: last.searchIndex,
+    floorViews: last.viewCount ?? null,
+    topViews: sorted[0].viewCount ?? null,
+    cuts,
+  }
+}
+
 async function fetchOneUser(entry, snapshotTs) {
   const rows = []
   const seen = new Set()

@@ -7,12 +7,17 @@
 
 import { NextResponse } from 'next/server'
 import { timingSafeEqual } from 'crypto'
-import { fetchTrending, fetchProfiles } from '@/lib/vgen/fetchVgen'
+import {
+  fetchTrending,
+  fetchProfiles,
+  thresholdRecord,
+} from '@/lib/vgen/fetchVgen'
 import {
   acquireLock,
   releaseLock,
   getWatchlist,
   appendSnapshot,
+  appendThreshold,
 } from '@/lib/vgen/store'
 
 export const runtime = 'nodejs'
@@ -40,9 +45,10 @@ async function runCollection() {
     fetchProfiles(watchlist, snapshotTs),
   ])
 
-  const [trendingKept, profilesKept] = await Promise.all([
+  const [trendingKept, profilesKept, thresholdKept] = await Promise.all([
     appendSnapshot('trending', snapshotTs, trending.rows),
     appendSnapshot('profiles', snapshotTs, profiles.rows),
+    appendThreshold(thresholdRecord(trending.rows, snapshotTs)),
   ])
 
   return {
@@ -55,6 +61,7 @@ async function runCollection() {
       errors: profiles.errors,
       snapshotsKept: profilesKept.kept,
     },
+    threshold: { kept: thresholdKept.kept },
   }
 }
 

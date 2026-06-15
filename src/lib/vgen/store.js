@@ -17,7 +17,20 @@
 import { Redis } from '@upstash/redis'
 
 const NS = 'vgen'
-const MAX_SNAPSHOTS = 240 // ~10 days at hourly cadence, per kind
+// Per-kind snapshot retention (hourly cadence => 24/day).
+//   profiles: 720 ~= 30 days. The per-post trajectory charts read PROFILES, so
+//             the watchlist needs a full month to satisfy the "keep >= 1 month"
+//             goal. ~200 rows/snapshot (~128 KB) => ~92 MB at 720.
+//   trending: 240 ~= 10 days. These are heavy (1000 rows, ~538 KB/snapshot).
+//             Their long-term value (the searchIndex floor / cut points) is
+//             preserved for ~1 year in the tiny threshold series below, so the
+//             full 1000-row lists do not need month-long retention. ~129 MB at 240.
+// Combined steady-state ~= 223 MB, under the ~256 MB free-tier ceiling.
+const MAX_SNAPSHOTS = { trending: 240, profiles: 720 }
+const DEFAULT_MAX_SNAPSHOTS = 240
+// Compact threshold records are tiny (~250 bytes each), so keep a much longer
+// history than the heavy full snapshots: ~1 year at hourly cadence is ~2 MB.
+const MAX_THRESHOLD = 8760
 const LOCK_TTL_SEC = 300 // a collect run must finish within 5 min
 
 const HAS_KV = Boolean(
@@ -50,6 +63,7 @@ const DEFAULT_WATCHLIST = [
 
 const indexKey = (kind) => `${NS}:${kind}:index`
 const snapKey = (kind, ts) => `${NS}:${kind}:snap:${ts}`
+const THRESHOLD_KEY = `${NS}:threshold:series`
 const WATCHLIST_KEY = `${NS}:watchlist`
 const LOCK_KEY = `${NS}:lock`
 
@@ -117,14 +131,50 @@ export async function appendSnapshot(kind, ts, rows) {
   await r.set(snapKey(kind, ts), JSON.stringify(rows))
   await r.rpush(indexKey(kind), ts)
 
+  const cap = MAX_SNAPSHOTS[kind] ?? DEFAULT_MAX_SNAPSHOTS
   let len = await r.llen(indexKey(kind))
-  while (len > MAX_SNAPSHOTS) {
+  while (len > cap) {
     const oldest = await r.lpop(indexKey(kind))
     if (!oldest) break
     await r.del(snapKey(kind, oldest))
     len--
   }
   return { kept: len }
+}
+
+/**
+ * Append one compact threshold record to the long-retention series and trim
+ * to the cap. Stored separately from the heavy snapshots so the searchIndex
+ * floor / cutoffs can be tracked far longer than the 240-snapshot window.
+ * @param {null | object} record output of thresholdRecord(); a no-op if null
+ * @returns {Promise<{ kept: number }>}
+ */
+export async function appendThreshold(record) {
+  if (!record) return { kept: 0 }
+  const r = ensureRedis()
+  await r.rpush(THRESHOLD_KEY, JSON.stringify(record))
+  const len = await r.llen(THRESHOLD_KEY)
+  if (len > MAX_THRESHOLD) {
+    await r.ltrim(THRESHOLD_KEY, len - MAX_THRESHOLD, -1)
+    return { kept: MAX_THRESHOLD }
+  }
+  return { kept: len }
+}
+
+/**
+ * Read the full threshold-over-time series (oldest -> newest).
+ * @returns {Promise<object[]>}
+ */
+export async function listThreshold() {
+  const r = ensureRedis()
+  const items = await r.lrange(THRESHOLD_KEY, 0, -1)
+  if (!items || items.length === 0) return []
+  const out = []
+  for (const value of items) {
+    const rec = parseMaybe(value)
+    if (rec) out.push(rec)
+  }
+  return out
 }
 
 /**
