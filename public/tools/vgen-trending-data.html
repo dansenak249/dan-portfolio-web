@@ -181,7 +181,11 @@
 <main id="main"><div class="empty">Loading data...</div></main>
 
 <script>
-let DATA = { trending: [], profiles: [], threshold: [] };
+// DATA.trending holds only the LATEST trending snapshot's rows; older snapshots
+// load on demand (see wireTrending). trendingSnapshots lists every kept ts for
+// the picker. SNAP_CACHE memoizes on-demand snapshot fetches by ts.
+let DATA = { trending: [], profiles: [], threshold: [], trendingSnapshots: [] };
+const SNAP_CACHE = new Map();
 // Persist UI state in localStorage so Refresh AND F5 both keep your view.
 let TAB = localStorage.getItem("vg_tab") || "overview";
 let SEL_USER = localStorage.getItem("vg_user") || null;
@@ -372,10 +376,16 @@ async function load() {
     clearTimeout(to);
     if (!res.ok) throw new Error("HTTP " + res.status);
     DATA = await res.json();
-    const tSnaps = uniq(DATA.trending.map(r => r.snapshot_ts)).length;
+    if (!Array.isArray(DATA.trendingSnapshots)) DATA.trendingSnapshots = [];
+    SNAP_CACHE.clear();
+    // The latest trending snapshot is what /data ships; cache it so re-selecting
+    // it in the picker is instant and needs no extra round-trip.
+    const latestTs = DATA.trendingSnapshots.at(-1);
+    if (latestTs) SNAP_CACHE.set(latestTs, DATA.trending);
+    const tSnaps = DATA.trendingSnapshots.length;
     const pSnaps = uniq(DATA.profiles.map(r => r.snapshot_ts)).length;
     meta.textContent =
-      DATA.trending.length + " trending rows / " + tSnaps + " snaps  |  " +
+      DATA.trending.length + " trending rows (latest of " + tSnaps + " snaps)  |  " +
       DATA.profiles.length + " profile rows / " + pSnaps + " snaps  |  read " +
       new Date(DATA.generated).toLocaleTimeString();
     render();
@@ -646,13 +656,35 @@ function viewTrending() {
     '<div class="panel"><h2>Churn between consecutive snapshots</h2><div class="scroll" id="churn"></div></div>';
 }
 
+// Fetch one trending snapshot's rows on demand (memoized). Only the latest is
+// shipped in /data; older ones are pulled here when the user picks them.
+async function fetchSnapshot(ts) {
+  if (SNAP_CACHE.has(ts)) return SNAP_CACHE.get(ts);
+  const res = await fetch("/api/vgen-trending/snapshot?kind=trending&ts=" + encodeURIComponent(ts),
+    { cache: "no-store" });
+  if (!res.ok) throw new Error("HTTP " + res.status);
+  const json = await res.json();
+  const rows = Array.isArray(json.rows) ? json.rows : [];
+  SNAP_CACHE.set(ts, rows);
+  return rows;
+}
+
 function wireTrending() {
-  const snaps = uniq(DATA.trending.map(r => r.snapshot_ts)).sort();
+  const snaps = [...(DATA.trendingSnapshots || [])].sort();
   const sel = document.getElementById("selSnap");
   sel.innerHTML = snaps.map(s => '<option value="'+s+'">'+new Date(s).toLocaleString()+'</option>').join("");
   sel.value = snaps.at(-1);
-  const draw = () => {
-    const rows = DATA.trending.filter(r => r.snapshot_ts === sel.value).sort((a,b)=>a.rank-b.rank);
+  const draw = async () => {
+    const ts = sel.value;
+    const ttbl = document.getElementById("ttbl");
+    let rows = SNAP_CACHE.get(ts);
+    if (!rows) {
+      ttbl.innerHTML = '<div class="hint">Loading snapshot\u2026</div>';
+      try { rows = await fetchSnapshot(ts); }
+      catch (e) { ttbl.innerHTML = '<div class="hint">Failed to load snapshot: '+esc((e&&e.message)||e)+'</div>'; return; }
+      if (sel.value !== ts) return; // user switched again while loading
+    }
+    rows = [...rows].sort((a,b)=>a.rank-b.rank);
     const floor = rows.length ? rows.at(-1).searchIndex : null;
     document.getElementById("snapInfo").textContent =
       rows.length + " posts  |  searchIndex floor: " + fmtSi(floor);
@@ -662,7 +694,7 @@ function wireTrending() {
       '<td class="num">'+fmt(r.likeCount)+'</td><td class="num">'+fmtSi(r.searchIndex)+'</td>' +
       '<td>'+(r.isBoosted?'<span class="pill near">boost</span>':'')+'</td></tr>'
     ).join("");
-    document.getElementById("ttbl").innerHTML =
+    ttbl.innerHTML =
       '<table><thead><tr><th class="num">#</th><th>Title</th><th>Author</th>' +
       '<th class="num">Views</th><th class="num">Likes</th><th class="num">searchIndex</th><th></th></tr></thead>' +
       '<tbody>'+body+'</tbody></table>' +
@@ -670,29 +702,36 @@ function wireTrending() {
   };
   sel.onchange = draw;
   draw();
-  renderChurn(snaps);
+  loadChurn();
 }
 
-function renderChurn(snaps) {
+// Churn is computed server-side (over the full snapshot history) and only the
+// small summary is returned, so the browser never pulls every snapshot for it.
+async function loadChurn() {
+  const el = document.getElementById("churn");
+  if (!el) return;
+  const snaps = DATA.trendingSnapshots || [];
   if (snaps.length < 2) {
-    document.getElementById("churn").innerHTML = '<div class="hint">Need at least 2 snapshots to compute churn.</div>';
+    el.innerHTML = '<div class="hint">Need at least 2 snapshots to compute churn.</div>';
     return;
   }
-  const setOf = (ts) => new Set(DATA.trending.filter(r => r.snapshot_ts === ts).map(r => r.showcaseID));
-  const rows = [];
-  for (let i = 1; i < snaps.length; i++) {
-    const a = setOf(snaps[i-1]), b = setOf(snaps[i]);
-    let entries = 0, exits = 0, stay = 0;
-    for (const id of b) (a.has(id) ? stay++ : entries++);
-    for (const id of a) if (!b.has(id)) exits++;
-    const inter = stay, union = a.size + b.size - stay;
-    rows.push({ ts: snaps[i], entries, exits, jaccard: union ? inter/union : 0 });
+  el.innerHTML = '<div class="hint">Computing churn\u2026</div>';
+  let rows;
+  try {
+    const res = await fetch("/api/vgen-trending/churn", { cache: "no-store" });
+    if (!res.ok) throw new Error("HTTP " + res.status);
+    const json = await res.json();
+    rows = Array.isArray(json.churn) ? json.churn : [];
+  } catch (e) {
+    el.innerHTML = '<div class="hint">Failed to compute churn: '+esc((e&&e.message)||e)+'</div>';
+    return;
   }
+  if (!rows.length) { el.innerHTML = '<div class="hint">No churn data yet.</div>'; return; }
   const body = rows.map(r =>
     '<tr><td>'+new Date(r.ts).toLocaleString()+'</td><td class="num">'+r.entries+'</td>' +
-    '<td class="num">'+r.exits+'</td><td class="num">'+r.jaccard.toFixed(3)+'</td></tr>'
+    '<td class="num">'+r.exits+'</td><td class="num">'+Number(r.jaccard).toFixed(3)+'</td></tr>'
   ).join("");
-  document.getElementById("churn").innerHTML =
+  el.innerHTML =
     '<div class="hint">Jaccard ~1.0 = list barely changed (supports "no continuous refresh"); lower = big reshuffle.</div>' +
     '<table><thead><tr><th>At snapshot</th><th class="num">Entered</th><th class="num">Exited</th><th class="num">Jaccard</th></tr></thead>' +
     '<tbody>'+body+'</tbody></table>';
@@ -963,24 +1002,14 @@ document.querySelectorAll("nav a").forEach(a => a.onclick = () => {
   syncNav(); render();
 });
 document.getElementById("refresh").onclick = load;
-// Export every loaded snapshot + threshold series as one minified JSON file.
+// Export the FULL dataset (all snapshots + threshold series). The server streams
+// it straight to a file download, reading Redis in <10MB batches, so neither the
+// browser nor the server holds it all in memory - the browser only has the
+// latest snapshot loaded, so we must NOT build this client-side.
 document.getElementById("export").onclick = () => {
-  const payload = {
-    exported_at: new Date().toISOString(),
-    generated: DATA.generated || null,
-    trending: DATA.trending || [],
-    profiles: DATA.profiles || [],
-    threshold: DATA.threshold || [],
-  };
-  const blob = new Blob([JSON.stringify(payload)], { type: "application/json" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = "vgen-data-" + new Date().toISOString().replace(/[:.]/g, "-") + ".json";
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  URL.revokeObjectURL(url);
+  // A plain navigation to the attachment endpoint lets the browser's download
+  // manager save the streamed bytes to disk without loading them into JS.
+  window.location.href = "/api/vgen-trending/export";
 };
 // Clicking the health dot jumps to Overview and opens the status log.
 document.getElementById("statusDot").onclick = () => {

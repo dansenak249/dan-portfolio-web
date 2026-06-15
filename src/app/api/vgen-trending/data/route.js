@@ -1,13 +1,25 @@
 // VGen data endpoint (read side, consumed by the dashboard page)
 // --------------------------------------------------------------
-// Returns every kept snapshot flattened into trending/profiles row arrays,
-// matching the local viewer's data contract:
-//   { trending: [...rows], profiles: [...rows], generated }
-// Each row carries its own `snapshot_ts`, so the client can reconstruct the
-// time series. This endpoint is public read-only (no secret needed).
+// Returns a LIGHT payload for the initial dashboard render:
+//   {
+//     trending: [...latest snapshot rows only],
+//     trendingSnapshots: [ ...all kept ISO timestamps ],  // for the picker
+//     profiles: [...all profile rows],                    // small; per-post charts need history
+//     threshold: [...compact floor/cut series],
+//     generated,
+//   }
+// Older trending snapshots are NOT shipped here -- the dashboard loads them on
+// demand from /snapshot. This keeps one response from ballooning to ~100+ MB
+// (240 trending snapshots x 1000 rows) and blowing past Upstash's ~10 MB request
+// limit and the browser/Vercel response limits. Public read-only (no secret).
 
 import { NextResponse } from 'next/server'
-import { listSnapshotRows, listThreshold } from '@/lib/vgen/store'
+import {
+  listLatestSnapshotRows,
+  listSnapshotIds,
+  listSnapshotRows,
+  listThreshold,
+} from '@/lib/vgen/store'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -15,14 +27,18 @@ export const revalidate = 0
 
 export async function GET() {
   try {
-    const [trending, profiles, threshold] = await Promise.all([
-      listSnapshotRows('trending'),
-      listSnapshotRows('profiles'),
-      listThreshold(),
-    ])
+    const [trending, trendingSnapshots, profiles, threshold] = await Promise.all(
+      [
+        listLatestSnapshotRows('trending'),
+        listSnapshotIds('trending'),
+        listSnapshotRows('profiles'),
+        listThreshold(),
+      ]
+    )
     return NextResponse.json(
       {
         trending,
+        trendingSnapshots,
         profiles,
         threshold,
         generated: new Date().toISOString(),

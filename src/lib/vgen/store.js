@@ -18,14 +18,19 @@ import { Redis } from '@upstash/redis'
 
 const NS = 'vgen'
 // Per-kind snapshot retention (hourly cadence => 24/day).
+// NOTE: storage is NOT the binding constraint -- the plan allows 100 GB data, so
+// a full month of everything (~480 MB) is trivial. The real limits are the
+// ~10 MB per-request cap (see listSnapshotRows batching) and the per-command
+// billing, plus how much we ship to the browser in one /data response.
 //   profiles: 720 ~= 30 days. The per-post trajectory charts read PROFILES, so
-//             the watchlist needs a full month to satisfy the "keep >= 1 month"
-//             goal. ~200 rows/snapshot (~128 KB) => ~92 MB at 720.
-//   trending: 240 ~= 10 days. These are heavy (1000 rows, ~538 KB/snapshot).
-//             Their long-term value (the searchIndex floor / cut points) is
-//             preserved for ~1 year in the tiny threshold series below, so the
-//             full 1000-row lists do not need month-long retention. ~129 MB at 240.
-// Combined steady-state ~= 223 MB, under the ~256 MB free-tier ceiling.
+//             the watchlist needs a full month to meet the ">= 1 month" goal.
+//             ~200 rows/snapshot (~128 KB) => ~92 MB at 720.
+//   trending: 240 ~= 10 days. Heavy (1000 rows, ~538 KB/snapshot, ~129 MB at
+//             240). Kept lower for now ONLY because /data currently flattens all
+//             trending history to the browser; raise this once the read path
+//             ships just the latest snapshot + a compact churn summary. The
+//             long-term floor/cut signal is preserved ~1 year in the threshold
+//             series regardless.
 const MAX_SNAPSHOTS = { trending: 240, profiles: 720 }
 const DEFAULT_MAX_SNAPSHOTS = 240
 // Compact threshold records are tiny (~250 bytes each), so keep a much longer
@@ -177,9 +182,19 @@ export async function listThreshold() {
   return out
 }
 
+// Upstash caps a single request/response at ~10 MB. A naive mget of every
+// snapshot key returns ALL snapshots in ONE response (e.g. 240 trending
+// snapshots x ~538 KB ~= 129 MB), which blows past that 10 MB limit and 500s
+// the route. Read in small batches so each mget response stays well under it:
+// 8 trending snapshots ~= 4.3 MB worst case.
+const MGET_BATCH = 8
+
 /**
  * Read every kept snapshot for a kind and flatten the rows into a single
- * array (matches the local viewer's data contract).
+ * array (matches the local viewer's data contract). Reads are batched to keep
+ * each Upstash request under the ~10 MB per-request limit.
+ * NOTE: prefer the lighter helpers below for the dashboard read path; this
+ * pulls the full history (can be ~100+ MB) and is meant for the streamed export.
  * @param {'trending'|'profiles'} kind
  * @returns {Promise<object[]>}
  */
@@ -188,13 +203,73 @@ export async function listSnapshotRows(kind) {
   const ids = await r.lrange(indexKey(kind), 0, -1)
   if (!ids || ids.length === 0) return []
 
-  const keys = ids.map((ts) => snapKey(kind, ts))
-  const values = await r.mget(...keys)
-
   const rows = []
-  for (const value of values) {
-    const list = parseMaybe(value)
-    if (Array.isArray(list)) rows.push(...list)
+  for (let i = 0; i < ids.length; i += MGET_BATCH) {
+    const batch = ids.slice(i, i + MGET_BATCH).map((ts) => snapKey(kind, ts))
+    const values = await r.mget(...batch)
+    for (const value of values) {
+      const list = parseMaybe(value)
+      if (Array.isArray(list)) rows.push(...list)
+    }
   }
   return rows
+}
+
+/**
+ * The list of snapshot timestamps kept for a kind (oldest -> newest). Tiny;
+ * used to populate the dashboard's snapshot picker without shipping any rows.
+ * @param {'trending'|'profiles'} kind
+ * @returns {Promise<string[]>}
+ */
+export async function listSnapshotIds(kind) {
+  const r = ensureRedis()
+  return (await r.lrange(indexKey(kind), 0, -1)) || []
+}
+
+/**
+ * Rows of the most recent snapshot for a kind (one Redis read, ~<1 MB). This is
+ * all the dashboard needs by default; older snapshots load on demand.
+ * @param {'trending'|'profiles'} kind
+ * @returns {Promise<object[]>}
+ */
+export async function listLatestSnapshotRows(kind) {
+  const r = ensureRedis()
+  const ts = await r.lindex(indexKey(kind), -1)
+  if (!ts) return []
+  const list = parseMaybe(await r.get(snapKey(kind, ts)))
+  return Array.isArray(list) ? list : []
+}
+
+/**
+ * Rows of one specific snapshot, loaded on demand when the user picks it.
+ * @param {'trending'|'profiles'} kind
+ * @param {string} ts ISO timestamp of the snapshot
+ * @returns {Promise<object[]>}
+ */
+export async function getSnapshotRows(kind, ts) {
+  const r = ensureRedis()
+  const list = parseMaybe(await r.get(snapKey(kind, ts)))
+  return Array.isArray(list) ? list : []
+}
+
+/**
+ * Async generator yielding { ts, rows } per snapshot for a kind, oldest first,
+ * reading in batches so each Upstash request stays under the ~10 MB limit. Lets
+ * callers stream the full history without ever holding it all in memory.
+ * @param {'trending'|'profiles'} kind
+ * @returns {AsyncGenerator<{ ts: string, rows: object[] }>}
+ */
+export async function* iterateSnapshots(kind) {
+  const r = ensureRedis()
+  const ids = await r.lrange(indexKey(kind), 0, -1)
+  if (!ids || ids.length === 0) return
+
+  for (let i = 0; i < ids.length; i += MGET_BATCH) {
+    const slice = ids.slice(i, i + MGET_BATCH)
+    const values = await r.mget(...slice.map((ts) => snapKey(kind, ts)))
+    for (let j = 0; j < slice.length; j++) {
+      const list = parseMaybe(values[j])
+      yield { ts: slice[j], rows: Array.isArray(list) ? list : [] }
+    }
+  }
 }
