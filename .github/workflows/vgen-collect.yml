@@ -1,21 +1,21 @@
 name: VGen Trending Collector
 
-# Runs on GitHub's servers (not your PC), so the machine can stay off.
-# It just pings the deployed /api/vgen-trending/collect endpoint, which does
-# the actual fetching + Redis storage on Vercel.
+# BACKUP trigger only. The PRIMARY trigger is an external pinger (cron-job.org)
+# that POSTs to /api/vgen-trending/collect directly, because GitHub's scheduled
+# cron proved unreliable for this repo (it dropped ~94% of slots on 2026-06-15,
+# firing only once in 12h). This workflow is kept as a harmless free backup: the
+# /collect endpoint self-throttles, so an extra trigger is a cheap no-op unless
+# the newest snapshot is already older than ~45 min.
+#
+# It still just pings the deployed /collect endpoint, which does the actual
+# fetching + Redis storage on Vercel (PC can stay off).
 
 on:
   schedule:
-    # Fire THREE times an hour at off-peak minutes. GitHub's scheduled triggers
-    # are best-effort: the top of the hour ("0 * * * *") is its most congested
-    # slot and runs there are frequently DELAYED or DROPPED. Firing at :07, :27
-    # and :47 means a dropped slot is covered by the next one. This does NOT
-    # produce three snapshots/hour: the /collect endpoint self-throttles and
-    # skips (cheap no-op) unless the newest snapshot is older than ~45 min, so
-    # the result is still ~1 snapshot/hour with far higher reliability.
-    - cron: "7 * * * *"
-    - cron: "27 * * * *"
-    - cron: "47 * * * *"
+    # Best-effort hourly backup at an off-peak minute. Real cadence comes from
+    # the cron-job.org pinger; if GitHub happens to fire, the throttle prevents
+    # any duplicate snapshot.
+    - cron: "37 * * * *"
   # Manual "Run workflow" button in the Actions tab, for testing.
   workflow_dispatch: {}
 
