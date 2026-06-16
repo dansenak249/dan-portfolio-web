@@ -7,7 +7,8 @@
       "Bash(ls -la .env*)",
       "Bash(npx eslint:*)",
       "Bash(echo \"EXIT: $?\")",
-      "Bash(npx next:*)"
+      "Bash(npx next:*)",
+      "Bash(node -e ':*)"
     ]
   }
 }

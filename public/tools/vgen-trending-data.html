@@ -228,6 +228,30 @@
 let DATA = { trending: [], profiles: [], threshold: [], trendingSnapshots: [], profileSnapshots: [], watchlist: [] };
 const SNAP_CACHE = new Map();
 const POST_CACHE = new Map();
+// The /churn payload ({ churn, uniquePosts, snapshots }) is the whole-window
+// trending analysis: it powers BOTH the Overview "Unique trending posts" card
+// and the Trending tab's churn table. /data can't carry these (it ships only the
+// latest snapshot), so we fetch /churn once and memoize it here, shared across
+// tabs and reset in applyData, so the heavy server-side read runs at most once
+// per data change no matter how many tabs use it.
+let CHURN_CACHE = null;   // resolved /churn JSON for the current data version
+let CHURN_PROMISE = null; // in-flight fetch, so concurrent callers share one request
+async function fetchChurn() {
+  if (CHURN_CACHE) return CHURN_CACHE;
+  if (!CHURN_PROMISE) {
+    CHURN_PROMISE = (async () => {
+      const res = await fetch("/api/vgen-trending/churn", { cache: "no-store" });
+      if (!res.ok) throw new Error("HTTP " + res.status);
+      return res.json();
+    })();
+  }
+  try {
+    CHURN_CACHE = await CHURN_PROMISE;
+    return CHURN_CACHE;
+  } finally {
+    CHURN_PROMISE = null;
+  }
+}
 // localStorage cache of the last /data payload. On load we first ask /status for
 // the newest snapshot ts per kind; if it matches this cache we render from here
 // and skip the heavy /data download (avoids a wasteful refresh when nothing
@@ -439,6 +463,8 @@ function applyData(data, sourceLabel) {
   if (!Array.isArray(DATA.watchlist)) DATA.watchlist = [];
   SNAP_CACHE.clear();
   POST_CACHE.clear();
+  CHURN_CACHE = null; CHURN_PROMISE = null; // recompute churn/unique lazily for the new data
+
   // The latest trending snapshot is what /data ships; cache it so re-selecting
   // it in the picker is instant and needs no extra round-trip.
   const latestTs = DATA.trendingSnapshots.at(-1);
@@ -554,6 +580,24 @@ function wireOverview() {
     localStorage.removeItem("vg_log");
     render();
   };
+  loadUniqueTrending();
+}
+
+// Lazily fill the "Unique trending posts" card from the shared /churn fetch.
+// Just updates the one cell (no full re-render); reuses CHURN_CACHE if the
+// Trending tab already loaded it this data version.
+async function loadUniqueTrending() {
+  const cell = document.getElementById("uniqTrend");
+  if (!cell) return;
+  if (!(DATA.trendingSnapshots || []).length) { cell.textContent = "-"; return; }
+  try {
+    const json = await fetchChurn();
+    const c = document.getElementById("uniqTrend"); // may have re-rendered meanwhile
+    if (c) c.textContent = fmt(Number(json.uniquePosts) || 0);
+  } catch (e) {
+    const c = document.getElementById("uniqTrend");
+    if (c) c.textContent = "?";
+  }
 }
 
 function viewOverview() {
@@ -566,7 +610,6 @@ function viewOverview() {
   // so counting their distinct snapshot_ts would always show ~2).
   const tSnaps = [...(DATA.trendingSnapshots || [])].sort();
   const pSnaps = [...(DATA.profileSnapshots || [])].sort();
-  const tPosts = uniq(t.map(r => r.showcaseID)).length;
   const pPosts = uniq(p.map(r => r.showcaseID)).length;
   const users = uniq(p.map(r => r.watch_label));
   const LT = latestTrending();
@@ -576,7 +619,8 @@ function viewOverview() {
   return '<div class="cards">' +
     card("Trending snapshots", tSnaps.length) +
     card("Trending span", span(tSnaps)) +
-    card("Unique trending posts", fmt(tPosts)) +
+    '<div class="card"><div class="k">Unique trending posts</div><div class="v" id="uniqTrend">' +
+      (CHURN_CACHE ? fmt(CHURN_CACHE.uniquePosts) : "\u2026") + '</div></div>' +
     card("Trending floor (SI)", LT.floor != null ? fmtSi(LT.floor) : "-") +
     card("Trending list size", fmt(LT.count)) +
     card("Profile snapshots", pSnaps.length) +
@@ -1068,9 +1112,7 @@ async function loadChurn() {
   el.innerHTML = '<div class="hint">Computing churn\u2026</div>';
   let rows;
   try {
-    const res = await fetch("/api/vgen-trending/churn", { cache: "no-store" });
-    if (!res.ok) throw new Error("HTTP " + res.status);
-    const json = await res.json();
+    const json = await fetchChurn();
     rows = Array.isArray(json.churn) ? json.churn : [];
   } catch (e) {
     el.innerHTML = '<div class="hint">Failed to compute churn: '+esc((e&&e.message)||e)+'</div>';

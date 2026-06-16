@@ -3,10 +3,13 @@
 // Computes membership churn between consecutive trending snapshots SERVER-SIDE
 // and returns only the small summary table, so the dashboard never has to pull
 // every full snapshot to the browser just to measure churn.
-//   GET /api/vgen-trending/churn -> { churn: [{ ts, entries, exits, jaccard }] }
+//   GET /api/vgen-trending/churn
+//     -> { churn: [{ ts, entries, exits, jaccard }], uniquePosts, snapshots }
 // Jaccard ~1.0 => the list barely changed between snapshots (supports the
-// "no continuous refresh" hypothesis); lower => a big reshuffle. The heavy read
-// is batched (<10 MB/request) and only happens when the user opens the tab.
+// "no continuous refresh" hypothesis); lower => a big reshuffle. uniquePosts is
+// the count of DISTINCT showcaseIDs seen across every kept trending snapshot
+// (the true turnover total, vs the ~fixed per-snapshot list size). The heavy
+// read is batched (<10 MB/request) and only happens when the user opens the tab.
 // Public read-only.
 
 import { NextResponse } from 'next/server'
@@ -21,9 +24,14 @@ export async function GET() {
     const churn = []
     let prevSet = null
     let prevTs = null
+    // Union of every showcaseID ever seen on trending across the kept window.
+    const uniqueIds = new Set()
+    let snapshots = 0
 
     for await (const { ts, rows } of iterateSnapshots('trending')) {
       const set = new Set(rows.map((r) => r.showcaseID))
+      snapshots++
+      for (const id of set) uniqueIds.add(id)
       if (prevSet) {
         let stay = 0
         for (const id of set) if (prevSet.has(id)) stay++
@@ -43,7 +51,7 @@ export async function GET() {
     }
 
     return NextResponse.json(
-      { churn },
+      { churn, uniquePosts: uniqueIds.size, snapshots },
       { headers: { 'Cache-Control': 'no-store' } }
     )
   } catch (error) {
