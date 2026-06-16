@@ -6,6 +6,7 @@
 //     trendingSnapshots: [ ...all kept trending ISO timestamps ], // for the picker
 //     profiles: [...last 2 profile snapshots only],               // latest + prev for deltas
 //     profileSnapshots: [ ...all kept profiles ISO timestamps ],  // for the picker
+//     watchlist: [ { userID, label }, ... ],                      // tracked accounts (ordered)
 //     latest: { trending, profiles },                             // newest ts per kind (sync check)
 //     threshold: [...compact floor/cut series],
 //     generated,
@@ -23,6 +24,7 @@ import {
   listSnapshotIds,
   listRecentSnapshotRows,
   listThreshold,
+  getWatchlist,
 } from '@/lib/vgen/store'
 
 export const runtime = 'nodejs'
@@ -41,12 +43,14 @@ export async function GET() {
       profiles,
       profileSnapshots,
       threshold,
+      watchlist,
     ] = await Promise.all([
       listLatestSnapshotRows('trending'),
       listSnapshotIds('trending'),
       listRecentSnapshotRows('profiles', PROFILE_SNAPSHOTS_INLINE),
       listSnapshotIds('profiles'),
       listThreshold(),
+      getWatchlist(),
     ])
     return NextResponse.json(
       {
@@ -54,6 +58,7 @@ export async function GET() {
         trendingSnapshots,
         profiles,
         profileSnapshots,
+        watchlist,
         latest: {
           trending: trendingSnapshots.at(-1) ?? null,
           profiles: profileSnapshots.at(-1) ?? null,
