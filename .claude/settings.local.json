@@ -8,7 +8,16 @@
       "Bash(npx eslint:*)",
       "Bash(echo \"EXIT: $?\")",
       "Bash(npx next:*)",
-      "Bash(node -e ':*)"
+      "Bash(node -e ':*)",
+      "mcp__Claude_Preview__preview_start",
+      "Bash(grep -rn vtuber-pipeline src/ public/ --include=*.js --include=*.jsx --include=*.json)",
+      "Bash(mv src/app/documentation/vtuber-pipeline/components src/app/documentation/)",
+      "Bash(mv src/app/documentation/vtuber-pipeline/data src/app/documentation/)",
+      "Bash(mv src/app/documentation/vtuber-pipeline/lib src/app/documentation/)",
+      "Bash(mv src/app/documentation/vtuber-pipeline/layout.js src/app/documentation/)",
+      "Bash(mv src/app/documentation/vtuber-pipeline/page.js src/app/documentation/)",
+      "Bash(mv public/documentation/vtuber-pipeline/logos public/documentation/logos)",
+      "Bash(rmdir public/documentation/vtuber-pipeline)"
     ]
   }
 }

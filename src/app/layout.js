@@ -163,7 +163,9 @@ export default function RootLayout({ children }) {
           dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
         />
       </head>
-      <body className="font-aptima">{children}</body>
+      <body className="font-aptima" suppressHydrationWarning>
+        {children}
+      </body>
     </html>
   )
 }
