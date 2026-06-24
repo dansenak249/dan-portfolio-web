@@ -386,6 +386,15 @@ const fmt = (n) => (n === null || n === undefined || n === "") ? "-" : Number(n)
 const fmtSi = (n) => (n === null || n === undefined || n === "") ? "-" : Number(n).toFixed(4);
 const byTs = (a, b) => a.snapshot_ts < b.snapshot_ts ? -1 : a.snapshot_ts > b.snapshot_ts ? 1 : 0;
 const uniq = (arr) => [...new Set(arr)];
+// Post creation date as DD-MM-YY, used to disambiguate same-titled re-uploads
+// (each re-upload is a distinct showcaseID with its own created date).
+function fmtDMY(s) {
+  if (!s) return "??-??-??";
+  const d = new Date(s);
+  if (isNaN(d.getTime())) return "??-??-??";
+  const p = (n) => String(n).padStart(2, "0");
+  return p(d.getDate()) + "-" + p(d.getMonth() + 1) + "-" + String(d.getFullYear()).slice(-2);
+}
 
 // Latest trending snapshot: its searchIndex floor (lowest SI still on the list)
 // and the set of showcaseIDs currently on trending. This is the REAL threshold,
@@ -703,8 +712,8 @@ function postsByUser(label) {
   const ids = uniq(rows.map(r => r.showcaseID));
   return ids.map(id => {
     const rs = rows.filter(r => r.showcaseID === id).sort(byTs);
-    return { id, title: rs[0].title || id, series: rs };
-  }).sort((a, b) => (b.series.at(-1).viewCount||0) - (a.series.at(-1).viewCount||0));
+    return { id, title: rs[0].title || id, created: rs[0].created || null, series: rs };
+  }).sort((a, b) => new Date(b.created || 0) - new Date(a.created || 0));
 }
 
 // Fetch one post's full time series on demand (memoized). /data ships only the
@@ -734,7 +743,7 @@ function wireProfiles() {
   SEL_USER = selU.value;
   const fillPosts = () => {
     const posts = postsByUser(selU.value);
-    selP.innerHTML = posts.map(p => '<option value="'+p.id+'">'+esc(trim(p.title,60))+'</option>').join("");
+    selP.innerHTML = posts.map(p => '<option value="'+p.id+'">'+esc(fmtDMY(p.created)+" | "+trim(p.title,50))+'</option>').join("");
     // restore remembered post if it still exists for this account
     if (SEL_POST && posts.some(p => p.id === SEL_POST)) selP.value = SEL_POST;
     SEL_POST = selP.value;
@@ -816,10 +825,12 @@ function renderProfileTable() {
       const s = post.series;
       const last = s.at(-1), prev = s.length > 1 ? s.at(-2) : null;
       const dv = prev ? (last.viewCount||0) - (prev.viewCount||0) : null;
-      rows.push({ u, title: post.title, last, dv });
+      rows.push({ u, title: post.title, created: post.created, last, dv });
     }
   }
-  rows.sort((a, b) => (b.last.searchIndex||0) - (a.last.searchIndex||0));
+  // Sort by post creation time, newest on top, so same-titled re-uploads are
+  // ordered and the latest clone is immediately visible.
+  rows.sort((a, b) => new Date(b.created || 0) - new Date(a.created || 0));
   const LT = latestTrending();
   const delta = (d) => d === null ? '<span class="pill flat">new</span>'
     : d > 0 ? '<span class="pill up">+'+fmt(d)+'</span>'
@@ -833,7 +844,7 @@ function renderProfileTable() {
     return fmtSi(v) + tag;
   };
   const body = rows.map(r =>
-    '<tr><td>'+esc(r.u)+'</td><td class="title-cell" title="'+esc(r.last.title||"")+'">'+esc(trim(r.last.title||r.last.showcaseID,48))+'</td>' +
+    '<tr><td>'+esc(r.u)+'</td><td class="title-cell" title="'+esc(r.last.title||"")+'">'+esc(fmtDMY(r.created)+" | "+trim(r.last.title||r.last.showcaseID,40))+'</td>' +
     '<td class="num">'+fmt(r.last.viewCount)+'</td><td class="num">'+delta(r.dv)+'</td>' +
     '<td class="num">'+fmt(r.last.likeCount)+'</td><td class="num">'+siCell(r.last.searchIndex, r.last.showcaseID)+'</td></tr>'
   ).join("");
