@@ -27,7 +27,7 @@ export const technicalDefinitions = [
     term: 'Part separation',
     summary: 'Splitting the artwork into independent layers so each movable piece can be rigged on its own.',
     definition:
-      'Part separation is the practice of painting a character as many independent layers rather than a single flat image, so that every piece that needs to move — each eye, the mouth, individual hair strands, accessories — lives on its own layer. It is the defining requirement of the Artwork stage: rigging can only deform what has been separated, so cleaner separation directly translates into a more expressive final model. The separated layers travel to rigging as a single .psd.',
+      'Part separation is the practice of painting a character as many independent layers rather than a single flat image, so that every piece that needs to move — each eye, the mouth, individual hair strands, accessories — lives on its own layer. It is the defining requirement of the Illustration stage: rigging can only deform what has been separated, so cleaner separation directly translates into a more expressive final model. The separated layers travel to rigging as a single .psd.',
     relatedStages: ['art', 'rig'],
   },
   {
@@ -139,6 +139,19 @@ export const fileExtensions = [
     consumedBy: 'rig',
   },
   {
+    id: 'cmo3',
+    type: 'model',
+    icon: 'model',
+    navLabel: '.cmo3',
+    name: 'Cubism Editor Project',
+    extension: '.cmo3',
+    summary: 'The editable Cubism source project; you rig in this file and "export for runtime" to produce the .moc3 bundle.',
+    technical:
+      'The editable Cubism Editor source project. It holds the live, fully editable rig — meshes, deformers, parameters, physics and artwork references — that the rigger works on inside Live2D Cubism. It is not loaded by tracking apps; instead you keep it as your master file and run "export for runtime" to compile the optimized .moc3 plus its texture atlas and .model3.json. Think of .cmo3 as the source and .moc3 as the build output.',
+    producedBy: 'rig',
+    consumedBy: 'rig',
+  },
+  {
     id: 'moc3',
     type: 'model',
     icon: 'model',
@@ -197,7 +210,7 @@ export const handoffTargets = {
 // `stages` lists the pipeline stage ids where the app is used.
 // ---------------------------------------------------------------------------
 export const applications = [
-  // --- Artwork ---
+  // --- Illustration ---
   {
     id: 'photoshop',
     name: 'Adobe Photoshop',
@@ -207,61 +220,6 @@ export const applications = [
     summary: 'Industry-standard raster editor; .psd is the native format Cubism imports.',
     description:
       'Adobe Photoshop is the industry-standard raster editor and the reason .psd is the universal artwork handoff: it is the native format Live2D Cubism imports. VTuber artists use it to paint the character as cleanly part-separated layers, which is the single most important factor in how well the model can later be rigged. Its ubiquity means almost any other painting tool offers a .psd export specifically to slot into this stage.',
-    stages: ['art'],
-  },
-  {
-    id: 'clip-studio-paint',
-    name: 'Clip Studio Paint (CSP)',
-    category: 'app',
-    tag: 'popular',
-    vendor: 'Celsys',
-    summary: 'Extremely popular illustration tool among VTuber artists; exports to .psd.',
-    description:
-      'Clip Studio Paint is an illustration-focused painting application that is enormously popular with VTuber and anime-style artists thanks to its drawing feel, brushes and one-time-purchase options. It exports layered .psd files, so part-separated artwork made in CSP drops straight into rigging. For many character artists it is the practical default over Photoshop.',
-    stages: ['art'],
-  },
-  {
-    id: 'krita',
-    name: 'Krita',
-    category: 'app',
-    tag: 'free',
-    vendor: 'KDE',
-    summary: 'Free, open-source painting app; exports .psd for the rigging handoff.',
-    description:
-      'Krita is a free, open-source digital painting application with a capable layer and brush system. It exports layered .psd files, making it a no-cost entry point into the artwork stage for hobbyists and newcomers. While less common in professional commissions than Photoshop or CSP, it is fully viable for producing rig-ready, part-separated art.',
-    stages: ['art'],
-  },
-  {
-    id: 'procreate',
-    name: 'Procreate',
-    category: 'app',
-    tag: 'ipad',
-    vendor: 'Savage Interactive',
-    summary: 'iPad painting app with layered .psd export.',
-    description:
-      'Procreate is a popular iPad-only painting app prized for its natural drawing experience and Apple Pencil support. It supports layered export to .psd, so artwork drawn on tablet can be handed to a rigger on desktop. It is a common choice for artists who prefer drawing on iPad rather than at a desktop.',
-    stages: ['art'],
-  },
-  {
-    id: 'affinity-photo',
-    name: 'Affinity Photo',
-    category: 'app',
-    tag: 'alt',
-    vendor: 'Serif',
-    summary: 'One-time-purchase Photoshop alternative; PSD-capable.',
-    description:
-      'Affinity Photo is a one-time-purchase raster editor positioned as an alternative to Photoshop. It can open and export .psd, so it can participate in the artwork stage, though it is less commonly seen in VTuber workflows than Photoshop or Clip Studio Paint. It appeals to artists who want a Photoshop-like toolset without a subscription.',
-    stages: ['art'],
-  },
-  {
-    id: 'painttool-sai',
-    name: 'PaintTool SAI',
-    category: 'app',
-    tag: 'alt',
-    vendor: 'Systemax',
-    summary: 'Lightweight illustration tool with a loyal following; PSD-capable.',
-    description:
-      'PaintTool SAI is a lightweight, long-standing illustration application with a devoted following for its smooth line work. It supports .psd, allowing part-separated art to flow into rigging. It is more of a niche choice today but remains capable for the artwork stage.',
     stages: ['art'],
   },
 
@@ -275,17 +233,10 @@ export const applications = [
     summary: 'The de-facto standard 2D rigging editor; near-monopoly. Splits into Editor and Runtime/SDK.',
     description:
       'Live2D Cubism is the de-facto standard — a near monopoly — for 2D character rigging. It splits into the Editor, where you build mesh deformers, parameters and physics from the imported .psd, and the Runtime/SDK that tracking apps embed to load the model. You rig in the Editor and use "export for runtime" to produce the .moc3 + texture atlas + .model3.json bundle the next stage consumes. The editable source project is a .cmo3; the .moc3 is the compiled output.',
-    stages: ['rig'],
-  },
-  {
-    id: 'inochi-creator',
-    name: 'Inochi Creator',
-    category: 'app',
-    tag: 'free',
-    vendor: 'Inochi2D',
-    summary: 'Free, open-source alternative to Cubism (Inochi2D). Newer and less mature.',
-    description:
-      'Inochi Creator is the free, open-source rigging editor of the Inochi2D project, positioned as an alternative to Live2D Cubism. It produces Inochi2D models that are puppeteered by its companion runtime, Inochi Session. It is newer and less mature than Cubism and has a smaller ecosystem, but it is fully open and carries no licensing cost.',
+    callout: {
+      title: 'Editor vs Runtime',
+      body: 'Cubism splits into the Editor (where you rig) and the Runtime/SDK (what Stage 3 apps load). You export FOR the runtime.',
+    },
     stages: ['rig'],
   },
 
@@ -302,39 +253,6 @@ export const applications = [
     stages: ['tracking'],
   },
   {
-    id: 'nizima-live',
-    name: 'nizima LIVE',
-    category: 'app',
-    tag: 'official',
-    vendor: 'Live2D Inc.',
-    summary: 'Official Live2D tracking app. Free tier non-commercial; paid for commercial.',
-    description:
-      'nizima LIVE is the official tracking application from Live2D Inc., the makers of Cubism. It loads Live2D runtime models and drives them from camera or ARKit input, with a free tier for non-commercial use and paid licensing for commercial streaming. Being first-party, it tracks Cubism feature support closely.',
-    stages: ['tracking'],
-  },
-  {
-    id: 'prprlive',
-    name: 'PrPrLive',
-    category: 'app',
-    tag: 'free',
-    vendor: 'PrPr',
-    summary: 'Free alternative tracking app for Live2D models.',
-    description:
-      'PrPrLive is a free alternative tracking application for Live2D models, offering webcam-based face tracking as a no-cost option in the runtime stage. It is less widely adopted than VTube Studio but provides a workable free path for puppeteering a rigged model.',
-    stages: ['tracking'],
-  },
-  {
-    id: 'inochi-session',
-    name: 'Inochi Session',
-    category: 'app',
-    tag: 'free',
-    vendor: 'Inochi2D',
-    summary: 'Open-source runtime + tracking for Inochi2D models.',
-    description:
-      'Inochi Session is the open-source runtime and tracking app for Inochi2D, the companion to Inochi Creator. It loads Inochi2D models and drives them from face tracking, completing a fully open-source alternative pipeline to Cubism + VTube Studio. Like the rest of Inochi2D it is free and community-developed.',
-    stages: ['tracking'],
-  },
-  {
     id: 'vbridger',
     name: 'VBridger',
     category: 'plugin',
@@ -342,7 +260,7 @@ export const applications = [
     vendor: 'Mia',
     summary: 'Sits in front of VTS; remaps ARKit blendshapes into advanced mouth/lip/tongue control. Paid.',
     description:
-      'VBridger is a paid enhancer that sits in front of VTube Studio rather than replacing it. It takes ARKit blendshape input (from iFacialMocap, FaceMotion3D or MeowFace), lets you mix and remap those blendshapes for far richer mouth, lip and tongue control, then feeds the result into VTS through its plugin API. It is the standard way to get expressive, advanced lip-sync out of an iPhone ARKit setup.',
+      'VBridger is a paid enhancer that sits in front of VTube Studio rather than replacing it. It takes ARKit blendshape input (from iFacialMocap or MeowFace), lets you mix and remap those blendshapes for far richer mouth, lip and tongue control, then feeds the result into VTS through its plugin API. It is the standard way to get expressive, advanced lip-sync out of an iPhone ARKit setup.',
     stages: ['tracking'],
   },
   {
@@ -354,17 +272,6 @@ export const applications = [
     summary: 'iOS app that streams ARKit face data into VBridger / VTS.',
     description:
       'iFacialMocap is an iOS app that captures ARKit face data on a TrueDepth iPhone or iPad and streams the blendshapes over the local network to a desktop tracker or to VBridger. It is one of the most common ARKit sources for high-fidelity Live2D tracking. The phone does the capture; the desktop does the remapping and rendering.',
-    stages: ['tracking'],
-  },
-  {
-    id: 'facemotion3d',
-    name: 'FaceMotion3D',
-    category: 'plugin',
-    tag: 'source',
-    vendor: 'Crazy Eddie',
-    summary: 'Alternative iOS ARKit mocap source.',
-    description:
-      'FaceMotion3D is an iOS ARKit mocap app and an alternative to iFacialMocap as a blendshape source. It streams high-quality ARKit face data to desktop trackers and remappers such as VBridger over the network. Many streamers pick it for its capture quality and feature set.',
     stages: ['tracking'],
   },
   {
@@ -392,17 +299,6 @@ export const applications = [
     stages: ['compositing'],
   },
   {
-    id: 'streamlabs',
-    name: 'Streamlabs Desktop',
-    category: 'app',
-    tag: 'popular',
-    vendor: 'Streamlabs',
-    summary: 'OBS fork with built-in alerts and themes.',
-    description:
-      'Streamlabs Desktop is a fork of OBS that bundles alerts, overlays and themes into a more turnkey package. It performs the same compositing-and-encoding role but trades some of OBS\'s flexibility for a friendlier, batteries-included experience. It is popular with streamers who want alerts working out of the box.',
-    stages: ['compositing'],
-  },
-  {
     id: 'prism-live',
     name: 'PRISM Live Studio',
     category: 'app',
@@ -411,28 +307,6 @@ export const applications = [
     summary: 'Free broadcaster by NAVER. Desktop + mobile. Native multi-platform simulcast.',
     description:
       'PRISM Live Studio is a free broadcaster by NAVER (Korea), in the same broader group as OBS, that runs on both Windows desktop and iOS/Android. Its signature feature is native simulcasting: pushing one encode to many platforms at once (YouTube, Twitch, CHZZK, SOOP and more). It explicitly supports VTubing and is a strong pick for multi-platform streamers.',
-    stages: ['compositing'],
-  },
-  {
-    id: 'xsplit',
-    name: 'XSplit Broadcaster',
-    category: 'app',
-    tag: 'paid',
-    vendor: 'SplitmediaLabs',
-    summary: 'Polished paid broadcaster.',
-    description:
-      'XSplit Broadcaster is a polished, paid alternative to OBS for scene compositing and streaming. It offers a refined interface and built-in features behind a subscription. It fills the same role in the pipeline for users who prefer a commercial product.',
-    stages: ['compositing'],
-  },
-  {
-    id: 'vmix',
-    name: 'vMix',
-    category: 'app',
-    tag: 'paid',
-    vendor: 'StudioCoast',
-    summary: 'Professional-grade live production software.',
-    description:
-      'vMix is professional-grade live production software aimed at multi-camera and broadcast-style workflows. It can act as the compositing and encoding stage for ambitious setups that need mixing, replays and advanced inputs. It is overkill for most solo VTubers but powerful for productions that need it.',
     stages: ['compositing'],
   },
 
@@ -468,72 +342,6 @@ export const applications = [
     summary: 'Growing public live-streaming option with mobile-first reach.',
     description:
       'TikTok Live is a fast-growing public live-streaming destination with strong mobile-first discovery. It receives a broadcast and exposes a large, casual audience. Access to RTMP streaming can depend on account eligibility.',
-    stages: ['platform'],
-  },
-  {
-    id: 'kick',
-    name: 'Kick',
-    category: 'platform',
-    tag: 'public',
-    vendor: 'Kick',
-    summary: 'Newer public streaming platform; Twitch-like.',
-    description:
-      'Kick is a newer public live-streaming platform with a Twitch-like model and creator-friendly terms. It receives the RTMP broadcast and is increasingly used as a primary or secondary destination. It has grown quickly as an alternative home for streamers.',
-    stages: ['platform'],
-  },
-  {
-    id: 'twitcasting',
-    name: 'Twitcasting',
-    category: 'platform',
-    tag: 'regional',
-    vendor: 'MOI',
-    summary: 'Popular Japanese live-streaming platform.',
-    description:
-      'Twitcasting is a Japanese live-streaming platform popular with JP creators and VTubers. It serves as a regional broadcast destination with its own audience and culture. It is a common choice for streamers targeting a Japanese viewership.',
-    stages: ['platform'],
-  },
-  {
-    id: 'niconico',
-    name: 'Niconico Live',
-    category: 'platform',
-    tag: 'regional',
-    vendor: 'Dwango',
-    summary: 'Long-running Japanese streaming/video platform.',
-    description:
-      'Niconico Live is the streaming arm of Niconico, a long-running Japanese video platform famous for its overlaid-comment culture. It is a regional broadcast destination with deep roots in Japanese internet and VTuber history. It remains relevant for creators aimed at that audience.',
-    stages: ['platform'],
-  },
-  {
-    id: 'bilibili',
-    name: 'bilibili Live',
-    category: 'platform',
-    tag: 'regional',
-    vendor: 'bilibili',
-    summary: 'Major Chinese video/streaming platform; big with CN VTubers.',
-    description:
-      'bilibili Live is the live arm of bilibili, a major Chinese video platform and the heart of the Chinese VTuber (VUP) scene. It is the key regional broadcast destination for creators targeting China. Its community and event culture are central to CN VTubing.',
-    stages: ['platform'],
-  },
-  {
-    id: 'soop',
-    name: 'SOOP',
-    category: 'platform',
-    tag: 'regional',
-    vendor: 'SOOP',
-    summary: 'Korean streaming platform (formerly AfreecaTV); PRISM integrates natively.',
-    description:
-      'SOOP (formerly AfreecaTV) is a major Korean live-streaming platform. It is a regional broadcast destination that PRISM Live Studio integrates with natively for simulcasting. It is a primary home for many Korean streamers.',
-    stages: ['platform'],
-  },
-  {
-    id: 'chzzk',
-    name: 'CHZZK',
-    category: 'platform',
-    tag: 'regional',
-    vendor: 'NAVER',
-    summary: 'NAVER\'s Korean streaming platform; PRISM integrates natively.',
-    description:
-      'CHZZK is NAVER\'s Korean live-streaming platform and a growing regional broadcast destination. Being a NAVER product, it integrates natively with PRISM Live Studio for simulcasting. It has quickly become a significant home for Korean creators.',
     stages: ['platform'],
   },
   {
@@ -635,7 +443,7 @@ export const categoryIntros = [
     title: 'File Extensions',
     intro: [
       'This category documents the real files that travel between stages — the concrete artifacts a producer writes and a consumer reads. Each entry gives a plain-language definition of the format, the file extension itself, and where the file sits in the pipeline (which stage produces it and which one consumes it).',
-      'These are the handoffs that make the pipeline a pipeline: a layered .psd leaves Artwork for Rigging, the compiled .moc3 bundle leaves Rigging for Tracking, and so on. Use this list when you need to understand exactly what is being passed along, not just which tool does the passing.',
+      'These are the handoffs that make the pipeline a pipeline: a layered .psd leaves Illustration for Rigging, the compiled .moc3 bundle leaves Rigging for Tracking, and so on. Use this list when you need to understand exactly what is being passed along, not just which tool does the passing.',
     ],
     items: () => sortedFileExtensions().map((f) => ({ id: f.id, label: f.navLabel })),
   },

@@ -9,11 +9,13 @@ import {
 // The References group page: a short intro plus three category cards, each
 // linking to the individual reference pages.
 export default function ReferencesIntro({ onSelect }) {
+  // Categories listed alphabetically: Applications & Plugins, File Extensions,
+  // then Technical Definition.
   const categories = [
     {
-      title: 'Technical Definition',
-      blurb: 'Concepts and live protocols referenced across the pipeline — what rigging is, what a blendshape is, how Spout2 and RTMP work.',
-      items: sortedTechDefs().map((t) => ({ id: t.id, label: t.term })),
+      title: 'Applications & Plugins',
+      blurb: 'Every piece of software, plugin and platform used across the pipeline, in one alphabetical list.',
+      items: sortedApplications().map((a) => ({ id: a.id, label: a.name })),
     },
     {
       title: 'File Extensions',
@@ -21,9 +23,9 @@ export default function ReferencesIntro({ onSelect }) {
       items: sortedFileExtensions().map((f) => ({ id: f.id, label: f.navLabel })),
     },
     {
-      title: 'Applications & Plugins',
-      blurb: 'Every piece of software, plugin and platform used across the pipeline, in one alphabetical list.',
-      items: sortedApplications().map((a) => ({ id: a.id, label: a.name })),
+      title: 'Technical Definition',
+      blurb: 'Concepts and live protocols referenced across the pipeline — what rigging is, what a blendshape is, how Spout2 and RTMP work.',
+      items: sortedTechDefs().map((t) => ({ id: t.id, label: t.term })),
     },
   ]
 

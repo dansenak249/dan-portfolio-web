@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect, useRef } from 'react'
 
 // Pinned left sidebar tree (Unity-style). Top-level groups are BOTH a page of
 // their own and an expandable container: clicking the label opens the group's
@@ -10,9 +10,44 @@ import { useState } from 'react'
 export default function DocsSidebar({ tree, title, activeId, onSelect }) {
   const [open, setOpen] = useState(() => initOpen(tree))
   const toggle = (id) => setOpen((o) => ({ ...o, [id]: !o[id] }))
+  const asideRef = useRef(null)
+
+  // Auto-expand the ancestors of the active page (e.g. on reload via #hash) so
+  // the selected item is always visible. Only opens; never collapses what the
+  // user already opened.
+  useEffect(() => {
+    const ancestors = ancestorIds(tree, activeId)
+    if (ancestors.length === 0) return
+    setOpen((o) => {
+      const next = { ...o }
+      let changed = false
+      for (const id of ancestors) {
+        if (!next[id]) {
+          next[id] = true
+          changed = true
+        }
+      }
+      return changed ? next : o
+    })
+  }, [tree, activeId])
+
+  // Scroll the active item into view when it changes or after its ancestors
+  // expand. Deep pages can sit below the fold, so bring them on-screen.
+  // requestAnimationFrame waits for the expand to render before measuring.
+  useEffect(() => {
+    const raf = requestAnimationFrame(() => {
+      asideRef.current
+        ?.querySelector('[aria-current="page"]')
+        ?.scrollIntoView({ block: 'nearest' })
+    })
+    return () => cancelAnimationFrame(raf)
+  }, [activeId, open])
 
   return (
-    <aside className="hidden w-72 shrink-0 overflow-y-auto border-r border-[#e2e4f0] bg-[#fafafe] md:block">
+    <aside
+      ref={asideRef}
+      className="hidden w-72 shrink-0 overflow-y-auto border-r border-[#e2e4f0] bg-[#fafafe] md:block"
+    >
       <div className="border-b border-[#e2e4f0] px-4 py-4">
         <h2 className="text-xl font-bold text-[#2d2d3a]">{title}</h2>
       </div>
@@ -50,8 +85,8 @@ export default function DocsSidebar({ tree, title, activeId, onSelect }) {
                         <SubGroup
                           key={child.id}
                           node={child}
-                          open={open[child.id]}
-                          onToggle={() => toggle(child.id)}
+                          open={open}
+                          toggle={toggle}
                           activeId={activeId}
                           onSelect={onSelect}
                         />
@@ -75,20 +110,22 @@ export default function DocsSidebar({ tree, title, activeId, onSelect }) {
   )
 }
 
-// A second-level category. It is both a page (its own intro article) and an
-// expandable container: clicking the label opens the page and expands it, while
-// the +/- box toggles its children.
-function SubGroup({ node, open, onToggle, activeId, onSelect }) {
+// A second-level (or deeper) category. It is both a page (its own intro article)
+// and an expandable container: clicking the label opens the page and expands it,
+// while the +/- box toggles its children. Renders recursively so a subgroup may
+// itself contain subgroups (e.g. the Live2D Cubism app nesting its tutorials).
+function SubGroup({ node, open, toggle, activeId, onSelect }) {
   const active = node.id === activeId
+  const isOpen = Boolean(open[node.id])
   return (
     <li>
       <div className="flex items-center gap-1">
-        <ExpandButton open={open} onClick={onToggle} />
+        <ExpandButton open={isOpen} onClick={() => toggle(node.id)} />
         <button
           type="button"
           onClick={() => {
             onSelect(node.id)
-            if (!open) onToggle()
+            if (!isOpen) toggle(node.id)
           }}
           aria-current={active ? 'page' : undefined}
           className={`flex-1 rounded-md px-1.5 py-1.5 text-left text-[13px] transition-colors ${
@@ -99,11 +136,22 @@ function SubGroup({ node, open, onToggle, activeId, onSelect }) {
         </button>
       </div>
 
-      {open && node.children?.length > 0 && (
+      {isOpen && node.children?.length > 0 && (
         <ul className="mb-1 ml-3 border-l border-[#e2e4f0] pl-2">
-          {node.children.map((leaf) => (
-            <Leaf key={leaf.id} leaf={leaf} active={leaf.id === activeId} onSelect={onSelect} />
-          ))}
+          {node.children.map((child) =>
+            child.type === 'subgroup' ? (
+              <SubGroup
+                key={child.id}
+                node={child}
+                open={open}
+                toggle={toggle}
+                activeId={activeId}
+                onSelect={onSelect}
+              />
+            ) : (
+              <Leaf key={child.id} leaf={child} active={child.id === activeId} onSelect={onSelect} />
+            )
+          )}
         </ul>
       )}
     </li>
@@ -169,4 +217,24 @@ function initOpen(tree) {
   }
   walk(tree)
   return state
+}
+
+// Collect the ids of every expandable container (group/subgroup) on the path to
+// `id`, excluding `id` itself. Used to auto-expand the active page's ancestors.
+function ancestorIds(tree, id) {
+  const path = []
+  const search = (nodes, trail) => {
+    for (const node of nodes) {
+      const isContainer = node.type === 'group' || node.type === 'subgroup'
+      const nextTrail = isContainer ? [...trail, node.id] : trail
+      if (node.id === id) {
+        path.push(...trail)
+        return true
+      }
+      if (node.children?.length && search(node.children, nextTrail)) return true
+    }
+    return false
+  }
+  search(tree, [])
+  return path
 }

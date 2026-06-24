@@ -9,6 +9,7 @@
 
 import { pipeline } from './pipeline'
 import { sortedTechDefs, sortedFileExtensions, sortedApplications } from './references'
+import { rigTutorialLinks } from './rigTutorials'
 
 // Branding for the dark masthead. Set `logo` to an image path once available;
 // when null, the title sits flush-left (no logo slot reserved).
@@ -36,10 +37,12 @@ export const DEFAULT_PAGE_ID = 'vtuber-pipeline'
 export const manualTree = [
   {
     id: 'vtuber-pipeline',
-    label: 'Vtuber Pipeline',
+    label: 'Vtuber 2D Pipeline',
     type: 'group',
     page: true,
     defaultOpen: true,
+    // Every pipeline stage is a plain leaf; the five Cubism Editor tutorials now
+    // live under the Live2D Cubism application entry in References.
     children: pipeline.map((s) => ({ id: s.id, label: s.label })),
   },
   {
@@ -48,14 +51,29 @@ export const manualTree = [
     type: 'group',
     page: true,
     defaultOpen: false,
+    // Sub-categories are listed alphabetically: Applications & Plugins, then
+    // File Extensions, then Technical Definition.
     children: [
       {
-        id: 'tech-def',
-        label: 'Technical Definition',
+        id: 'apps',
+        label: 'Applications & Plugins',
         type: 'subgroup',
         page: true,
         defaultOpen: true,
-        children: sortedTechDefs().map((t) => ({ id: t.id, label: t.term })),
+        // Live2D Cubism is itself expandable: it nests the five Cubism Editor
+        // tutorials. Every other application is a plain leaf.
+        children: sortedApplications().map((a) =>
+          a.id === 'live2d-cubism'
+            ? {
+                id: a.id,
+                label: a.name,
+                type: 'subgroup',
+                page: true,
+                defaultOpen: false,
+                children: rigTutorialLinks,
+              }
+            : { id: a.id, label: a.name }
+        ),
       },
       {
         id: 'file-ext',
@@ -66,12 +84,12 @@ export const manualTree = [
         children: sortedFileExtensions().map((f) => ({ id: f.id, label: f.navLabel })),
       },
       {
-        id: 'apps',
-        label: 'Applications & Plugins',
+        id: 'tech-def',
+        label: 'Technical Definition',
         type: 'subgroup',
         page: true,
         defaultOpen: false,
-        children: sortedApplications().map((a) => ({ id: a.id, label: a.name })),
+        children: sortedTechDefs().map((t) => ({ id: t.id, label: t.term })),
       },
     ],
   },

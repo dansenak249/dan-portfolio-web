@@ -3,10 +3,12 @@
 import { docBreadcrumb } from '../data/docs'
 import { findStage } from '../lib/pipelineUtils'
 import { findTechDef, findFileExtension, findApplication, findCategoryIntro } from '../data/references'
+import { findRigTutorial } from '../data/rigTutorials'
 import PipelineOverview from './PipelineOverview'
 import ReferencesIntro from './ReferencesIntro'
 import CategoryIntro from './CategoryIntro'
 import StageDoc from './StageDoc'
+import TutorialDoc from './TutorialDoc'
 import FileDoc from './FileDoc'
 import TechDefDoc from './TechDefDoc'
 import AppDoc from './AppDoc'
@@ -54,6 +56,9 @@ function PageBody({ activeId, onSelect }) {
 
   const stage = findStage(activeId)
   if (stage) return <StageDoc stage={stage} onSelect={onSelect} />
+
+  const tutorial = findRigTutorial(activeId)
+  if (tutorial) return <TutorialDoc tutorial={tutorial} />
 
   const techDef = findTechDef(activeId)
   if (techDef) return <TechDefDoc techDef={techDef} onSelect={onSelect} />

@@ -9,6 +9,20 @@ const roboto = Roboto({
   display: 'swap',
 })
 
+// The documentation section is for internal use only — keep it (and everything
+// nested under it) out of search engines entirely.
+export const metadata = {
+  robots: {
+    index: false,
+    follow: false,
+    nocache: true,
+    googleBot: {
+      index: false,
+      follow: false,
+    },
+  },
+}
+
 export default function VtuberPipelineDocsLayout({ children }) {
   return <div className={roboto.className}>{children}</div>
 }

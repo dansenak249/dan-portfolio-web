@@ -5,23 +5,66 @@ import { findRefByHandoffType } from '../data/references'
 import StageCell from './StageCell'
 import FileIcon from './FileIcon'
 
-// The pipeline diagram shown on the Overview page: cells (logo + role + sub)
-// joined by arrows. Hovering an arrow reveals the handoff files; each file row
-// links to its reference page (opens in a new tab). Clicking a cell opens that
-// stage's documentation page.
+// The pipeline diagram shown on the Overview page. Stages are split into two
+// groups — "Model Production" (illustration + rig) and "Model Usage" (tracker +
+// composite + stream) — each drawn in its own white bordered box on a light-gray
+// borderless panel. Cells are joined by arrows; hovering an arrow reveals the
+// handoff files, and clicking a cell opens that stage's documentation page.
+const GROUPS = [
+  { name: 'PRODUCTION', stageIds: ['art', 'rig'] },
+  { name: 'RUNTIME', stageIds: ['tracking', 'compositing', 'platform'] },
+]
+
 export default function PipelineMap({ stages, onSelect }) {
+  const groups = GROUPS.map((g) => ({
+    name: g.name,
+    stages: g.stageIds.map((id) => stages.find((s) => s.id === id)).filter(Boolean),
+  })).filter((g) => g.stages.length > 0)
+
   return (
-    <div className="py-2">
-      <ol className="flex items-stretch overflow-x-auto pb-1 lg:justify-center lg:overflow-visible">
-        {stages.map((stage, i) => (
-          <li key={stage.id} className="flex items-stretch">
-            <div className="flex items-center">
-              <StageCell stage={stage} onSelect={onSelect} />
+    <div className="bg-[#f7f7f7] p-4 sm:p-6">
+      <div className="flex items-stretch justify-center overflow-x-auto pb-1 lg:overflow-visible">
+        {groups.map((group, gi) => {
+          const lastStage = group.stages[group.stages.length - 1]
+          return (
+            <div key={group.name} className="flex items-stretch">
+              <GroupBox name={group.name} stages={group.stages} onSelect={onSelect} />
+              {gi < groups.length - 1 && (
+                // Mirror GroupBox's vertical structure (pt-1 / flex-1 row / mt-1
+                // caption / pb-2) so this arrow lines up with the in-box arrows.
+                <div className="flex shrink-0 flex-col pb-2 pt-1">
+                  <div className="flex flex-1 items-center">
+                    <MapArrow handoff={lastStage.handoff} onSelect={onSelect} />
+                  </div>
+                  <div className="invisible mt-1 text-[11px] tracking-[0.16em]" aria-hidden="true">
+                    .
+                  </div>
+                </div>
+              )}
             </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
+// One white, bordered group box: its stage cells joined by arrows, with the
+// group name centered along the bottom edge.
+function GroupBox({ name, stages, onSelect }) {
+  return (
+    <div className="flex shrink-0 flex-col rounded-2xl border border-[#e2e4f0] bg-white px-2 pb-2 pt-1 sm:px-3">
+      <ol className="flex flex-1 items-center justify-center">
+        {stages.map((stage, i) => (
+          <li key={stage.id} className="flex items-center">
+            <StageCell stage={stage} onSelect={onSelect} />
             {i < stages.length - 1 && <MapArrow handoff={stage.handoff} onSelect={onSelect} />}
           </li>
         ))}
       </ol>
+      <div className="mt-1 text-center text-[11px] font-bold uppercase tracking-[0.16em] text-[#9a9ab5]">
+        {name}
+      </div>
     </div>
   )
 }

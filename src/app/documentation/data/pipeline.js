@@ -16,8 +16,8 @@ export const pipeline = [
   {
     id: 'art',
     eyebrow: 'STAGE 01',
-    navLabel: 'Artwork',
-    label: 'Artwork',
+    navLabel: 'Illustration',
+    label: 'Illustration',
     sub: 'Layer-separated Illustration',
     blurb: 'Ready-to-Rig model artwork file, different from rendered drawing files.',
     accent: '#ff69b4',
@@ -27,16 +27,163 @@ export const pipeline = [
       { t: 'part-separation', label: 'part-separated' },
       ' artwork, where every piece that needs to move lives on its own layer. This is the defining requirement of the stage rather than just "drawing": the cleaner the separation, the more freedom the next stage has during ',
       { t: 'rigging' },
-      '. The separated layers travel onward as a single .psd.',
+      '. The result is a ',
+      { t: 'ready-to-rig', label: 'Ready-to-Rig' },
+      ' file — the separated layers travel onward as a single .psd.',
+    ],
+    descriptionExtra: [
+      'You can use other software — Clip Studio Paint (CSP), Krita, Procreate as long as it exports a layered .psd, since that is the format the next stage imports.',
     ],
     tools: [
       { app: 'photoshop', name: 'Adobe Photoshop', tag: 'standard', note: 'Industry standard. .psd is the native format Cubism imports.' },
-      { app: 'clip-studio-paint', name: 'Clip Studio Paint (CSP)', tag: 'popular', note: 'Very popular with VTuber artists; exports to .psd.' },
-      { app: 'krita', name: 'Krita', tag: 'free', note: 'Free, open-source; exports .psd.' },
-      { app: 'procreate', name: 'Procreate', tag: 'ipad', note: 'iPad app; layered export to .psd.' },
-      { app: 'affinity-photo', name: 'Affinity Photo', tag: 'alt', note: 'One-time-purchase Photoshop alternative; PSD-capable.' },
-      { app: 'painttool-sai', name: 'PaintTool SAI', tag: 'alt', note: 'Lightweight illustration tool; PSD-capable.' },
     ],
+    // Embedded tutorial (self-contained so the offline / presentation builds keep
+    // the content). Verbatim from the Live2D Cubism Editor Tutorial
+    // "1. Illustration Processing". The "download Cubism" button, the Basic
+    // Tutorial List, remote download links, and everything from "Please refer to
+    // the following pages..." onward are intentionally omitted.
+    article: {
+      // `body` arrays are content blocks rendered in order: a plain string is a
+      // paragraph, { image } is a figure, { list } is a bullet list. This lets
+      // images sit right after the paragraph that describes them.
+      intro: [
+        'You will learn the first steps of processing an illustration when moving it in Live2D. In this video, we are working with Photoshop.',
+      ],
+      toolsNote:
+        'The following drawing tools are recommended when creating PSDs: Photoshop (Adobe) and CLIP STUDIO PAINT (Celsys). The drawing data is imported into the Cubism Editor, but in rare cases, depending on the drawing tool you are using, normal reading and writing may not be possible.',
+      video: {
+        youtube: '', // paste the YouTube link or video id here
+        caption: 'Live2D Cubism Basic Tutorial 1: Illustration processing',
+      },
+      sections: [
+        {
+          heading: 'Illustration Processing',
+          body: [
+            'The illustration moved by Live2D looks like a single illustration when it is still, but in reality it is divided into parts such as hair, eyebrows, eyelashes, and ears.',
+            'By separating the parts, the character can be made to move, for example, to shake its hair or blink.',
+            'It is possible to move an illustration in Live2D without separating the parts, but if you want to move the character in an attractive way, you need to separate the minimum number of necessary parts.',
+            'The illustrations are roughly divided into three categories: hair, face, and body, but from there they are further subdivided.',
+          ],
+        },
+        {
+          heading: 'Separate the Hair into Parts',
+          body: [
+            'The hair will be divided into three sections: bangs, sides, and back. If the hair is split to the left or right, such as sideburns or pigtails, use separate layers for each side.',
+            'Also, if you have a cowlick or other hair that you want to move, separate it into separate layers to make it easier to move it around.',
+            'When dividing, do not forget to add the parts that were hidden in the source image. If there are no additions, the part will appear disconnected when it moves, as shown in the following image.',
+            { image: { src: '/documentation/vtuber-pipeline/artwork-separate-the-hair-into-parts.png', alt: 'Hair separated into bangs, sides, and back layers' } },
+            'It is possible to adjust the illustration after it has been modeled, so you can watch it in motion. If you have trouble making multiple adjustments to an illustration, it is recommended that you make larger additions to the drawing from the beginning.',
+          ],
+        },
+        {
+          heading: 'Separate the Face into Parts',
+          body: ['The face will be divided into eyes, nose, eyebrows, mouth, contours, and ears.'],
+          subsections: [
+            {
+              title: 'Eyes',
+              body: [
+                'Separate the eyelashes, eyeballs, and whites of the eyes. Lashes are easier to transform if they are separated from the bouncing part at the corner of the eye.',
+                'The white eyes can be used as clipping material. Don\u2019t forget to add the white eyes because the part hidden by the eyeballs is visible when the eyeballs are moved.',
+              ],
+            },
+            {
+              title: 'Eyebrows and nose',
+              body: [
+                'Since it is not a component that can be significantly deformed, it does not matter as long as it is separated on its own.',
+              ],
+            },
+            {
+              title: 'Mouth',
+              body: [
+                'Separate the lips at the top and bottom. Also, separate the inside part of the mouth, as the inside part of the mouth should not be visible when closed.',
+                'When dividing the inside part of the mouth, make the drawing one size larger than the source image. However, since the mouth protrudes from the line as it is, a skin-colored area should be added to the lips.',
+                { image: { src: '/documentation/vtuber-pipeline/artwork-mouth-1.png', alt: 'Mouth separated into upper lip, lower lip, and inside' } },
+              ],
+            },
+            {
+              title: 'Outline and ear',
+              body: [
+                'The outline should be painted so that the area hidden by the hair is also painted and only the skin color is used. A round head makes it easier to get a sense of the three-dimensionality of the model, and it also makes it easier to add movement when modeling.',
+                'Although it is acceptable to treat the ears as the same parts as the contours, we will separate them this time because it is possible to control their movements more precisely and the quality of the model will be higher if they are separated.',
+                { image: { src: '/documentation/vtuber-pipeline/artwork-outline-and-ear.png', alt: 'Face outline painted in skin color with ears separated' } },
+              ],
+            },
+          ],
+          note: {
+            title: 'Tips',
+            body: [
+              'In the same way as with eyes, it is possible to create a mouth using the inside of the mouth as clipping material, but doing so poses the following disadvantages:',
+              { list: [
+                'Clipping masks are used extensively, resulting in a burden when installing the masks.',
+                'Mouth parts may protrude beyond concealment in line drawings of the mouth.',
+                'The greater the deformation of the mouth, the more work-hours required for its production and adjustment.',
+              ] },
+            ],
+          },
+          postNote: [
+            '(In the image below, the mouth is subtly protruding from the line drawing.)',
+            { image: { src: '/documentation/vtuber-pipeline/artwork-mouth-2.png', alt: 'Mouth subtly protruding from the line drawing' } },
+            'Rather than using clipping on the mouth, we recommend using skin-colored fill to conceal the mouth.',
+            'However, clipping can be used effectively in the following situations. Use different types depending on the source image and the application.',
+            { list: [
+              'For applications in which the capacity of the model is not important, such as videos, etc.',
+              'If thickly painted or unevenly painted around the lips, depending on the painting style.',
+              'Simple image with little deformation of the mouth.',
+            ] },
+          ],
+        },
+        {
+          heading: 'Separate the Body into Parts',
+          body: [
+            'It is sufficient if the body is divided into neck, torso, arms, and legs.',
+            'The neck should be drawn larger so that it is not visibly cut off when the face is moved. It is sufficient if the neck size is up to the mouth area.',
+          ],
+          subsections: [
+            {
+              title: 'Neck',
+              body: [
+                { image: { src: '/documentation/vtuber-pipeline/artwork-neck.png', alt: 'Neck drawn larger, up to the mouth area' } },
+              ],
+            },
+            {
+              title: 'Torso',
+              body: [
+                'Keep the body separate if there are ribbons that you want to shake. Separating each collar and cardigan makes it easier to add movement and improves quality, but there is no problem if they are grouped together.',
+                { image: { src: '/documentation/vtuber-pipeline/artwork-torso.png', alt: 'Torso separated, with collar and cardigan on their own layers' } },
+              ],
+            },
+            {
+              title: 'Arms',
+              body: [
+                'The arms should be separated by the upper arm, forearm, and hand.',
+                { image: { src: '/documentation/vtuber-pipeline/artwork-arm.png', alt: 'Arm separated into upper arm, forearm, and hand' } },
+              ],
+            },
+            {
+              title: 'Legs',
+              body: [
+                'Legs are divided by skirt, left leg, and right leg.',
+                { image: { src: '/documentation/vtuber-pipeline/artwork-legs.png', alt: 'Legs divided into skirt, left leg, and right leg' } },
+              ],
+            },
+          ],
+          footer:
+            'This concludes the processing of the illustration. This is enough separation to move the character at a sufficient level.',
+        },
+        {
+          heading: 'About Editor Import',
+          body: [
+            'Finally, prepare to load the file into the Editor. When importing PSDs into the Editor, line art and fill must be combined into a single layer, not separate.',
+            { image: { src: '/documentation/vtuber-pipeline/artwork-editor-import-1.png', alt: 'Line art and fill combined into a single layer per part' } },
+            'It is also easier to manage the parts in the Editor if they are roughly divided into groups.',
+            { image: { src: '/documentation/vtuber-pipeline/artwork-editor-import-2.png', alt: 'Parts organized into groups in the Editor' } },
+            'If you are using Photoshop, we recommend that you use the merging scripts that are available. When saving data, please save it in PSD format.',
+            'This concludes the tutorial on illustration processing. The video includes audio for a more complete understanding, so please listen to it along with reading the text!',
+          ],
+        },
+      ],
+      source: 'Adapted from the Live2D Cubism Editor Tutorial \u2014 "1. Illustration Processing".',
+    },
     handoff: {
       to: 'rig',
       text: 'Export a flattened-per-part .psd and hand it to rigging.',
@@ -61,15 +208,11 @@ export const pipeline = [
       { t: 'rigging' },
       ' proper; a Cubism "export for runtime" then produces the model bundle the tracking app loads.',
     ],
+    descriptionExtra: [
+      'Among the available editors, Live2D Cubism is currently the most reasonable choice.',
+    ],
     tools: [
       { app: 'live2d-cubism', name: 'Live2D Cubism (Editor)', tag: 'standard', note: 'The de-facto standard for 2D rigging. Near-monopoly.' },
-      { app: 'inochi-creator', name: 'Inochi Creator (Inochi2D)', tag: 'free', note: 'Free, open-source alternative to Cubism. Newer, less mature.' },
-    ],
-    callouts: [
-      {
-        title: 'Editor vs Runtime',
-        body: 'Cubism splits into the Editor (where you rig) and the Runtime/SDK (what Stage 3 apps load). You export FOR the runtime.',
-      },
     ],
     handoff: {
       to: 'tracking',
@@ -101,28 +244,26 @@ export const pipeline = [
       { t: 'vmc', label: 'VMC' },
       ', and remap them onto the rig to puppeteer the model in real time.',
     ],
+    descriptionExtra: [
+      'VTube Studio has strong support for custom plugins — its plugin API is what tools like VBridger and chat bots hook into to extend and automate the rig.',
+    ],
     tools: [
       { app: 'vtube-studio', name: 'VTube Studio (VTS)', tag: 'standard', note: 'The standard. Free (small watermark; paid DLC removes it). Webcam or iPhone.' },
-      { app: 'nizima-live', name: 'nizima LIVE', tag: 'official', note: 'Official Live2D tracking app. Free tier non-commercial; paid for commercial.' },
-      { app: 'prprlive', name: 'PrPrLive', tag: 'free', note: 'Free alternative tracking app.' },
-      { app: 'inochi-session', name: 'Inochi Session', tag: 'free', note: 'Runtime + tracking for Inochi2D models (open-source).' },
     ],
-    warn: 'VSeeFace and Warudo are for 3D (VRM) models — a different pipeline. Do not put them here.',
     plugins: [
       { app: 'vbridger', name: 'VBridger', tag: 'enhancer', note: 'Sits in FRONT of VTS. Remaps ARKit blendshapes into advanced mouth/lip/tongue control. Paid; best with iPhone ARKit.' },
       { app: 'ifacialmocap', name: 'iFacialMocap', tag: 'source', note: 'iOS app that streams ARKit face data into VBridger / VTS.' },
-      { app: 'facemotion3d', name: 'FaceMotion3D', tag: 'source', note: 'Alternative iOS ARKit mocap source.' },
       { app: 'meowface', name: 'MeowFace', tag: 'source', note: 'Android face-tracking source (lower fidelity than ARKit).' },
     ],
     callouts: [
       {
         title: 'Where VBridger attaches',
-        body: 'VBridger does NOT replace VTube Studio. It takes ARKit input (iFacialMocap/FaceMotion3D/MeowFace), lets you mix & remap blendshapes for richer mouth/tongue/expression, then feeds the result into VTS via its API.',
+        body: 'VBridger does NOT replace VTube Studio. It takes ARKit input (iFacialMocap/MeowFace), lets you mix & remap blendshapes for richer mouth/tongue/expression, then feeds the result into VTS via its API.',
       },
     ],
     handoff: {
       to: 'compositing',
-      text: 'Best practice: output VTS via the Spout2 plugin so the model arrives in OBS with alpha. Otherwise: window/game capture + color-key.',
+      text: 'Best practice: send VTS out via the Spout2 plugin so the model reaches OBS with alpha (else window capture + color-key).',
       files: [{ type: 'feed', label: 'Spout2 feed (transparent)' }],
     },
   },
@@ -144,18 +285,12 @@ export const pipeline = [
       { t: 'rtmp', label: 'RTMP' },
       '.',
     ],
+    descriptionExtra: [
+      'OBS Studio runs on desktop (PC) only, while PRISM Live Studio also works on mobile (iOS/Android) — pick based on whether you broadcast from a computer or a phone.',
+    ],
     tools: [
       { app: 'obs-studio', name: 'OBS Studio', tag: 'standard', note: 'Free, open-source standard. Desktop only.' },
-      { app: 'streamlabs', name: 'Streamlabs Desktop', tag: 'popular', note: 'OBS fork with built-in alerts and themes.' },
       { app: 'prism-live', name: 'PRISM Live Studio', tag: 'free', note: 'Free, by NAVER. Desktop + mobile. Native multi-platform simulcast.' },
-      { app: 'xsplit', name: 'XSplit Broadcaster', tag: 'paid', note: 'Polished paid broadcaster.' },
-      { app: 'vmix', name: 'vMix', tag: 'paid', note: 'Professional-grade live production.' },
-    ],
-    callouts: [
-      {
-        title: 'What is PRISM Live Studio?',
-        body: 'A free broadcaster by NAVER (Korea) in the SAME group as OBS. Runs on Windows desktop AND iOS/Android. Signature feature: simulcast to many platforms (YouTube, Twitch, CHZZK, SOOP...) from one encode. Explicitly supports VTubing.',
-      },
     ],
     handoff: {
       to: 'platform',
@@ -183,12 +318,6 @@ export const pipeline = [
       { app: 'twitch', name: 'Twitch', tag: 'public', note: 'Primary Western live platform.' },
       { app: 'youtube-live', name: 'YouTube Live', tag: 'public', note: 'Huge reach; great VOD.' },
       { app: 'tiktok-live', name: 'TikTok Live', tag: 'public', note: 'Growing public broadcast option.' },
-      { app: 'kick', name: 'Kick', tag: 'public', note: 'Newer Twitch-like public platform.' },
-      { app: 'twitcasting', name: 'Twitcasting', tag: 'regional', note: 'Popular Japanese platform.' },
-      { app: 'niconico', name: 'Niconico Live', tag: 'regional', note: 'Long-running Japanese platform.' },
-      { app: 'bilibili', name: 'bilibili Live', tag: 'regional', note: 'Big with Chinese VTubers.' },
-      { app: 'soop', name: 'SOOP', tag: 'regional', note: 'Korean platform (PRISM integrates natively).' },
-      { app: 'chzzk', name: 'CHZZK', tag: 'regional', note: 'Korean platform by NAVER (PRISM integrates natively).' },
       { app: 'discord', name: 'Discord', tag: 'community', note: 'Community + private Go Live / Stage. Not a public broadcast destination.' },
     ],
     plugins: [

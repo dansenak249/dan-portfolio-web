@@ -42,13 +42,21 @@ export default function DocsShell() {
   const select = useCallback((id) => {
     setActiveId(id)
     if (contentRef.current) contentRef.current.scrollTop = 0
-    window.history.replaceState(null, '', `#${id}`)
+    // Push a new entry so the browser Back button returns to the previous page.
+    window.history.pushState(null, '', `#${id}`)
   }, [])
 
-  // Honor an incoming #hash on first load.
+  // Honor an incoming #hash on first load, and keep in sync with Back/Forward.
   useEffect(() => {
-    const hash = window.location.hash.slice(1)
-    if (hash && VALID_IDS.has(hash)) setActiveId(hash)
+    const syncFromHash = () => {
+      const hash = window.location.hash.slice(1)
+      if (hash && VALID_IDS.has(hash)) setActiveId(hash)
+      else setActiveId(DEFAULT_PAGE_ID)
+      if (contentRef.current) contentRef.current.scrollTop = 0
+    }
+    syncFromHash()
+    window.addEventListener('popstate', syncFromHash)
+    return () => window.removeEventListener('popstate', syncFromHash)
   }, [])
 
   if (!ready) return <LoadingScreen />
