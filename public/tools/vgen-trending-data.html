@@ -265,7 +265,7 @@ let SEL_USER = localStorage.getItem("vg_user") || null;
 let SEL_POST = localStorage.getItem("vg_post") || null;
 let CHART = { pts: [], W: 0, padT: 0 }; // geometry for the hover handler
 // Chart axis / threshold config (persisted). justify=true => auto-fit to data
-// (current behaviour) and the two max fields are ignored.
+// (current behaviour) and the likes-max field is ignored.
 // thr is a TRENDING RANK COUNT (top N): the chart converts it to the searchIndex
 // of the post sitting at rank N in the latest snapshot.
 const CFG_VERSION = 4;
@@ -273,7 +273,7 @@ const CFG_VERSION = 4;
 // points the collector actually stores (vgen:threshold:series .cuts keys), so
 // the dashboard can plot a real per-cut SI line over time.
 const THR_NODES = [10, 20, 50, 100, 200, 300, 500, 1000];
-const CFG_DEFAULT = { v: CFG_VERSION, maxViews: 50000, thr: 100, justify: true };
+const CFG_DEFAULT = { v: CFG_VERSION, maxLikes: 100, thr: 100, justify: true };
 // Snap any number to the nearest stored cut node.
 function snapNode(n) {
   let best = THR_NODES[0];
@@ -668,14 +668,14 @@ function viewProfiles() {
     '<button id="justBtn" class="tgl" title="Auto-fit the views axis to this post&rsquo;s data">Justify</button>' +
     '<button id="cfgBtn" class="sq" title="Chart settings">&#9881;</button></div>' +
     '<div id="cfgPanel" class="cfg" style="display:none">' +
-      '<div class="field"><label>Max column height - views</label>' +
-        '<input type="number" id="cfgMaxV" min="1" step="1000"></div>' +
+      '<div class="field"><label>Max column height - likes</label>' +
+        '<input type="number" id="cfgMaxV" min="1" step="10"></div>' +
       '<div class="field"><label>Trending threshold (top N rank)</label>' +
         '<div class="thr-slider"><input type="range" id="cfgThr" min="0" max="7" step="1">' +
         '<div class="thr-ticks" id="thrTicks"></div></div></div>' +
       '<div class="hint">searchIndex axis is fixed 0&ndash;1. The threshold line now follows ' +
         'the chosen cut&rsquo;s searchIndex over time. <b>Justify</b> (button on the right) ' +
-        'auto-fits only the views line; while it is on, the views max above is ignored.</div>' +
+        'auto-fits only the likes line; while it is on, the likes max above is ignored.</div>' +
     '</div>' +
     '<div id="chart"></div>' +
     '</div>' +
@@ -778,7 +778,7 @@ function wireProfiles() {
   // thr snaps to one of the 8 stored cut nodes; the slider value is the node index.
   CFG.thr = snapNode(CFG.thr);
   saveCfg();
-  cMaxV.value = CFG.maxViews;
+  cMaxV.value = CFG.maxLikes;
   // Ticks are spaced evenly (one slot per node) regardless of the real rank gap -
   // a readability simulation, not a true 1:1 scale, as requested.
   const renderTicks = () => {
@@ -801,7 +801,7 @@ function wireProfiles() {
   };
   // fields are never locked; they simply have no effect while Justify is on.
   cMaxV.oninput = () => {
-    CFG.maxViews = Math.max(1, Number(cMaxV.value) || CFG_DEFAULT.maxViews);
+    CFG.maxLikes = Math.max(1, Number(cMaxV.value) || CFG_DEFAULT.maxLikes);
     saveCfg(); drawPost();
   };
   // slider value is the node index (0..7); map it back to the rank node.
@@ -1172,31 +1172,31 @@ function dualChart(series) {
     return '<div class="hint">Only one snapshot for this post so far - need 2+ to draw a line.</div>';
   const W = 940, H = 300, padL = 48, padR = 122, padT = 26, padB = 34;
   const xs = series.map(r => new Date(r.snapshot_ts).getTime());
-  const views = series.map(r => r.viewCount || 0);
+  const likes = series.map(r => r.likeCount || 0);
   const sis = series.map(r => r.searchIndex || 0);
   const xmin = Math.min(...xs), xmax = Math.max(...xs);
-  const vmax = Math.max(...views), vmin = Math.min(...views);
+  const lmax = Math.max(...likes), lmin = Math.min(...likes);
   const smax = Math.max(...sis), smin = Math.min(...sis);
   const sx = (x) => padL + (xmax===xmin?0.5:(x-xmin)/(xmax-xmin)) * (W-padL-padR);
   const plotH = H - padT - padB;
   const clamp01 = (f) => f < 0 ? 0 : f > 1 ? 1 : f;
   // searchIndex axis is ALWAYS fixed 0..1 so posts and the threshold line share one
-  // absolute scale. Justify auto-fits ONLY the views axis; otherwise views is fixed
-  // to 0..maxViews (0 at the baseline, the configured max at the top).
+  // absolute scale. Justify auto-fits ONLY the likes axis; otherwise likes is fixed
+  // to 0..maxLikes (0 at the baseline, the configured max at the top).
   const syS = (s) => H-padB - clamp01(s) * plotH;
-  const syV = CFG.justify
-    ? (v) => H-padB - (vmax===vmin?0.60:(v-vmin)/(vmax-vmin)) * plotH
-    : (v) => H-padB - clamp01(v / (CFG.maxViews || 1)) * plotH;
+  const syL = CFG.justify
+    ? (v) => H-padB - (lmax===lmin?0.60:(v-lmin)/(lmax-lmin)) * plotH
+    : (v) => H-padB - clamp01(v / (CFG.maxLikes || 1)) * plotH;
   const pts = series.map((r,i) => ({
-    px: sx(xs[i]), t: r.snapshot_ts, view: views[i], si: sis[i],
-    yv: syV(views[i]), ys: syS(sis[i]),
+    px: sx(xs[i]), t: r.snapshot_ts, like: likes[i], si: sis[i],
+    yl: syL(likes[i]), ys: syS(sis[i]),
   }));
   CHART = { pts, W, padT };
   const path = (key) => pts.map((p,i)=>(i?"L":"M")+p.px.toFixed(1)+" "+p[key].toFixed(1)).join(" ");
   const last = pts[pts.length-1];
   const tFmt = (t) => new Date(t).toLocaleString([], {month:"numeric",day:"numeric",hour:"2-digit",minute:"2-digit"});
   // keep the two end labels from overlapping when the lines end close together
-  let lvY = last.yv, lsY = last.ys;
+  let lvY = last.yl, lsY = last.ys;
   if (Math.abs(lvY - lsY) < 12) { const m = (lvY + lsY) / 2; lvY = m - 7; lsY = m + 7; }
   // Trending threshold line. CFG.thr is one of the stored cut nodes; its searchIndex
   // drifts over time, so we draw the cut's SI series (from DATA.threshold) clipped to
@@ -1226,17 +1226,17 @@ function dualChart(series) {
       'stroke="var(--warn)" stroke-width="1.5" stroke-dasharray="6 5" opacity="0.55"/>' +
       '<text x="'+(W-padR)+'" y="'+(yThr-5).toFixed(1)+'" text-anchor="end" fill="var(--warn)">'+thrLabel+'</text>';
   }
-  const scaleNote = "views " + (CFG.justify ? "auto-fit" : "0\u2013"+fmt(CFG.maxViews)) + " \u00b7 SI 0\u20131";
-  return '<div class="legend"><span class="views">viewCount ('+fmt(vmin)+'-'+fmt(vmax)+')</span>' +
+  const scaleNote = "likes " + (CFG.justify ? "auto-fit" : "0\u2013"+fmt(CFG.maxLikes)) + " \u00b7 SI 0\u20131";
+  return '<div class="legend"><span class="views">likeCount ('+fmt(lmin)+'-'+fmt(lmax)+')</span>' +
     '<span class="si">searchIndex ('+fmtSi(smin)+'-'+fmtSi(smax)+')</span>' +
     (thrLegendSi != null ? '<span class="thr">trending '+thrLabel+'</span>' : '') +
     '<span style="margin-left:auto">scale: '+scaleNote+'</span></div>' +
     '<svg viewBox="0 0 '+W+' '+H+'" preserveAspectRatio="xMidYMid meet">' +
     '<line x1="'+padL+'" y1="'+(H-padB)+'" x2="'+(W-padR)+'" y2="'+(H-padB)+'" stroke="var(--line)"/>' +
     thrLine +
-    '<path d="'+path("yv")+'" fill="none" stroke="var(--accent)" stroke-width="2"/>' +
+    '<path d="'+path("yl")+'" fill="none" stroke="var(--accent)" stroke-width="2"/>' +
     '<path d="'+path("ys")+'" fill="none" stroke="var(--accent-2)" stroke-width="2"/>' +
-    '<text x="'+(last.px+8).toFixed(1)+'" y="'+(lvY+4).toFixed(1)+'" fill="var(--accent)">views</text>' +
+    '<text x="'+(last.px+8).toFixed(1)+'" y="'+(lvY+4).toFixed(1)+'" fill="var(--accent)">likes</text>' +
     '<text x="'+(last.px+8).toFixed(1)+'" y="'+(lsY+4).toFixed(1)+'" fill="var(--accent-2)">searchIndex</text>' +
     '<text x="'+padL+'" y="'+(H-12)+'" text-anchor="start">'+tFmt(pts[0].t)+'</text>' +
     '<text x="'+(W-padR)+'" y="'+(H-12)+'" text-anchor="end">'+tFmt(last.t)+'</text>' +
@@ -1277,10 +1277,10 @@ function wireChart() {
     }
     const pt = pts[best];
     vline.setAttribute("x1", pt.px); vline.setAttribute("x2", pt.px);
-    dotV.setAttribute("cx", pt.px); dotV.setAttribute("cy", pt.yv);
+    dotV.setAttribute("cx", pt.px); dotV.setAttribute("cy", pt.yl);
     dotS.setAttribute("cx", pt.px); dotS.setAttribute("cy", pt.ys);
     tipT.textContent = new Date(pt.t).toLocaleString();
-    tipV.textContent = "views: " + Number(pt.view).toLocaleString();
+    tipV.textContent = "likes: " + Number(pt.like).toLocaleString();
     tipS.textContent = "searchIndex: " + Number(pt.si).toFixed(4);
     const tw = 190;
     let tx = pt.px + 12;

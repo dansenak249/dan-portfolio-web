@@ -48,7 +48,8 @@
       "Bash(node --input-type=module -e \"import\\(''./src/app/documentation/data/rigTutorials/animator.js''\\).then\\(m => { const a = m.animator; const imgs = a.article.sections.flatMap\\(s => s.body.filter\\(b => b && b.image\\).map\\(b => b.image.src\\)\\); console.log\\(''id='' + a.id\\); console.log\\(''sections='' + a.article.sections.length\\); console.log\\(''images='' + imgs.length\\); console.log\\(''video='' + \\(a.article.video ? a.article.video.src : ''none''\\)\\); }\\).catch\\(e => { console.error\\(''FAIL '' + e.message\\); process.exit\\(1\\); }\\)\")",
       "Bash(cp \"src/app/documentation/data/rigTutorials/expression.js\" \"src/app/documentation/data/rigTutorials/_expr_check.mjs\")",
       "Bash(node -e \"import\\(''./src/app/documentation/data/rigTutorials/_expr_check.mjs''\\).then\\(m=>{const e=m.expression;let imgs=0;const walk=a=>a&&a.forEach\\(b=>{if\\(b&&b.image\\)imgs++}\\);e.article.sections.forEach\\(s=>{walk\\(s.body\\);\\(s.subsections||[]\\).forEach\\(ss=>walk\\(ss.body\\)\\);if\\(s.note\\)walk\\(s.note.body\\);walk\\(s.postNote\\);}\\);console.log\\(''OK id=''+e.id,''sections=''+e.article.sections.length,''images=''+imgs,''video=''+!!e.article.video\\)}\\).catch\\(err=>{console.error\\(''FAIL'',err.message\\);process.exit\\(1\\)}\\)\")",
-      "Bash(rm \"src/app/documentation/data/rigTutorials/_expr_check.mjs\")"
+      "Bash(rm \"src/app/documentation/data/rigTutorials/_expr_check.mjs\")",
+      "Read(//d/Users/Duy Anh Nguyen/Downloads/**)"
     ]
   }
 }
