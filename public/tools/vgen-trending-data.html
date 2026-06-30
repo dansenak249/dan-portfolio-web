@@ -859,13 +859,13 @@ function renderProfileTable() {
 // The watchlist (userID + label per account) lives in Redis and drives what the
 // collector fetches each run. Edits go through the protected POST /watchlist
 // (Bearer VGEN_ADMIN_SECRET); the secret is prompted once and kept in
-// localStorage. Removing an account is non-destructive: its stored snapshots are
-// left to age out via normal retention.
+// localStorage. Removing an account is destructive: its stored snapshots are
+// deleted immediately (server-side purgeProfileUsers), not left to age out.
 function watchlistPanel() {
   return '<div class="panel"><h2>Manage tracked accounts</h2>' +
     '<div class="hint">Add a VGen account to collect its portfolio each run. ' +
-    'Removing an account stops future collection only \u2013 its stored history is kept ' +
-    'and ages out after ~30 days. Drag the handle to reorder; this also sets the order ' +
+    'Removing an account stops future collection AND immediately deletes its stored ' +
+    'history. Drag the handle to reorder; this also sets the order ' +
     'of the chart\u2019s account dropdown.</div>' +
     '<div class="wl-add">' +
       '<input id="wlName" type="text" placeholder="Name @handle (e.g. 88 Studio @EightyEightDesign)" />' +
@@ -960,7 +960,7 @@ function openRowMenu(btn, uid) {
       else alert("This account's label has no @handle, so its profile URL is unknown.");
     } else if (act === "remove") {
       if (confirm("Remove \"" + (entry ? entry.label : uid) + "\" from the tracker?\n\n" +
-          "Its collected history is KEPT and ages out after ~30 days.")) {
+          "Its collected history will be DELETED immediately. This cannot be undone.")) {
         saveWatchlist((DATA.watchlist || []).filter(w => w.userID !== uid));
       }
     }
