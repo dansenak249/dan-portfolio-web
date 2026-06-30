@@ -17,14 +17,16 @@
 import { Redis } from '@upstash/redis'
 
 const NS = 'vgen'
-// Per-kind snapshot retention (hourly cadence => 24/day). 720 = ~30 days: rows
+// Per-kind snapshot retention (hourly cadence => 24/day). 504 = ~21 days: rows
 // older than that are dropped to save space (appendSnapshot trims past the cap).
 // Storage is NOT the binding constraint (plan allows 100 GB); the real limits
 // are the ~10 MB per-request cap (see batching below) and per-command billing.
 // Both kinds are now lazy-read by the dashboard (latest snapshot up front, older
-// loaded on demand), so trending can keep a full month like profiles.
-const MAX_SNAPSHOTS = { trending: 720, profiles: 720 }
-const DEFAULT_MAX_SNAPSHOTS = 720
+// loaded on demand). Lowering this cap takes effect on the next collect run: its
+// trim loop pops every snapshot beyond the cap in one pass, so a single forced
+// collect (?force=1) immediately purges anything older than ~21 days.
+const MAX_SNAPSHOTS = { trending: 504, profiles: 504 }
+const DEFAULT_MAX_SNAPSHOTS = 504
 // Compact threshold records are tiny (~250 bytes each) and ARE the long-term
 // searchIndex-floor-drift signal the project tracks, so they are kept far longer
 // than the heavy snapshots: ~1 year at hourly cadence is only ~2 MB.
@@ -114,6 +116,47 @@ export async function getWatchlist() {
  */
 export async function setWatchlist(list) {
   await ensureRedis().set(WATCHLIST_KEY, JSON.stringify(list))
+}
+
+/**
+ * Immediately delete every stored profile row belonging to the given userIDs.
+ * Profile snapshots store all watched users' rows combined per timestamp, so a
+ * per-user purge rewrites each snapshot with that user's rows filtered out (and
+ * drops the whole snapshot if it becomes empty). Called when a profile is
+ * removed from the watchlist so its history goes away at once instead of aging
+ * out on the normal retention window. One pass over the profiles index.
+ * @param {string[]} userIDs userIDs to scrub from every profiles snapshot
+ * @returns {Promise<{ snapshotsEdited: number, snapshotsDeleted: number, rowsRemoved: number }>}
+ */
+export async function purgeProfileUsers(userIDs) {
+  const remove = new Set((userIDs || []).filter(Boolean))
+  if (remove.size === 0)
+    return { snapshotsEdited: 0, snapshotsDeleted: 0, rowsRemoved: 0 }
+
+  const r = ensureRedis()
+  const ids = (await r.lrange(indexKey('profiles'), 0, -1)) || []
+  let snapshotsEdited = 0
+  let snapshotsDeleted = 0
+  let rowsRemoved = 0
+
+  for (const ts of ids) {
+    const rows = parseMaybe(await r.get(snapKey('profiles', ts)))
+    if (!Array.isArray(rows)) continue
+    const kept = rows.filter((row) => !(row && remove.has(row.userID)))
+    if (kept.length === rows.length) continue // user not in this snapshot
+
+    rowsRemoved += rows.length - kept.length
+    if (kept.length === 0) {
+      await r.del(snapKey('profiles', ts))
+      await r.lrem(indexKey('profiles'), 0, ts)
+      snapshotsDeleted++
+    } else {
+      await r.set(snapKey('profiles', ts), JSON.stringify(kept))
+      snapshotsEdited++
+    }
+  }
+
+  return { snapshotsEdited, snapshotsDeleted, rowsRemoved }
 }
 
 /**

@@ -269,10 +269,11 @@ let CHART = { pts: [], W: 0, padT: 0 }; // geometry for the hover handler
 // thr is a TRENDING RANK COUNT (top N): the chart converts it to the searchIndex
 // of the post sitting at rank N in the latest snapshot.
 const CFG_VERSION = 4;
-// The trending threshold is no longer a free-form rank; it snaps to the 8 cut
+// The trending threshold is no longer a free-form rank; it snaps to the cut
 // points the collector actually stores (vgen:threshold:series .cuts keys), so
-// the dashboard can plot a real per-cut SI line over time.
-const THR_NODES = [10, 20, 50, 100, 200, 300, 500, 1000];
+// the dashboard can plot a real per-cut SI line over time. Trending is collected
+// to top 200, so the cuts stop at 200 (older 300/500/1000 nodes were dropped).
+const THR_NODES = [10, 20, 50, 100, 200];
 const CFG_DEFAULT = { v: CFG_VERSION, maxLikes: 100, thr: 100, justify: true };
 // Snap any number to the nearest stored cut node.
 function snapNode(n) {
@@ -418,7 +419,7 @@ function thresholdTable() {
     .filter(r => r.snapshot_ts === ts && typeof r.searchIndex === "number")
     .sort((a, b) => a.rank - b.rank);
   if (!rows.length) return "";
-  const cuts = [10, 20, 50, 100, 200, 300, 500, 1000];
+  const cuts = [10, 20, 50, 100, 200];
   const body = cuts.map(n => {
     const have = n <= rows.length;
     const r = rows[Math.min(n, rows.length) - 1];

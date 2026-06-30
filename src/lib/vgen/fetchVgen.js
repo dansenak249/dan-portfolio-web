@@ -25,12 +25,12 @@ const PROFILE_QUERY = {
   isDraftExcluded: 'true',
   matchTag: '',
   showOnlyCommissions: 'false',
-  limit: '20',
+  limit: '10',
 }
 
 const PAGE_SIZE = 20
-const MAX_TRENDING = 1000 // top 1000 => 50 pages
-const MAX_PER_USER = 20 // cap per profile per snapshot (1 page) to avoid noisy tail data
+const MAX_TRENDING = 200 // top 200 => 10 pages
+const MAX_PER_USER = 10 // cap per profile per snapshot (10 most recent) to avoid noisy tail data
 const TRENDING_BATCH = 5 // pages fetched concurrently per batch
 const BATCH_GAP_MS = 250 // small pause between batches (politeness)
 
@@ -66,6 +66,7 @@ function slimTrending(item, rank, snapshotTs) {
     isBoosted: !!(item.boostConfig && item.boostConfig.isEnabled),
     role: item.userModeration && item.userModeration.role,
     serviceStatus: item.service && item.service.status,
+    tags: Array.isArray(item.tags) ? item.tags : [],
     tagCount: Array.isArray(item.tags) ? item.tags.length : 0,
     containsMatureContent: !!item.containsMatureContent,
   }
@@ -93,6 +94,7 @@ function slimProfile(item, profileIndex, snapshotTs, label) {
     isDraft: !!item.isDraft,
     isHiddenInRequestedTab: !!item.isHiddenInRequestedTab,
     role: item.userModeration && item.userModeration.role,
+    tags: Array.isArray(item.tags) ? item.tags : [],
     tagCount: Array.isArray(item.tags) ? item.tags.length : 0,
     containsMatureContent: !!item.containsMatureContent,
   }
@@ -159,7 +161,9 @@ export async function fetchTrending(snapshotTs) {
 }
 
 // Rank cutoffs whose searchIndex we track over time (matches the dashboard).
-const THRESHOLD_CUTS = [10, 20, 50, 100, 200, 300, 500, 1000]
+// Trending is now collected to top 200, so cutoffs beyond 200 (300/500/1000)
+// are dropped: they would just clamp to the rank-200 floor and duplicate it.
+const THRESHOLD_CUTS = [10, 20, 50, 100, 200]
 
 /**
  * Build a tiny "threshold over time" record from a trending snapshot's rows.

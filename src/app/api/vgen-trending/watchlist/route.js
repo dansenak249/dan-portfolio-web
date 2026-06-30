@@ -5,9 +5,9 @@
 //         Requires `Authorization: Bearer <VGEN_ADMIN_SECRET>`. Body:
 //           { watchlist: [{ userID, label }, ...] }
 //
-// Removing an account only stops FUTURE collection for it; the already stored
-// profile snapshots are left untouched and age out on their own via the normal
-// 30-day retention. So a remove is non-destructive by design.
+// Removing an account stops FUTURE collection for it AND immediately deletes its
+// already stored profile snapshots (purgeProfileUsers), so a removed profile's
+// history is scrubbed at once instead of aging out on the retention window.
 //
 // VGEN_ADMIN_SECRET is a DEDICATED secret, intentionally NOT the collect secret
 // (which lives in a third-party cron service): only this endpoint can mutate the
@@ -15,7 +15,11 @@
 
 import { NextResponse } from 'next/server'
 import { timingSafeEqual } from 'crypto'
-import { getWatchlist, setWatchlist } from '@/lib/vgen/store'
+import {
+  getWatchlist,
+  setWatchlist,
+  purgeProfileUsers,
+} from '@/lib/vgen/store'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -101,9 +105,19 @@ export async function POST(request) {
   }
 
   try {
+    // Figure out which userIDs are being removed so we can scrub their stored
+    // data immediately (the new list no longer contains them).
+    const previous = await getWatchlist()
+    const nextIDs = new Set(watchlist.map((entry) => entry.userID))
+    const removedIDs = previous
+      .map((entry) => entry.userID)
+      .filter((userID) => !nextIDs.has(userID))
+
     await setWatchlist(watchlist)
+    const purged = await purgeProfileUsers(removedIDs)
+
     return NextResponse.json(
-      { ok: true, watchlist },
+      { ok: true, watchlist, removed: removedIDs, purged },
       { headers: { 'Cache-Control': 'no-store' } }
     )
   } catch (error) {
