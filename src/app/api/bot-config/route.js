@@ -36,7 +36,6 @@ const SEED_FILE = path.join(process.cwd(), 'data', 'bot', 'config.json')
 // malformed or malicious PUT cannot inject arbitrary keys into storage.
 const STRING_FIELDS = [
   'vgenCookie',
-  'vgenChannelId',
   'reminderChannelId',
   'vgenChatUserId',
   'vgenChatToken',
@@ -44,6 +43,19 @@ const STRING_FIELDS = [
 const MAX_COOKIE_LENGTH = 8192
 // Stream Chat JWTs can be long; allow generous headroom like the cookie.
 const MAX_CHAT_TOKEN_LENGTH = 8192
+// Default IANA zone used when the stored value is missing or invalid.
+const DEFAULT_TIMEZONE = 'Asia/Ho_Chi_Minh'
+
+// True when `tz` is a valid IANA timezone the runtime can resolve.
+function isValidTimezone(tz) {
+  if (typeof tz !== 'string' || !tz) return false
+  try {
+    Intl.DateTimeFormat('en-US', { timeZone: tz })
+    return true
+  } catch {
+    return false
+  }
+}
 
 const HAS_KV = Boolean(
   process.env.KV_REST_API_URL && process.env.KV_REST_API_TOKEN
@@ -70,11 +82,10 @@ function isAuthorized(request) {
 function defaultConfig() {
   return {
     vgenCookie: '',
-    vgenChannelId: '',
     reminderChannelId: '',
     vgenChatUserId: '',
     vgenChatToken: '',
-    timelineTzOffset: 7,
+    timelineTimezone: DEFAULT_TIMEZONE,
     updatedAt: null,
   }
 }
@@ -88,9 +99,8 @@ function normalizeConfig(input) {
   for (const key of STRING_FIELDS) {
     if (typeof input[key] === 'string') base[key] = input[key].trim()
   }
-  const offset = Number(input.timelineTzOffset)
-  if (Number.isFinite(offset) && offset >= -12 && offset <= 14) {
-    base.timelineTzOffset = offset
+  if (isValidTimezone(input.timelineTimezone)) {
+    base.timelineTimezone = input.timelineTimezone
   }
   if (typeof input.updatedAt === 'string') base.updatedAt = input.updatedAt
   return base

@@ -1,9 +1,8 @@
 {
   "vgenCookie": "",
-  "vgenChannelId": "",
   "reminderChannelId": "",
   "vgenChatUserId": "",
   "vgenChatToken": "",
-  "timelineTzOffset": 7,
+  "timelineTimezone": "Asia/Ho_Chi_Minh",
   "updatedAt": null
 }
