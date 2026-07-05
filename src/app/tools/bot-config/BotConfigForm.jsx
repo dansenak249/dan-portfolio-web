@@ -361,8 +361,9 @@ export default function BotConfigForm() {
               VGen &rarr; Discord mapping
             </span>
             <span className="mt-0.5 block text-[11px] text-[#9a9ab5]">
-              When a notification is addressed to a mapped VGen id, the bot tags
-              the Discord user instead of plain text. Toggle which events tag.
+              Match a VGen <b>@handle</b> (same form as the account handle above,
+              e.g. <b>dansenak249</b> &mdash; NOT the UUID) to a Discord user. The
+              bot tags that user instead of plain text. Toggle which events tag.
             </span>
           </div>
 
@@ -430,7 +431,7 @@ function MappingTable({
           <div className="grid grid-cols-[24px_1.1fr_1.3fr_1.3fr_52px_52px_64px_28px] items-center gap-2 px-1 pb-1 text-[10px] font-semibold uppercase tracking-wide text-[#9a9ab5]">
             <span />
             <span>Name</span>
-            <span>VGen ID</span>
+            <span>VGen handle</span>
             <span>Discord ID</span>
             <span className="text-center">Like</span>
             <span className="text-center">Follow</span>
@@ -520,7 +521,7 @@ function MappingRow({
         type="text"
         value={row.vgenId}
         onChange={(e) => onUpdate(index, 'vgenId', e.target.value)}
-        placeholder="vgen handle"
+        placeholder="e.g. dansenak249 (not UUID)"
         autoComplete="off"
         className="w-full rounded-md border border-[#e0e4ee] px-2 py-1.5 text-xs text-[#2d2d3a] outline-none transition focus:border-[#5b8de8] focus:ring-2 focus:ring-[#5b8de8]/15"
       />
