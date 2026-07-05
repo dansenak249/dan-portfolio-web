@@ -3,6 +3,7 @@
   "reminderChannelId": "",
   "vgenChatUserId": "",
   "vgenChatToken": "",
+  "vgenAccountHandle": "",
   "timelineTimezone": "Asia/Ho_Chi_Minh",
   "userMappings": [],
   "updatedAt": null

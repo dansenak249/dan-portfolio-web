@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import LoadingScreen from '../../../components/LoadingScreen'
 
 // Client form for editing the Discord bot runtime config.
 //
@@ -27,6 +28,7 @@ const EMPTY = {
   vgenCookie: '',
   reminderChannelId: '',
   vgenChatToken: '',
+  vgenAccountHandle: '',
   timelineTimezone: 'Asia/Ho_Chi_Minh',
 }
 
@@ -118,7 +120,14 @@ export default function BotConfigForm() {
   function addMapping() {
     setMappings((prev) => [
       ...prev,
-      { discordId: '', vgenId: '', like: false, follow: false, message: false },
+      {
+        name: '',
+        vgenId: '',
+        discordId: '',
+        like: false,
+        follow: false,
+        message: false,
+      },
     ])
   }
 
@@ -165,10 +174,22 @@ export default function BotConfigForm() {
         vgenCookie: data.vgenCookie ?? '',
         reminderChannelId: data.reminderChannelId ?? '',
         vgenChatToken: data.vgenChatToken ?? '',
+        vgenAccountHandle: data.vgenAccountHandle ?? '',
         timelineTimezone: data.timelineTimezone ?? 'Asia/Ho_Chi_Minh',
       })
       setChatToken(data.vgenChatToken ?? '')
-      setMappings(Array.isArray(data.userMappings) ? data.userMappings : [])
+      setMappings(
+        Array.isArray(data.userMappings)
+          ? data.userMappings.map((m) => ({
+              name: m.name ?? '',
+              vgenId: m.vgenId ?? '',
+              discordId: m.discordId ?? '',
+              like: Boolean(m.like),
+              follow: Boolean(m.follow),
+              message: Boolean(m.message),
+            }))
+          : []
+      )
       setUpdatedAt(data.updatedAt ?? null)
       setLoaded(true)
       setStatus({ kind: 'ok', text: 'Config loaded.' })
@@ -200,6 +221,7 @@ export default function BotConfigForm() {
           vgenCookie: config.vgenCookie,
           reminderChannelId: config.reminderChannelId,
           timelineTimezone: config.timelineTimezone,
+          vgenAccountHandle: config.vgenAccountHandle,
           userMappings: mappings,
         }),
       })
@@ -219,6 +241,8 @@ export default function BotConfigForm() {
 
   return (
     <div className="space-y-5">
+      {busy && <LoadingScreen />}
+
       {/* Card 1 -- Admin secret ------------------------------------------- */}
       <Panel>
         <label className="block">
@@ -260,6 +284,17 @@ export default function BotConfigForm() {
             hint="Derived from the cookie's v-session token. Read-only."
           >
             <ReadOnly value={derivedUserId} mono placeholder="Derived from cookie" />
+          </Field>
+
+          <Field
+            label="VGen account handle"
+            hint="Your own VGen @handle. This is the notification recipient, so the bot can tag your mapped Discord user instead of writing 'you'."
+          >
+            <TextInput
+              value={config.vgenAccountHandle}
+              onChange={(v) => setField('vgenAccountHandle', v)}
+              placeholder="e.g. dansenak249"
+            />
           </Field>
 
           <Field
@@ -390,12 +425,13 @@ function MappingTable({
   return (
     <div className="space-y-2">
       <div className="overflow-x-auto">
-        <div className="min-w-[560px]">
+        <div className="min-w-[620px]">
           {/* Header */}
-          <div className="grid grid-cols-[24px_1.4fr_1.4fr_52px_52px_60px_28px] items-center gap-2 px-1 pb-1 text-[10px] font-semibold uppercase tracking-wide text-[#9a9ab5]">
+          <div className="grid grid-cols-[24px_1.1fr_1.3fr_1.3fr_52px_52px_64px_28px] items-center gap-2 px-1 pb-1 text-[10px] font-semibold uppercase tracking-wide text-[#9a9ab5]">
             <span />
-            <span>Discord ID</span>
+            <span>Name</span>
             <span>VGen ID</span>
+            <span>Discord ID</span>
             <span className="text-center">Like</span>
             <span className="text-center">Follow</span>
             <span className="text-center">Message</span>
@@ -451,7 +487,7 @@ function MappingRow({
     <div
       onDragEnter={() => onDragEnter(index)}
       onDragOver={(e) => e.preventDefault()}
-      className={`grid grid-cols-[24px_1.4fr_1.4fr_52px_52px_60px_28px] items-center gap-2 rounded-lg border px-1 py-1 transition ${
+      className={`grid grid-cols-[24px_1.1fr_1.3fr_1.3fr_52px_52px_64px_28px] items-center gap-2 rounded-lg border px-1 py-1 transition ${
         dragging
           ? 'border-[#5b8de8] bg-[#5b8de8]/5'
           : 'border-transparent'
@@ -474,9 +510,9 @@ function MappingRow({
 
       <input
         type="text"
-        value={row.discordId}
-        onChange={(e) => onUpdate(index, 'discordId', e.target.value)}
-        placeholder="discord id"
+        value={row.name}
+        onChange={(e) => onUpdate(index, 'name', e.target.value)}
+        placeholder="label"
         autoComplete="off"
         className="w-full rounded-md border border-[#e0e4ee] px-2 py-1.5 text-xs text-[#2d2d3a] outline-none transition focus:border-[#5b8de8] focus:ring-2 focus:ring-[#5b8de8]/15"
       />
@@ -484,7 +520,15 @@ function MappingRow({
         type="text"
         value={row.vgenId}
         onChange={(e) => onUpdate(index, 'vgenId', e.target.value)}
-        placeholder="vgen id"
+        placeholder="vgen handle"
+        autoComplete="off"
+        className="w-full rounded-md border border-[#e0e4ee] px-2 py-1.5 text-xs text-[#2d2d3a] outline-none transition focus:border-[#5b8de8] focus:ring-2 focus:ring-[#5b8de8]/15"
+      />
+      <input
+        type="text"
+        value={row.discordId}
+        onChange={(e) => onUpdate(index, 'discordId', e.target.value)}
+        placeholder="discord numeric id"
         autoComplete="off"
         className="w-full rounded-md border border-[#e0e4ee] px-2 py-1.5 text-xs text-[#2d2d3a] outline-none transition focus:border-[#5b8de8] focus:ring-2 focus:ring-[#5b8de8]/15"
       />

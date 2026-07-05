@@ -11,7 +11,7 @@ export const metadata = {
 export default function BotConfigPage() {
   return (
     <main className="min-h-screen bg-[#f4f6fc] px-4 py-10 flex justify-center">
-      <div className="w-full max-w-xl">
+      <div className="w-full max-w-4xl">
         <header className="mb-6">
           <div className="text-[10px] uppercase tracking-[0.18em] font-bold text-[#5b8de8] mb-1">
             Discord Bot

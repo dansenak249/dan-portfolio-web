@@ -39,6 +39,7 @@ const STRING_FIELDS = [
   'reminderChannelId',
   'vgenChatUserId',
   'vgenChatToken',
+  'vgenAccountHandle',
 ]
 const MAX_COOKIE_LENGTH = 8192
 // Stream Chat JWTs can be long; allow generous headroom like the cookie.
@@ -69,6 +70,10 @@ function normalizeMappings(input) {
   const rows = []
   for (const item of input) {
     if (!item || typeof item !== 'object') continue
+    const name =
+      typeof item.name === 'string'
+        ? item.name.trim().slice(0, MAX_MAPPING_ID_LENGTH)
+        : ''
     const discordId =
       typeof item.discordId === 'string'
         ? item.discordId.trim().slice(0, MAX_MAPPING_ID_LENGTH)
@@ -77,8 +82,9 @@ function normalizeMappings(input) {
       typeof item.vgenId === 'string'
         ? item.vgenId.trim().slice(0, MAX_MAPPING_ID_LENGTH)
         : ''
-    if (!discordId && !vgenId) continue
+    if (!name && !discordId && !vgenId) continue
     rows.push({
+      name,
       discordId,
       vgenId,
       like: Boolean(item.like),
@@ -118,6 +124,7 @@ function defaultConfig() {
     reminderChannelId: '',
     vgenChatUserId: '',
     vgenChatToken: '',
+    vgenAccountHandle: '',
     timelineTimezone: DEFAULT_TIMEZONE,
     userMappings: [],
     updatedAt: null,
