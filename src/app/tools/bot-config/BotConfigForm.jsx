@@ -14,15 +14,20 @@ import LoadingScreen from '../../../components/LoadingScreen'
 //   1. Admin secret (unlock) -- with a single eye toggle.
 //   2. VGen session -- the cookie is the only editable credential; the user id
 //      is derived client-side from the cookie's v-session JWT, and the chat
-//      token is shown read-only (the bot derives a live one at runtime). A tiny
-//      status light reflects whether the cookie relay is pushing recently.
+//      token is shown read-only (the bot derives a live one at runtime). Two
+//      tiny status lights reflect cookie freshness and off-host poller liveness.
 //   3. Discord + timezone -- single notification channel + IANA timezone.
 
 const ENDPOINT = '/api/bot-config'
 
-// The relay runs every 24h. If the config has not been updated within this
-// window, the relay is likely not running -> show a red light.
-const RELAY_STALE_MS = 26 * 60 * 60 * 1000
+// COOKIE light: the cookie is pushed manually (via `npm run relay-cookie`) and
+// only needs refreshing roughly monthly, so a generous window before it reads
+// stale. Green while a cookie was pushed within this window.
+const COOKIE_STALE_MS = 26 * 60 * 60 * 1000
+
+// POLLER light: the off-host poller heartbeats every cycle (default 3 min). If
+// no heartbeat lands within this window, the poller is likely down -> red.
+const POLLER_STALE_MS = 8 * 60 * 1000
 
 const EMPTY = {
   vgenCookie: '',
@@ -99,18 +104,25 @@ export default function BotConfigForm() {
   const [mappings, setMappings] = useState([])
   const [dragIndex, setDragIndex] = useState(null)
   const [updatedAt, setUpdatedAt] = useState(null)
+  const [cookieUpdatedAt, setCookieUpdatedAt] = useState(null)
+  const [pollerHeartbeatAt, setPollerHeartbeatAt] = useState(null)
   const [loaded, setLoaded] = useState(false)
   const [busy, setBusy] = useState(false)
   const [status, setStatus] = useState(null) // { kind: 'ok' | 'error', text }
-  const [relay, setRelay] = useState(() => computeRelay(false, null))
+  const [cookieLight, setCookieLight] = useState(() => computeCookie(false, null))
+  const [pollerLight, setPollerLight] = useState(() => computePoller(false, null))
 
   const derivedUserId = deriveUserId(config.vgenCookie)
 
-  // Recompute the relay light whenever the config freshness changes. Kept in an
-  // effect so the render stays pure (no Date.now() during render).
+  // Recompute both status lights whenever their freshness stamps change. Kept in
+  // an effect so the render stays pure (no Date.now() during render).
   useEffect(() => {
-    setRelay(computeRelay(loaded, updatedAt))
-  }, [loaded, updatedAt])
+    setCookieLight(computeCookie(loaded, cookieUpdatedAt))
+  }, [loaded, cookieUpdatedAt])
+
+  useEffect(() => {
+    setPollerLight(computePoller(loaded, pollerHeartbeatAt))
+  }, [loaded, pollerHeartbeatAt])
 
   function setField(key, value) {
     setConfig((prev) => ({ ...prev, [key]: value }))
@@ -191,6 +203,8 @@ export default function BotConfigForm() {
           : []
       )
       setUpdatedAt(data.updatedAt ?? null)
+      setCookieUpdatedAt(data.vgenCookieUpdatedAt ?? null)
+      setPollerHeartbeatAt(data.pollerHeartbeatAt ?? null)
       setLoaded(true)
       setStatus({ kind: 'ok', text: 'Config loaded.' })
     } catch (error) {
@@ -230,6 +244,8 @@ export default function BotConfigForm() {
         throw new Error(data?.error || `HTTP ${res.status}`)
       }
       setUpdatedAt(data.updatedAt ?? null)
+      setCookieUpdatedAt(data.vgenCookieUpdatedAt ?? null)
+      setPollerHeartbeatAt(data.pollerHeartbeatAt ?? null)
       setStatus({ kind: 'ok', text: 'Saved. The bot will pick this up shortly.' })
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Save failed'
@@ -277,15 +293,16 @@ export default function BotConfigForm() {
       </Panel>
 
       {/* Card 2 -- VGen session ------------------------------------------- */}
-      <Panel corner={<RelayLight color={relay.color} label={relay.label} />}>
+      <Panel
+        corner={
+          <span className="flex items-center gap-3">
+            <StatusLight color={cookieLight.color} label={cookieLight.label} text="Cookie" />
+            <StatusLight color={pollerLight.color} label={pollerLight.label} text="Poller" />
+          </span>
+        }
+      >
         <fieldset disabled={!loaded || busy} className="space-y-4 disabled:opacity-60">
-          <Field
-            label="VGen user ID"
-            hint="Derived from the cookie's v-session token. Read-only."
-          >
-            <ReadOnly value={derivedUserId} mono placeholder="Derived from cookie" />
-          </Field>
-
+          {/* 1. Account handle -- typed in manually by the owner. */}
           <Field
             label="VGen account handle"
             hint="Your own VGen @handle. This is the notification recipient, so the bot can tag your mapped Discord user instead of writing 'you'."
@@ -297,9 +314,10 @@ export default function BotConfigForm() {
             />
           </Field>
 
+          {/* 2. Cookie -- fetched from the browser via `npm run relay-cookie`. */}
           <Field
             label="VGen cookie"
-            hint="Full cookie string. Pushed automatically by the relay. Ctrl+A to copy."
+            hint="Full cookie string. Pushed from your machine via `npm run relay-cookie`. Ctrl+A to copy."
           >
             <input
               type="text"
@@ -311,11 +329,20 @@ export default function BotConfigForm() {
             />
           </Field>
 
+          {/* 3. Chat token -- auto-derived by the bot from the cookie. */}
           <Field
             label="VGen chat token"
             hint="Auto-derived by the bot at runtime. Stored copy shown for reference only."
           >
             <ReadOnly value={chatToken} mono placeholder="Derived by the bot" />
+          </Field>
+
+          {/* 4. User ID (UUID) -- derived client-side from the cookie's JWT. */}
+          <Field
+            label="VGen user ID"
+            hint="Derived from the cookie's v-session token. Read-only."
+          >
+            <ReadOnly value={derivedUserId} mono placeholder="Derived from cookie" />
           </Field>
         </fieldset>
       </Panel>
@@ -613,31 +640,45 @@ function ReadOnly({ value, placeholder, mono }) {
   )
 }
 
-// Derive the relay light color + tooltip from config freshness. Green when the
-// config was updated within RELAY_STALE_MS (relay pushing on schedule), red
-// when stale, gray when the config has not been loaded yet. Called from an
-// effect (not render) since it reads the current time.
-function computeRelay(loaded, updatedAt) {
+// Shared color palette for the status lights.
+const LIGHT_UNKNOWN = '#c7c9d6'
+const LIGHT_OK = '#2e9e6b'
+const LIGHT_STALE = '#e0517a'
+
+// Generic freshness -> {color,label} resolver shared by both lights. Green when
+// the stamp is within `staleMs`, red when stale/never, gray before load. Called
+// from an effect (not render) since it reads the current time.
+function computeLight(loaded, stamp, staleMs, noun) {
   if (!loaded) {
-    return { color: '#c7c9d6', label: 'Relay status unknown -- load the config first' }
+    return { color: LIGHT_UNKNOWN, label: `${noun} status unknown -- load the config first` }
   }
-  const ts = updatedAt ? new Date(updatedAt).getTime() : 0
-  if (ts && Date.now() - ts < RELAY_STALE_MS) {
+  const ts = stamp ? new Date(stamp).getTime() : 0
+  if (ts && Date.now() - ts < staleMs) {
     return {
-      color: '#2e9e6b',
-      label: `Relay active -- last push ${new Date(updatedAt).toLocaleString()}`,
+      color: LIGHT_OK,
+      label: `${noun} active -- last update ${new Date(stamp).toLocaleString()}`,
     }
   }
   return {
-    color: '#e0517a',
-    label: updatedAt
-      ? `Relay stale -- last push ${new Date(updatedAt).toLocaleString()}`
-      : 'Relay never pushed',
+    color: LIGHT_STALE,
+    label: stamp
+      ? `${noun} stale -- last update ${new Date(stamp).toLocaleString()}`
+      : `${noun} never updated`,
   }
 }
 
-// Small status light for the cookie relay.
-function RelayLight({ color, label }) {
+// COOKIE light: tracks when a fresh VGen cookie was last pushed to the config.
+function computeCookie(loaded, cookieUpdatedAt) {
+  return computeLight(loaded, cookieUpdatedAt, COOKIE_STALE_MS, 'Cookie')
+}
+
+// POLLER light: tracks the off-host poller's last heartbeat (alive/down).
+function computePoller(loaded, pollerHeartbeatAt) {
+  return computeLight(loaded, pollerHeartbeatAt, POLLER_STALE_MS, 'Poller')
+}
+
+// Small labelled status light (dot + caption). Reused for Cookie and Poller.
+function StatusLight({ color, label, text }) {
   return (
     <span className="flex items-center gap-1.5" title={label}>
       <span
@@ -645,7 +686,7 @@ function RelayLight({ color, label }) {
         style={{ backgroundColor: color, boxShadow: `0 0 6px ${color}` }}
       />
       <span className="text-[10px] font-semibold uppercase tracking-wide text-[#9a9ab5]">
-        Relay
+        {text}
       </span>
     </span>
   )

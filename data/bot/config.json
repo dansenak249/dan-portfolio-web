@@ -6,5 +6,7 @@
   "vgenAccountHandle": "",
   "timelineTimezone": "Asia/Ho_Chi_Minh",
   "userMappings": [],
-  "updatedAt": null
+  "updatedAt": null,
+  "vgenCookieUpdatedAt": null,
+  "pollerHeartbeatAt": null
 }

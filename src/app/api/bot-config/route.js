@@ -128,6 +128,12 @@ function defaultConfig() {
     timelineTimezone: DEFAULT_TIMEZONE,
     userMappings: [],
     updatedAt: null,
+    // Independent freshness stamps for the two status lights on the web form.
+    // vgenCookieUpdatedAt: last time a non-empty cookie was pushed (COOKIE light).
+    // pollerHeartbeatAt: last time the off-host poller pinged in (POLLER light).
+    // Kept separate from updatedAt so a poller heartbeat never fakes cookie freshness.
+    vgenCookieUpdatedAt: null,
+    pollerHeartbeatAt: null,
   }
 }
 
@@ -147,6 +153,12 @@ function normalizeConfig(input) {
     base.userMappings = normalizeMappings(input.userMappings)
   }
   if (typeof input.updatedAt === 'string') base.updatedAt = input.updatedAt
+  if (typeof input.vgenCookieUpdatedAt === 'string') {
+    base.vgenCookieUpdatedAt = input.vgenCookieUpdatedAt
+  }
+  if (typeof input.pollerHeartbeatAt === 'string') {
+    base.pollerHeartbeatAt = input.pollerHeartbeatAt
+  }
   return base
 }
 
@@ -252,7 +264,26 @@ export async function PUT(request) {
     // does not wipe the other fields.
     const current = await readConfig()
     const merged = normalizeConfig({ ...current, ...body })
-    merged.updatedAt = new Date().toISOString()
+    const now = new Date().toISOString()
+
+    // COOKIE light: stamp only when a real (non-empty) cookie is pushed.
+    if (typeof body?.vgenCookie === 'string' && body.vgenCookie.trim()) {
+      merged.vgenCookieUpdatedAt = now
+    }
+
+    // POLLER light: stamp each heartbeat ping from the off-host poller.
+    const isHeartbeat = typeof body?.pollerHeartbeatAt !== 'undefined'
+    if (isHeartbeat) {
+      merged.pollerHeartbeatAt = now
+    }
+
+    // Bump the general updatedAt only for real config edits, not bare
+    // heartbeats, so poller pings never masquerade as fresh config/cookie.
+    const hasConfigEdit = Object.keys(body || {}).some(
+      (key) => key !== 'pollerHeartbeatAt'
+    )
+    if (hasConfigEdit) merged.updatedAt = now
+
     await writeConfig(merged)
     return NextResponse.json(merged, {
       headers: { 'Cache-Control': 'no-store' },
