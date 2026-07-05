@@ -45,6 +45,10 @@ const MAX_COOKIE_LENGTH = 8192
 const MAX_CHAT_TOKEN_LENGTH = 8192
 // Default IANA zone used when the stored value is missing or invalid.
 const DEFAULT_TIMEZONE = 'Asia/Ho_Chi_Minh'
+// Cap the VGen->Discord mapping table so a malformed PUT cannot bloat storage.
+const MAX_MAPPINGS = 100
+// Text field length cap for a single mapping id (Discord/VGen).
+const MAX_MAPPING_ID_LENGTH = 128
 
 // True when `tz` is a valid IANA timezone the runtime can resolve.
 function isValidTimezone(tz) {
@@ -55,6 +59,35 @@ function isValidTimezone(tz) {
   } catch {
     return false
   }
+}
+
+// Coerce an incoming mapping list into a clean array of well-formed rows:
+// two trimmed, length-capped id strings plus three booleans. Rows missing both
+// ids are dropped, and the list is capped so storage stays bounded.
+function normalizeMappings(input) {
+  if (!Array.isArray(input)) return []
+  const rows = []
+  for (const item of input) {
+    if (!item || typeof item !== 'object') continue
+    const discordId =
+      typeof item.discordId === 'string'
+        ? item.discordId.trim().slice(0, MAX_MAPPING_ID_LENGTH)
+        : ''
+    const vgenId =
+      typeof item.vgenId === 'string'
+        ? item.vgenId.trim().slice(0, MAX_MAPPING_ID_LENGTH)
+        : ''
+    if (!discordId && !vgenId) continue
+    rows.push({
+      discordId,
+      vgenId,
+      like: Boolean(item.like),
+      follow: Boolean(item.follow),
+      message: Boolean(item.message),
+    })
+    if (rows.length >= MAX_MAPPINGS) break
+  }
+  return rows
 }
 
 const HAS_KV = Boolean(
@@ -86,6 +119,7 @@ function defaultConfig() {
     vgenChatUserId: '',
     vgenChatToken: '',
     timelineTimezone: DEFAULT_TIMEZONE,
+    userMappings: [],
     updatedAt: null,
   }
 }
@@ -101,6 +135,9 @@ function normalizeConfig(input) {
   }
   if (isValidTimezone(input.timelineTimezone)) {
     base.timelineTimezone = input.timelineTimezone
+  }
+  if (input.userMappings !== undefined) {
+    base.userMappings = normalizeMappings(input.userMappings)
   }
   if (typeof input.updatedAt === 'string') base.updatedAt = input.updatedAt
   return base
