@@ -15,6 +15,8 @@ const EMPTY = {
   vgenCookie: '',
   vgenChannelId: '',
   reminderChannelId: '',
+  vgenChatUserId: '',
+  vgenChatToken: '',
   timelineTzOffset: 7,
 }
 
@@ -50,6 +52,8 @@ export default function BotConfigForm() {
         vgenCookie: data.vgenCookie ?? '',
         vgenChannelId: data.vgenChannelId ?? '',
         reminderChannelId: data.reminderChannelId ?? '',
+        vgenChatUserId: data.vgenChatUserId ?? '',
+        vgenChatToken: data.vgenChatToken ?? '',
         timelineTzOffset: data.timelineTzOffset ?? 7,
       })
       setUpdatedAt(data.updatedAt ?? null)
@@ -81,6 +85,8 @@ export default function BotConfigForm() {
           vgenCookie: config.vgenCookie,
           vgenChannelId: config.vgenChannelId,
           reminderChannelId: config.reminderChannelId,
+          vgenChatUserId: config.vgenChatUserId,
+          vgenChatToken: config.vgenChatToken,
           timelineTzOffset: Number(config.timelineTzOffset),
         }),
       })
@@ -139,6 +145,25 @@ export default function BotConfigForm() {
             rows={4}
             spellCheck={false}
             placeholder="v-refresh=...; cf_clearance=...; ..."
+            className="w-full resize-y rounded-lg border border-[#e0e4ee] px-3 py-2 font-mono text-xs text-[#2d2d3a] outline-none transition focus:border-[#5b8de8] focus:ring-2 focus:ring-[#5b8de8]/15"
+          />
+        </Field>
+
+        <Field label="VGen chat user ID" hint="Stream Chat user id for direct messages (same as the VGen account id).">
+          <TextInput
+            value={config.vgenChatUserId}
+            onChange={(v) => setField('vgenChatUserId', v)}
+            placeholder="62c4dbaf-bd73-4be1-8629-477c0146d771"
+          />
+        </Field>
+
+        <Field label="VGen chat token" hint="Stream Chat user JWT (Authorization header). Rotate when messages stop arriving.">
+          <textarea
+            value={config.vgenChatToken}
+            onChange={(e) => setField('vgenChatToken', e.target.value)}
+            rows={3}
+            spellCheck={false}
+            placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
             className="w-full resize-y rounded-lg border border-[#e0e4ee] px-3 py-2 font-mono text-xs text-[#2d2d3a] outline-none transition focus:border-[#5b8de8] focus:ring-2 focus:ring-[#5b8de8]/15"
           />
         </Field>

@@ -34,8 +34,16 @@ const SEED_FILE = path.join(process.cwd(), 'data', 'bot', 'config.json')
 
 // Fields the bot understands. Anything else in the body is ignored so a
 // malformed or malicious PUT cannot inject arbitrary keys into storage.
-const STRING_FIELDS = ['vgenCookie', 'vgenChannelId', 'reminderChannelId']
+const STRING_FIELDS = [
+  'vgenCookie',
+  'vgenChannelId',
+  'reminderChannelId',
+  'vgenChatUserId',
+  'vgenChatToken',
+]
 const MAX_COOKIE_LENGTH = 8192
+// Stream Chat JWTs can be long; allow generous headroom like the cookie.
+const MAX_CHAT_TOKEN_LENGTH = 8192
 
 const HAS_KV = Boolean(
   process.env.KV_REST_API_URL && process.env.KV_REST_API_TOKEN
@@ -64,6 +72,8 @@ function defaultConfig() {
     vgenCookie: '',
     vgenChannelId: '',
     reminderChannelId: '',
+    vgenChatUserId: '',
+    vgenChatToken: '',
     timelineTzOffset: 7,
     updatedAt: null,
   }
@@ -169,6 +179,16 @@ export async function PUT(request) {
   if (typeof body?.vgenCookie === 'string' && body.vgenCookie.length > MAX_COOKIE_LENGTH) {
     return NextResponse.json(
       { error: `vgenCookie exceeds ${MAX_COOKIE_LENGTH} characters` },
+      { status: 400 }
+    )
+  }
+
+  if (
+    typeof body?.vgenChatToken === 'string' &&
+    body.vgenChatToken.length > MAX_CHAT_TOKEN_LENGTH
+  ) {
+    return NextResponse.json(
+      { error: `vgenChatToken exceeds ${MAX_CHAT_TOKEN_LENGTH} characters` },
       { status: 400 }
     )
   }

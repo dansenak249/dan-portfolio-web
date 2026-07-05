@@ -2,6 +2,8 @@
   "vgenCookie": "",
   "vgenChannelId": "",
   "reminderChannelId": "",
+  "vgenChatUserId": "",
+  "vgenChatToken": "",
   "timelineTzOffset": 7,
   "updatedAt": null
 }
