@@ -10,10 +10,10 @@
 //         authenticated. The bot sends `Authorization: Bearer <secret>`.
 // PUT  -> merges the provided fields into the stored config. Same auth.
 //
-// Auth reuses VGEN_ADMIN_SECRET (already defined for the watchlist
-// endpoint) with the same timing-safe Bearer comparison, so there is no
-// new secret to manage. The stored cookie is a live credential, which is
-// exactly why the read side is locked down too — nothing here is public.
+// Auth uses BOT_CONFIG_SECRET (a dedicated secret shared with the bot)
+// via a timing-safe Bearer comparison. The stored cookie is a live
+// credential, which is exactly why the read side is locked down too —
+// nothing here is public.
 //
 // Storage mirrors the timeline jobs route: Upstash Redis in production
 // (auto-injected KV_REST_API_* vars), a bundled JSON file as the local
@@ -48,7 +48,7 @@ const redis = HAS_KV
   : null
 
 function isAuthorized(request) {
-  const secret = process.env.VGEN_ADMIN_SECRET
+  const secret = process.env.BOT_CONFIG_SECRET
   if (!secret) return false
   const header = request.headers.get('authorization') || ''
   const token = header.startsWith('Bearer ') ? header.slice(7) : header

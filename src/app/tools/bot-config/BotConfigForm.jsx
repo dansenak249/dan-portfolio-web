@@ -4,7 +4,7 @@ import { useState } from 'react'
 
 // Client form for editing the Discord bot runtime config.
 //
-// Flow: the owner pastes the admin secret (VGEN_ADMIN_SECRET), clicks Load to
+// Flow: the owner pastes the admin secret (BOT_CONFIG_SECRET), clicks Load to
 // pull the current config from /api/bot-config, edits the fields, then Save.
 // The secret is held only in component state and sent as a Bearer token on
 // each request — it is never persisted to the config store or the URL.
@@ -110,7 +110,7 @@ export default function BotConfigForm() {
             type="password"
             value={secret}
             onChange={(e) => setSecret(e.target.value)}
-            placeholder="VGEN_ADMIN_SECRET"
+            placeholder="BOT_CONFIG_SECRET"
             autoComplete="off"
             className="flex-1 rounded-lg border border-[#e0e4ee] px-3 py-2 text-sm text-[#2d2d3a] outline-none transition focus:border-[#5b8de8] focus:ring-2 focus:ring-[#5b8de8]/15"
           />
