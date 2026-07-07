@@ -1,225 +1,83 @@
-// Discord bot runtime config endpoint (read + write, both protected)
+// Discord bot runtime config endpoint (read + write, per user)
 // ------------------------------------------------------------------
-// This is the single source of truth the Discord bot polls for values
-// that rotate often — chiefly the VGen session cookie, which expires
-// roughly monthly. Instead of editing the bot source and redeploying,
-// the owner pastes a fresh cookie here and the bot picks it up on its
-// next poll.
+// Source of truth for the values the bot polls (chiefly the VGen cookie,
+// which rotates ~monthly). Now scoped per team member: each user has their
+// own config record and their poller authenticates with a per-user secret.
 //
-// GET  -> returns the full config (INCLUDING the cookie), so it MUST be
-//         authenticated. The bot sends `Authorization: Bearer <secret>`.
-// PUT  -> merges the provided fields into the stored config. Same auth.
-//
-// Auth uses BOT_CONFIG_SECRET (a dedicated secret shared with the bot)
-// via a timing-safe Bearer comparison. The stored cookie is a live
-// credential, which is exactly why the read side is locked down too —
-// nothing here is public.
-//
-// Storage mirrors the timeline jobs route: Upstash Redis in production
-// (auto-injected KV_REST_API_* vars), a bundled JSON file as the local
-// dev fallback so contributors need zero infra.
+// Auth (two tiers, see src/lib/botConfig/store.js):
+//   - MASTER (BOT_CONFIG_SECRET): may read/write ANY user via ?userId=<id>.
+//     Omitting userId targets the migrated owner, so the legacy bot + web form
+//     keep working until they become user-aware (Phases 2/3).
+//   - POLLER (per-user pollerSecret): scoped to its own user (derived from the
+//     secret, never the query). May only write a small allowlist and never
+//     sees the human password.
 
-import { promises as fs } from 'fs'
-import path from 'path'
-import { Redis } from '@upstash/redis'
-import { timingSafeEqual } from 'crypto'
 import { NextResponse } from 'next/server'
+import {
+  OWNER_USER_ID,
+  POLLER_WRITABLE,
+  getUser,
+  putUser,
+  normalizeConfig,
+  validateWrite,
+  redactForPoller,
+  isMaster,
+  resolvePoller,
+} from '@/lib/botConfig/store.js'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
 
-const KV_KEY = 'bot:config'
-const SEED_FILE = path.join(process.cwd(), 'data', 'bot', 'config.json')
-
-// Fields the bot understands. Anything else in the body is ignored so a
-// malformed or malicious PUT cannot inject arbitrary keys into storage.
-const STRING_FIELDS = [
+// Functional fields an admin may edit here. Identity/auth (username, password,
+// pollerSecret) is managed via /api/bot-config/users to keep concerns separate.
+const ADMIN_WRITABLE = [
   'vgenCookie',
   'reminderChannelId',
   'vgenChatUserId',
   'vgenChatToken',
   'vgenAccountHandle',
+  'timelineTimezone',
+  'userMappings',
 ]
-const MAX_COOKIE_LENGTH = 8192
-// Stream Chat JWTs can be long; allow generous headroom like the cookie.
-const MAX_CHAT_TOKEN_LENGTH = 8192
-// Default IANA zone used when the stored value is missing or invalid.
-const DEFAULT_TIMEZONE = 'Asia/Ho_Chi_Minh'
-// Cap the VGen->Discord mapping table so a malformed PUT cannot bloat storage.
-const MAX_MAPPINGS = 100
-// Text field length cap for a single mapping id (Discord/VGen).
-const MAX_MAPPING_ID_LENGTH = 128
 
-// True when `tz` is a valid IANA timezone the runtime can resolve.
-function isValidTimezone(tz) {
-  if (typeof tz !== 'string' || !tz) return false
-  try {
-    Intl.DateTimeFormat('en-US', { timeZone: tz })
-    return true
-  } catch {
-    return false
+const NO_STORE = { 'Cache-Control': 'no-store' }
+
+// Resolve the caller: { mode: 'master', userId } | { mode: 'poller', user } | null
+async function authenticate(request) {
+  if (isMaster(request)) {
+    const url = new URL(request.url)
+    const userId = url.searchParams.get('userId') || OWNER_USER_ID
+    return { mode: 'master', userId }
   }
+  const user = await resolvePoller(request)
+  if (user) return { mode: 'poller', userId: user.userId, user }
+  return null
 }
 
-// Coerce an incoming mapping list into a clean array of well-formed rows:
-// two trimmed, length-capped id strings plus three booleans. Rows missing both
-// ids are dropped, and the list is capped so storage stays bounded.
-function normalizeMappings(input) {
-  if (!Array.isArray(input)) return []
-  const rows = []
-  for (const item of input) {
-    if (!item || typeof item !== 'object') continue
-    const name =
-      typeof item.name === 'string'
-        ? item.name.trim().slice(0, MAX_MAPPING_ID_LENGTH)
-        : ''
-    const discordId =
-      typeof item.discordId === 'string'
-        ? item.discordId.trim().slice(0, MAX_MAPPING_ID_LENGTH)
-        : ''
-    const vgenId =
-      typeof item.vgenId === 'string'
-        ? item.vgenId.trim().slice(0, MAX_MAPPING_ID_LENGTH)
-        : ''
-    if (!name && !discordId && !vgenId) continue
-    rows.push({
-      name,
-      discordId,
-      vgenId,
-      like: Boolean(item.like),
-      follow: Boolean(item.follow),
-      message: Boolean(item.message),
-    })
-    if (rows.length >= MAX_MAPPINGS) break
+// Keep only the keys the caller's role is allowed to write.
+function pickWritable(body, allowed) {
+  const out = {}
+  for (const key of allowed) {
+    if (Object.prototype.hasOwnProperty.call(body, key)) out[key] = body[key]
   }
-  return rows
-}
-
-const HAS_KV = Boolean(
-  process.env.KV_REST_API_URL && process.env.KV_REST_API_TOKEN
-)
-const redis = HAS_KV
-  ? new Redis({
-      url: process.env.KV_REST_API_URL,
-      token: process.env.KV_REST_API_TOKEN,
-    })
-  : null
-
-function isAuthorized(request) {
-  const secret = process.env.BOT_CONFIG_SECRET
-  if (!secret) return false
-  const header = request.headers.get('authorization') || ''
-  const token = header.startsWith('Bearer ') ? header.slice(7) : header
-  const a = Buffer.from(token)
-  const b = Buffer.from(secret)
-  // timingSafeEqual requires equal-length buffers.
-  if (a.length !== b.length) return false
-  return timingSafeEqual(a, b)
-}
-
-function defaultConfig() {
-  return {
-    vgenCookie: '',
-    reminderChannelId: '',
-    vgenChatUserId: '',
-    vgenChatToken: '',
-    vgenAccountHandle: '',
-    timelineTimezone: DEFAULT_TIMEZONE,
-    userMappings: [],
-    updatedAt: null,
-    // Independent freshness stamps for the two status lights on the web form.
-    // vgenCookieUpdatedAt: last time a non-empty cookie was pushed (COOKIE light).
-    // pollerHeartbeatAt: last time the off-host poller pinged in (POLLER light).
-    // Kept separate from updatedAt so a poller heartbeat never fakes cookie freshness.
-    vgenCookieUpdatedAt: null,
-    pollerHeartbeatAt: null,
-  }
-}
-
-// Coerce whatever is stored/incoming into a well-formed config object.
-// Unknown keys are dropped; types are normalized so the bot can trust
-// the shape without re-validating every field.
-function normalizeConfig(input) {
-  const base = defaultConfig()
-  if (!input || typeof input !== 'object') return base
-  for (const key of STRING_FIELDS) {
-    if (typeof input[key] === 'string') base[key] = input[key].trim()
-  }
-  if (isValidTimezone(input.timelineTimezone)) {
-    base.timelineTimezone = input.timelineTimezone
-  }
-  if (input.userMappings !== undefined) {
-    base.userMappings = normalizeMappings(input.userMappings)
-  }
-  if (typeof input.updatedAt === 'string') base.updatedAt = input.updatedAt
-  if (typeof input.vgenCookieUpdatedAt === 'string') {
-    base.vgenCookieUpdatedAt = input.vgenCookieUpdatedAt
-  }
-  if (typeof input.pollerHeartbeatAt === 'string') {
-    base.pollerHeartbeatAt = input.pollerHeartbeatAt
-  }
-  return base
-}
-
-async function readSeedFile() {
-  try {
-    const raw = await fs.readFile(SEED_FILE, 'utf-8')
-    return normalizeConfig(JSON.parse(raw))
-  } catch {
-    // Missing/corrupt seed file: fall back to defaults rather than 500.
-    return defaultConfig()
-  }
-}
-
-async function writeSeedFile(config) {
-  await fs.mkdir(path.dirname(SEED_FILE), { recursive: true })
-  await fs.writeFile(SEED_FILE, JSON.stringify(config, null, 2), 'utf-8')
-}
-
-async function readFromKv() {
-  const stored = await redis.get(KV_KEY)
-  if (!stored) return null
-  const parsed = typeof stored === 'string' ? JSON.parse(stored) : stored
-  return normalizeConfig(parsed)
-}
-
-async function writeToKv(config) {
-  await redis.set(KV_KEY, JSON.stringify(config))
-}
-
-async function readConfig() {
-  if (HAS_KV) {
-    const fromKv = await readFromKv()
-    if (fromKv) return fromKv
-    // First boot: KV empty — seed from the bundled JSON file once.
-    const seed = await readSeedFile()
-    await writeToKv(seed)
-    return seed
-  }
-  return await readSeedFile()
-}
-
-async function writeConfig(config) {
-  if (HAS_KV) {
-    await writeToKv(config)
-  } else {
-    await writeSeedFile(config)
-  }
+  return out
 }
 
 export async function GET(request) {
-  if (!isAuthorized(request)) {
+  const auth = await authenticate(request)
+  if (!auth) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
   try {
-    const config = await readConfig()
-    return NextResponse.json(config, {
-      headers: { 'Cache-Control': 'no-store' },
-    })
+    const config = await getUser(auth.userId)
+    if (!config) {
+      return NextResponse.json({ error: 'User not found' }, { status: 404 })
+    }
+    const payload = auth.mode === 'poller' ? redactForPoller(config) : config
+    return NextResponse.json(payload, { headers: NO_STORE })
   } catch (error) {
-    const message =
-      error instanceof Error ? error.message : 'Unknown read error'
+    const message = error instanceof Error ? error.message : 'Unknown read error'
     return NextResponse.json(
       { error: `Failed to load config: ${message}` },
       { status: 500 }
@@ -228,7 +86,8 @@ export async function GET(request) {
 }
 
 export async function PUT(request) {
-  if (!isAuthorized(request)) {
+  const auth = await authenticate(request)
+  if (!auth) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
@@ -242,55 +101,42 @@ export async function PUT(request) {
     )
   }
 
-  if (typeof body?.vgenCookie === 'string' && body.vgenCookie.length > MAX_COOKIE_LENGTH) {
-    return NextResponse.json(
-      { error: `vgenCookie exceeds ${MAX_COOKIE_LENGTH} characters` },
-      { status: 400 }
-    )
-  }
-
-  if (
-    typeof body?.vgenChatToken === 'string' &&
-    body.vgenChatToken.length > MAX_CHAT_TOKEN_LENGTH
-  ) {
-    return NextResponse.json(
-      { error: `vgenChatToken exceeds ${MAX_CHAT_TOKEN_LENGTH} characters` },
-      { status: 400 }
-    )
+  const lengthError = validateWrite(body)
+  if (lengthError) {
+    return NextResponse.json({ error: lengthError }, { status: 400 })
   }
 
   try {
-    // Merge onto the existing config so a partial PUT (e.g. cookie only)
-    // does not wipe the other fields.
-    const current = await readConfig()
-    const merged = normalizeConfig({ ...current, ...body })
+    const current = await getUser(auth.userId)
+    if (!current) {
+      return NextResponse.json({ error: 'User not found' }, { status: 404 })
+    }
+
+    const allowed = auth.mode === 'poller' ? POLLER_WRITABLE : ADMIN_WRITABLE
+    const changes = pickWritable(body || {}, allowed)
+    const merged = normalizeConfig({ ...current, ...changes }, auth.userId)
     const now = new Date().toISOString()
 
     // COOKIE light: stamp only when a real (non-empty) cookie is pushed.
-    if (typeof body?.vgenCookie === 'string' && body.vgenCookie.trim()) {
+    if (typeof changes.vgenCookie === 'string' && changes.vgenCookie.trim()) {
       merged.vgenCookieUpdatedAt = now
     }
 
-    // POLLER light: stamp each heartbeat ping from the off-host poller.
+    // POLLER light: stamp each heartbeat ping (allowed for pollers only).
     const isHeartbeat = typeof body?.pollerHeartbeatAt !== 'undefined'
-    if (isHeartbeat) {
+    if (isHeartbeat && allowed.includes('pollerHeartbeatAt')) {
       merged.pollerHeartbeatAt = now
     }
 
-    // Bump the general updatedAt only for real config edits, not bare
-    // heartbeats, so poller pings never masquerade as fresh config/cookie.
-    const hasConfigEdit = Object.keys(body || {}).some(
-      (key) => key !== 'pollerHeartbeatAt'
-    )
+    // Bump updatedAt only for real config edits, not bare heartbeats.
+    const hasConfigEdit = Object.keys(changes).some((k) => k !== 'pollerHeartbeatAt')
     if (hasConfigEdit) merged.updatedAt = now
 
-    await writeConfig(merged)
-    return NextResponse.json(merged, {
-      headers: { 'Cache-Control': 'no-store' },
-    })
+    const saved = await putUser(auth.userId, merged)
+    const payload = auth.mode === 'poller' ? redactForPoller(saved) : saved
+    return NextResponse.json(payload, { headers: NO_STORE })
   } catch (error) {
-    const message =
-      error instanceof Error ? error.message : 'Unknown write error'
+    const message = error instanceof Error ? error.message : 'Unknown write error'
     return NextResponse.json(
       { error: `Failed to save config: ${message}` },
       { status: 500 }
