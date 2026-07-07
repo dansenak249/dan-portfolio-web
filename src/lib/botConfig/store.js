@@ -125,6 +125,7 @@ function normalizeMappings(input) {
       like: Boolean(item.like),
       follow: Boolean(item.follow),
       message: Boolean(item.message),
+      commission: Boolean(item.commission),
     })
     if (rows.length >= MAX_MAPPINGS) break
   }

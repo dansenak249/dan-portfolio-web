@@ -9,6 +9,11 @@
 export const ENDPOINT = '/api/bot-config'
 export const LOGIN_ENDPOINT = '/api/bot-config/login'
 export const USERS_ENDPOINT = '/api/bot-config/users'
+export const VERIFY_COOKIE_ENDPOINT = '/api/bot-config/verify-cookie'
+
+// localStorage key for the last-used login username, so a returning user only
+// needs to re-enter their password. Never stores the password itself.
+export const LAST_USERNAME_KEY = 'botConfig:lastUsername'
 
 // COOKIE light: the cookie is pushed manually (via `npm run relay-cookie`) and
 // only needs refreshing roughly monthly, so a generous window before it reads
@@ -82,6 +87,26 @@ export function deriveUserId(cookie) {
 export const LIGHT_UNKNOWN = '#c7c9d6'
 export const LIGHT_OK = '#2e9e6b'
 export const LIGHT_STALE = '#e0517a'
+
+// Inline status caption used next to action buttons (no full-screen loader for
+// fast ops). kind: 'pending' (amber, in-flight) | 'ok' (green) | 'error' (red).
+const STATUS_COLOR = {
+  pending: '#c98a24',
+  ok: '#2e9e6b',
+  error: '#e0517a',
+}
+
+export function StatusText({ status }) {
+  if (!status) return null
+  return (
+    <span
+      className="text-xs font-medium"
+      style={{ color: STATUS_COLOR[status.kind] || STATUS_COLOR.pending }}
+    >
+      {status.text}
+    </span>
+  )
+}
 
 // Generic freshness -> {color,label} resolver shared by both lights. Green when
 // the stamp is within `staleMs`, red when stale/never, gray before load. Called
@@ -201,155 +226,18 @@ export function ReadOnly({ value, placeholder, mono }) {
   )
 }
 
-export function CheckCell({ checked, onChange }) {
+// A single labelled checkbox used for the per-event notification toggles
+// (Like / Follow / Message / Commission).
+export function CheckToggle({ label, checked, onChange }) {
   return (
-    <span className="flex justify-center">
+    <label className="flex cursor-pointer items-center gap-1.5 select-none">
       <input
         type="checkbox"
         checked={checked}
         onChange={(e) => onChange(e.target.checked)}
         className="h-4 w-4 cursor-pointer accent-[#5b8de8]"
       />
-    </span>
-  )
-}
-
-// Editable VGen->Discord mapping table: a drag handle for manual sorting, two
-// text ids, three per-event checkboxes, and a remove button per row.
-export function MappingTable({
-  mappings,
-  dragIndex,
-  onAdd,
-  onRemove,
-  onUpdate,
-  onDragStart,
-  onDragEnter,
-  onDragEnd,
-}) {
-  return (
-    <div className="space-y-2">
-      <div className="overflow-x-auto">
-        <div className="min-w-[620px]">
-          {/* Header */}
-          <div className="grid grid-cols-[24px_1.1fr_1.3fr_1.3fr_52px_52px_64px_28px] items-center gap-2 px-1 pb-1 text-[10px] font-semibold uppercase tracking-wide text-[#9a9ab5]">
-            <span />
-            <span>Name</span>
-            <span>VGen handle</span>
-            <span>Discord ID</span>
-            <span className="text-center">Like</span>
-            <span className="text-center">Follow</span>
-            <span className="text-center">Message</span>
-            <span />
-          </div>
-
-          {mappings.length === 0 ? (
-            <p className="px-1 py-3 text-xs text-[#9a9ab5]">
-              No mappings yet. Add one to tag a Discord user.
-            </p>
-          ) : (
-            <div className="space-y-1.5">
-              {mappings.map((row, index) => (
-                <MappingRow
-                  key={index}
-                  row={row}
-                  index={index}
-                  dragging={dragIndex === index}
-                  onRemove={onRemove}
-                  onUpdate={onUpdate}
-                  onDragStart={onDragStart}
-                  onDragEnter={onDragEnter}
-                  onDragEnd={onDragEnd}
-                />
-              ))}
-            </div>
-          )}
-        </div>
-      </div>
-
-      <button
-        type="button"
-        onClick={onAdd}
-        className="rounded-lg border border-dashed border-[#c3cbe0] px-3 py-1.5 text-xs font-semibold text-[#5b8de8] transition hover:border-[#5b8de8] hover:bg-[#5b8de8]/5"
-      >
-        + Add user
-      </button>
-    </div>
-  )
-}
-
-function MappingRow({
-  row,
-  index,
-  dragging,
-  onRemove,
-  onUpdate,
-  onDragStart,
-  onDragEnter,
-  onDragEnd,
-}) {
-  return (
-    <div
-      onDragEnter={() => onDragEnter(index)}
-      onDragOver={(e) => e.preventDefault()}
-      className={`grid grid-cols-[24px_1.1fr_1.3fr_1.3fr_52px_52px_64px_28px] items-center gap-2 rounded-lg border px-1 py-1 transition ${
-        dragging ? 'border-[#5b8de8] bg-[#5b8de8]/5' : 'border-transparent'
-      }`}
-    >
-      {/* Drag handle (3 lines) */}
-      <span
-        draggable
-        onDragStart={() => onDragStart(index)}
-        onDragEnd={onDragEnd}
-        title="Drag to reorder"
-        className="flex cursor-grab justify-center text-[#b4b8c8] active:cursor-grabbing"
-      >
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-          <line x1="4" y1="7" x2="20" y2="7" />
-          <line x1="4" y1="12" x2="20" y2="12" />
-          <line x1="4" y1="17" x2="20" y2="17" />
-        </svg>
-      </span>
-
-      <input
-        type="text"
-        value={row.name}
-        onChange={(e) => onUpdate(index, 'name', e.target.value)}
-        placeholder="label"
-        autoComplete="off"
-        className="w-full rounded-md border border-[#e0e4ee] px-2 py-1.5 text-xs text-[#2d2d3a] outline-none transition focus:border-[#5b8de8] focus:ring-2 focus:ring-[#5b8de8]/15"
-      />
-      <input
-        type="text"
-        value={row.vgenId}
-        onChange={(e) => onUpdate(index, 'vgenId', e.target.value)}
-        placeholder="e.g. dansenak249 (not UUID)"
-        autoComplete="off"
-        className="w-full rounded-md border border-[#e0e4ee] px-2 py-1.5 text-xs text-[#2d2d3a] outline-none transition focus:border-[#5b8de8] focus:ring-2 focus:ring-[#5b8de8]/15"
-      />
-      <input
-        type="text"
-        value={row.discordId}
-        onChange={(e) => onUpdate(index, 'discordId', e.target.value)}
-        placeholder="discord numeric id"
-        autoComplete="off"
-        className="w-full rounded-md border border-[#e0e4ee] px-2 py-1.5 text-xs text-[#2d2d3a] outline-none transition focus:border-[#5b8de8] focus:ring-2 focus:ring-[#5b8de8]/15"
-      />
-
-      <CheckCell checked={row.like} onChange={(v) => onUpdate(index, 'like', v)} />
-      <CheckCell checked={row.follow} onChange={(v) => onUpdate(index, 'follow', v)} />
-      <CheckCell checked={row.message} onChange={(v) => onUpdate(index, 'message', v)} />
-
-      <button
-        type="button"
-        onClick={() => onRemove(index)}
-        aria-label="Remove mapping"
-        className="flex justify-center rounded p-1 text-[#c3859a] transition hover:text-[#e0517a]"
-      >
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-          <line x1="18" y1="6" x2="6" y2="18" />
-          <line x1="6" y1="6" x2="18" y2="18" />
-        </svg>
-      </button>
-    </div>
+      <span className="text-xs text-[#2d2d3a]">{label}</span>
+    </label>
   )
 }

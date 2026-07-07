@@ -10,10 +10,22 @@
 // env master secret is never exposed to the browser.
 
 import { useState } from 'react'
-import { LOGIN_ENDPOINT, EyeButton } from './shared'
+import { LOGIN_ENDPOINT, LAST_USERNAME_KEY, EyeButton } from './shared'
+
+// Read the remembered username once, on first render (SSR-safe: window is only
+// touched inside the initializer, which never runs on the server).
+function rememberedUsername() {
+  if (typeof window === 'undefined') return ''
+  try {
+    return window.localStorage.getItem(LAST_USERNAME_KEY) || ''
+  } catch {
+    return ''
+  }
+}
 
 export default function LoginGate({ onSuccess }) {
-  const [username, setUsername] = useState('')
+  // Prefill the last-used username so a returning user only types their password.
+  const [username, setUsername] = useState(rememberedUsername)
   const [password, setPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
   const [busy, setBusy] = useState(false)
@@ -37,6 +49,12 @@ export default function LoginGate({ onSuccess }) {
       const data = await res.json()
       if (!res.ok) {
         throw new Error(data?.error || `HTTP ${res.status}`)
+      }
+      // Remember the username for next time (password is never stored).
+      try {
+        window.localStorage.setItem(LAST_USERNAME_KEY, username.trim())
+      } catch {
+        // localStorage may be unavailable (private mode) -- ignore.
       }
       onSuccess(data)
     } catch (err) {

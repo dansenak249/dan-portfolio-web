@@ -108,9 +108,12 @@ export async function PUT(request) {
       merged.vgenCookieUpdatedAt = now
     }
 
-    // POLLER light: stamp each heartbeat ping (allowed for pollers only).
+    // POLLER light: stamp each heartbeat ping. Accepted in ANY auth mode so a
+    // legacy poller still using the master secret (admin mode) also keeps the
+    // light green -- pollerHeartbeatAt is a liveness marker, not sensitive
+    // config, so it is safe to stamp regardless of the writable allowlist.
     const isHeartbeat = typeof body?.pollerHeartbeatAt !== 'undefined'
-    if (isHeartbeat && allowed.includes('pollerHeartbeatAt')) {
+    if (isHeartbeat) {
       merged.pollerHeartbeatAt = now
     }
 
