@@ -1,15 +1,14 @@
-// Poller enrollment: exchange username + password for the durable secret
+// Web UI login: exchange username + password for a role + scoped token
 // ------------------------------------------------------------------
-// The one endpoint a team member's machine hits WITHOUT already holding a
-// secret. The installer prompts for the member's username + password (flow A,
-// assigned by the admin), and this hands back the userId + pollerSecret to
-// write into the machine's .env. From then on the poller authenticates with the
-// secret and never needs the password again.
+// Human-facing counterpart to /api/poller/enroll (which is for machines). The
+// bot-config page shows a login screen first; on success it learns the caller's
+// role (admin vs member) and receives the user's pollerSecret to use as the
+// Bearer token for subsequent /api/bot-config calls. An admin's secret grants
+// master-level access via the role check in the store; a member's is scoped to
+// their own record. The env master secret is never exposed to the browser.
 //
-// The password is verified in constant time and unknown-username vs wrong-
-// password return the SAME generic error, so this cannot be used to enumerate
-// valid usernames. (A dedicated rate limiter is a worthwhile follow-up; for a
-// small internal team the constant-time + non-enumerable design is the floor.)
+// Verification is constant-time and non-enumerable (same generic error for a
+// missing username and a wrong password).
 
 import { NextResponse } from 'next/server'
 import { verifyCredentials } from '@/lib/botConfig/store.js'
@@ -47,16 +46,18 @@ export async function POST(request) {
 
     return NextResponse.json(
       {
+        role: user.role,
         userId: user.userId,
-        pollerSecret: user.pollerSecret,
+        username: user.username,
         displayName: user.displayName,
+        token: user.pollerSecret,
       },
       { headers: NO_STORE }
     )
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unknown error'
     return NextResponse.json(
-      { error: `Enrollment failed: ${message}` },
+      { error: `Login failed: ${message}` },
       { status: 500 }
     )
   }

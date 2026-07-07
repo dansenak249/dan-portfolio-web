@@ -7,9 +7,8 @@
 
 import { NextResponse } from 'next/server'
 import {
-  isMaster,
+  isAdminRequest,
   listUsers,
-  getUser,
   putUser,
   findByUsername,
   defaultConfig,
@@ -41,7 +40,7 @@ function toSummary(user) {
 }
 
 export async function GET(request) {
-  if (!isMaster(request)) {
+  if (!(await isAdminRequest(request))) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
   try {
@@ -60,7 +59,7 @@ export async function GET(request) {
 }
 
 export async function POST(request) {
-  if (!isMaster(request)) {
+  if (!(await isAdminRequest(request))) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 

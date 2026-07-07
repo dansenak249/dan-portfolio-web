@@ -6,7 +6,7 @@
 
 import { NextResponse } from 'next/server'
 import {
-  isMaster,
+  isAdminRequest,
   getUser,
   putUser,
   deleteUser,
@@ -22,7 +22,7 @@ const NO_STORE = { 'Cache-Control': 'no-store' }
 const MAX_FIELD = 256
 
 export async function PATCH(request, { params }) {
-  if (!isMaster(request)) {
+  if (!(await isAdminRequest(request))) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
@@ -111,7 +111,7 @@ export async function PATCH(request, { params }) {
 }
 
 export async function DELETE(request, { params }) {
-  if (!isMaster(request)) {
+  if (!(await isAdminRequest(request))) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 

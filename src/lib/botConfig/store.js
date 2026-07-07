@@ -47,6 +47,10 @@ const STRING_FIELDS = [
 ]
 // Identity/auth fields layered on top for multi-user.
 const IDENTITY_FIELDS = ['username', 'password', 'displayName', 'pollerSecret']
+// Role gates which UI/permissions a user gets. `admin` == master-level (manages
+// every user); `member` is scoped to their own cookie/token via their poller
+// secret. The migrated owner is the admin.
+const ROLES = ['admin', 'member']
 
 const MAX_COOKIE_LENGTH = 8192
 const MAX_CHAT_TOKEN_LENGTH = 8192
@@ -133,6 +137,7 @@ export function defaultConfig(userId) {
     username: '',
     password: '',
     displayName: '',
+    role: 'member',
     pollerSecret: '',
     vgenCookie: '',
     reminderChannelId: '',
@@ -162,6 +167,7 @@ export function normalizeConfig(input, userId) {
       base[key] = input[key].trim().slice(0, MAX_IDENTITY_LENGTH)
     }
   }
+  if (ROLES.includes(input.role)) base.role = input.role
   if (isValidTimezone(input.timelineTimezone)) {
     base.timelineTimezone = input.timelineTimezone
   }
@@ -308,11 +314,14 @@ async function ensureMigrated() {
 }
 
 // Seed the owner record from a legacy single-user blob (or defaults). The owner
-// keeps their existing cookie; a fresh pollerSecret is minted for Phase 3.
+// keeps their existing cookie and is the admin. Bootstrap credentials are set
+// so the owner can log in to the web UI immediately (change the password there).
 function buildOwner(legacy) {
   const owner = normalizeConfig(legacy || {}, OWNER_USER_ID)
-  owner.username = owner.username || 'admin'
-  owner.displayName = owner.displayName || 'Owner'
+  owner.username = 'dansenak249'
+  owner.password = 'admin123'
+  owner.role = 'admin'
+  owner.displayName = owner.displayName || 'Dan'
   if (!owner.pollerSecret) owner.pollerSecret = generatePollerSecret()
   if (!owner.createdAt) owner.createdAt = new Date().toISOString()
   return owner
@@ -356,4 +365,41 @@ export async function findByUsername(username) {
   if (!target) return null
   const users = await listUsers()
   return users.find((u) => u.username === target) || null
+}
+
+// Verify a username + password pair in constant time. Returns the user on
+// success, null otherwise. Missing user still runs a compare against a dummy so
+// timing does not reveal whether the username exists. Shared by /login + enroll.
+export async function verifyCredentials(username, password) {
+  const user = await findByUsername(username)
+  const stored = user ? user.password : ''
+  const ok = Boolean(user) && safeEqual(password, stored)
+  return ok ? user : null
+}
+
+// True when the request carries admin authority: either the env master secret
+// or a user whose role is `admin` (authenticated via their poller secret).
+export async function isAdminRequest(request) {
+  if (isMaster(request)) return true
+  const user = await resolvePoller(request)
+  return Boolean(user && user.role === 'admin')
+}
+
+// Resolve the caller's effective scope for the config route.
+//   { mode: 'admin',  userId }         -> may target any user via ?userId=
+//   { mode: 'member', userId, user }   -> locked to their own record
+//   null                               -> unauthorized
+// Scope is derived from the credential, never a spoofable query param.
+export async function authorize(request) {
+  if (isMaster(request)) {
+    const url = new URL(request.url)
+    return { mode: 'admin', userId: url.searchParams.get('userId') || OWNER_USER_ID }
+  }
+  const user = await resolvePoller(request)
+  if (!user) return null
+  if (user.role === 'admin') {
+    const url = new URL(request.url)
+    return { mode: 'admin', userId: url.searchParams.get('userId') || user.userId, user }
+  }
+  return { mode: 'member', userId: user.userId, user }
 }

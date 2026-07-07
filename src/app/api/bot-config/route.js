@@ -14,15 +14,13 @@
 
 import { NextResponse } from 'next/server'
 import {
-  OWNER_USER_ID,
   POLLER_WRITABLE,
   getUser,
   putUser,
   normalizeConfig,
   validateWrite,
   redactForPoller,
-  isMaster,
-  resolvePoller,
+  authorize,
 } from '@/lib/botConfig/store.js'
 
 export const runtime = 'nodejs'
@@ -43,18 +41,6 @@ const ADMIN_WRITABLE = [
 
 const NO_STORE = { 'Cache-Control': 'no-store' }
 
-// Resolve the caller: { mode: 'master', userId } | { mode: 'poller', user } | null
-async function authenticate(request) {
-  if (isMaster(request)) {
-    const url = new URL(request.url)
-    const userId = url.searchParams.get('userId') || OWNER_USER_ID
-    return { mode: 'master', userId }
-  }
-  const user = await resolvePoller(request)
-  if (user) return { mode: 'poller', userId: user.userId, user }
-  return null
-}
-
 // Keep only the keys the caller's role is allowed to write.
 function pickWritable(body, allowed) {
   const out = {}
@@ -65,7 +51,7 @@ function pickWritable(body, allowed) {
 }
 
 export async function GET(request) {
-  const auth = await authenticate(request)
+  const auth = await authorize(request)
   if (!auth) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
@@ -74,7 +60,7 @@ export async function GET(request) {
     if (!config) {
       return NextResponse.json({ error: 'User not found' }, { status: 404 })
     }
-    const payload = auth.mode === 'poller' ? redactForPoller(config) : config
+    const payload = auth.mode === 'member' ? redactForPoller(config) : config
     return NextResponse.json(payload, { headers: NO_STORE })
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unknown read error'
@@ -86,7 +72,7 @@ export async function GET(request) {
 }
 
 export async function PUT(request) {
-  const auth = await authenticate(request)
+  const auth = await authorize(request)
   if (!auth) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
@@ -112,7 +98,7 @@ export async function PUT(request) {
       return NextResponse.json({ error: 'User not found' }, { status: 404 })
     }
 
-    const allowed = auth.mode === 'poller' ? POLLER_WRITABLE : ADMIN_WRITABLE
+    const allowed = auth.mode === 'member' ? POLLER_WRITABLE : ADMIN_WRITABLE
     const changes = pickWritable(body || {}, allowed)
     const merged = normalizeConfig({ ...current, ...changes }, auth.userId)
     const now = new Date().toISOString()
@@ -133,7 +119,7 @@ export async function PUT(request) {
     if (hasConfigEdit) merged.updatedAt = now
 
     const saved = await putUser(auth.userId, merged)
-    const payload = auth.mode === 'poller' ? redactForPoller(saved) : saved
+    const payload = auth.mode === 'member' ? redactForPoller(saved) : saved
     return NextResponse.json(payload, { headers: NO_STORE })
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unknown write error'
