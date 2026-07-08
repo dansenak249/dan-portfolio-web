@@ -241,3 +241,40 @@ export function CheckToggle({ label, checked, onChange }) {
     </label>
   )
 }
+
+// Flatten the stored single self-mapping (userMappings[0]) into form state.
+// Both the admin's per-member card and the member's own view read their one
+// self-mapping through this, so the checkboxes always reflect the STORED routing
+// on load (not a cosmetic default). Boolean() coerces missing flags to false.
+export function firstMapping(rows) {
+  const row = Array.isArray(rows) && rows.length > 0 ? rows[0] : null
+  return {
+    discordId: row?.discordId ?? '',
+    like: Boolean(row?.like),
+    follow: Boolean(row?.follow),
+    message: Boolean(row?.message),
+    commission: Boolean(row?.commission),
+  }
+}
+
+// Build the single self-mapping array for save. vgenId is the member's own
+// handle so the bot can resolve a notification addressed to them -> their
+// Discord id. Persist as long as a handle exists, even with an empty discordId:
+// this keeps the per-event toggle choices from being wiped on save (the bot's
+// resolver skips the mention when discordId is blank, falling back to plain
+// @handle text), so reopening shows exactly the selections the user made.
+export function buildSelfMapping({ handle, discordId, like, follow, message, commission }) {
+  const trimmedHandle = (handle || '').trim()
+  if (!trimmedHandle) return []
+  return [
+    {
+      name: '',
+      vgenId: trimmedHandle,
+      discordId: (discordId || '').trim(),
+      like: Boolean(like),
+      follow: Boolean(follow),
+      message: Boolean(message),
+      commission: Boolean(commission),
+    },
+  ]
+}

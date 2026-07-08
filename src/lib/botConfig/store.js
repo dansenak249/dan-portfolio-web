@@ -59,13 +59,19 @@ const DEFAULT_TIMEZONE = 'Asia/Ho_Chi_Minh'
 const MAX_MAPPINGS = 100
 const MAX_MAPPING_ID_LENGTH = 128
 
-// Fields a POLLER may write to its own record. Everything else is admin-only so
-// a member's machine cannot rewrite its identity, routing, or another user.
+// Fields a POLLER (or the member's own web view) may write to its OWN record.
+// Everything identity/auth-related (username, password, pollerSecret, role) is
+// still admin-only so a member can never rewrite their identity or touch another
+// user. vgenAccountHandle + userMappings are here so a member can self-configure
+// their own VGen handle (via Verify) and their own notification toggles -- both
+// are scoped to their single self-mapping and only route to their own Discord.
 export const POLLER_WRITABLE = [
   'vgenCookie',
   'vgenChatUserId',
   'vgenChatToken',
   'pollerHeartbeatAt',
+  'vgenAccountHandle',
+  'userMappings',
 ]
 
 const HAS_KV = Boolean(

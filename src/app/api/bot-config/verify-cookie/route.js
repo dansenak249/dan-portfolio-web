@@ -1,19 +1,21 @@
 // Cookie verification: resolve a VGen cookie to the account it belongs to.
 // ------------------------------------------------------------------
-// MASTER-only. The admin pastes a VGen cookie and we confirm WHICH account it
-// belongs to before saving it -- guarding against accidentally storing the
-// wrong person's cookie during testing. We derive the account's userID from the
-// cookie's embedded `v-session` JWT (no VGen call needed for that), then resolve
-// the human @handle via VGen's PUBLIC profile endpoint (the same discoverability
-// feed the trending collector uses). The public endpoint is unauthenticated and
-// not IP-bound, so it works from the server without the cf_clearance pitfalls of
-// the authed session/refresh call.
+// Open to any AUTHENTICATED caller (admin or a member with their poller secret):
+// each pastes a VGen cookie and we confirm WHICH account it belongs to before
+// saving it -- guarding against accidentally storing the wrong person's cookie.
+// This is a read-only lookup (no write, no user scope), so member access is safe
+// and lets a member self-check that they grabbed their own cookie. We derive the
+// account's userID from the cookie's embedded `v-session` JWT (no VGen call for
+// that), then resolve the human @handle via VGen's PUBLIC profile endpoint (the
+// same discoverability feed the trending collector uses). The public endpoint is
+// unauthenticated and not IP-bound, so it works from the server without the
+// cf_clearance pitfalls of the authed session/refresh call.
 //
 // Returns { userId, handle, displayName }. `handle` is empty when the account
 // has no public showcases to read a username from (rare for real artists).
 
 import { NextResponse } from 'next/server'
-import { isAdminRequest } from '@/lib/botConfig/store.js'
+import { authorize } from '@/lib/botConfig/store.js'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -90,7 +92,8 @@ async function resolveHandle(userId) {
 }
 
 export async function POST(request) {
-  if (!(await isAdminRequest(request))) {
+  const auth = await authorize(request)
+  if (!auth) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 

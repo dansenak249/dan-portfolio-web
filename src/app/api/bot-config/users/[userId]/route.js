@@ -1,12 +1,15 @@
-// Admin management of a single user (rename / password / secret / delete)
+// Management of a single user (rename / password / secret / delete)
 // ------------------------------------------------------------------
-// MASTER-only. Supports flow A operations the admin needs: change the
-// human-facing username/password, rotate the machine pollerSecret, or remove a
-// member entirely. The owner user cannot be deleted.
+// PATCH is allowed for the ADMIN (any user, all fields) OR a MEMBER editing
+// their OWN record (password + displayName only -- username, secret rotation and
+// deletion stay admin-only). DELETE stays MASTER-only. The owner user cannot be
+// deleted. A member is identified by their poller secret; the target userId must
+// match their own, so a member can never touch another user's identity.
 
 import { NextResponse } from 'next/server'
 import {
   isAdminRequest,
+  resolvePoller,
   getUser,
   putUser,
   deleteUser,
@@ -22,11 +25,18 @@ const NO_STORE = { 'Cache-Control': 'no-store' }
 const MAX_FIELD = 256
 
 export async function PATCH(request, { params }) {
-  if (!(await isAdminRequest(request))) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  }
-
   const { userId } = await params
+
+  // Admin may edit any user + all fields. A member may edit ONLY their own
+  // record, and only the self-service fields (password + displayName); the
+  // admin-only branches below (username, secret rotation) are gated on `isAdmin`.
+  const isAdmin = await isAdminRequest(request)
+  if (!isAdmin) {
+    const poller = await resolvePoller(request)
+    if (!poller || poller.userId !== userId) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+  }
 
   let body
   try {
@@ -46,7 +56,8 @@ export async function PATCH(request, { params }) {
 
     const next = { ...current }
 
-    if (typeof body?.username === 'string') {
+    // Username changes are admin-only (members' username is locked in the UI).
+    if (isAdmin && typeof body?.username === 'string') {
       const username = body.username.trim()
       if (!username) {
         return NextResponse.json(
@@ -93,8 +104,8 @@ export async function PATCH(request, { params }) {
     }
 
     // Rotating the secret invalidates the member's current .env: they must
-    // re-enroll (re-run the installer) to pick up the new one.
-    if (body?.regenerateSecret === true) {
+    // re-enroll (re-run the installer) to pick up the new one. Admin-only.
+    if (isAdmin && body?.regenerateSecret === true) {
       next.pollerSecret = generatePollerSecret()
     }
 

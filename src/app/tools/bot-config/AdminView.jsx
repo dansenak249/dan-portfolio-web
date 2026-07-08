@@ -40,6 +40,8 @@ import {
   computeCookie,
   computePoller,
   deriveUserId,
+  firstMapping,
+  buildSelfMapping,
 } from './shared'
 
 // Auto-clear a success caption after this long so a card doesn't stay green.
@@ -379,26 +381,16 @@ function MemberCard({ record, defaultOpen, authFetch, onSaved, onDeleted }) {
     }
   }
 
-  // Build the single self-mapping for save. vgenId is the member's own handle so
-  // the bot can resolve a notification addressed to them -> their Discord id.
-  // Persist as long as a handle exists, even with an empty discordId: this keeps
-  // the per-event toggle choices from being wiped on save (the bot's resolver
-  // already skips the mention when discordId is blank, falling back to plain
-  // @handle text), so reopening the card shows the selections the user made.
+  // Build this member's single self-mapping for save (shared with MemberView).
   function buildMappings() {
-    const handle = vgenAccountHandle.trim()
-    if (!handle) return []
-    return [
-      {
-        name: '',
-        vgenId: handle,
-        discordId: discordId.trim(),
-        like: notifyLike,
-        follow: notifyFollow,
-        message: notifyMessage,
-        commission: notifyCommission,
-      },
-    ]
+    return buildSelfMapping({
+      handle: vgenAccountHandle,
+      discordId,
+      like: notifyLike,
+      follow: notifyFollow,
+      message: notifyMessage,
+      commission: notifyCommission,
+    })
   }
 
   // Save credentials (PATCH /users) then config (PUT /bot-config). The config
@@ -731,17 +723,4 @@ function MemberCard({ record, defaultOpen, authFetch, onSaved, onDeleted }) {
       </div>
     </section>
   )
-}
-
-// Extract this member's single self-mapping from the stored list (first row), or
-// an empty template if none exists yet.
-function firstMapping(rows) {
-  const row = Array.isArray(rows) && rows.length > 0 ? rows[0] : null
-  return {
-    discordId: row?.discordId ?? '',
-    like: Boolean(row?.like),
-    follow: Boolean(row?.follow),
-    message: Boolean(row?.message),
-    commission: Boolean(row?.commission),
-  }
 }
