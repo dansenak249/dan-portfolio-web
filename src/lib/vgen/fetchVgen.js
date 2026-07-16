@@ -34,12 +34,23 @@ const MAX_PER_USER = 10 // cap per profile per snapshot (10 most recent) to avoi
 const TRENDING_BATCH = 5 // pages fetched concurrently per batch
 const BATCH_GAP_MS = 250 // small pause between batches (politeness)
 
+// VGen fronted these public endpoints with Cloudflare, which 403s any request
+// that lacks a browser-like User-Agent (a bare `accept` header returns the
+// Cloudflare "Attention Required" challenge page instead of JSON). Sending a
+// normal browser UA is enough to pass; without it fetchTrending throws and the
+// whole collect run 500s.
+const BROWSER_UA =
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 
 async function fetchJson(url) {
   const res = await fetch(url, {
     method: 'GET',
-    headers: { accept: 'application/json' },
+    headers: {
+      accept: 'application/json',
+      'user-agent': BROWSER_UA,
+    },
     cache: 'no-store',
   })
   if (!res.ok) throw new Error(`HTTP ${res.status} for ${url}`)
