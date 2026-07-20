@@ -1,0 +1,891 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="robots" content="noindex, nofollow" />
+    <title>VGen Service Data</title>
+    <style>
+      :root {
+        --bg: #0b0d10;
+        --panel: #14181d;
+        --panel-2: #1b2027;
+        --line: #262d36;
+        --text: #e7ecf2;
+        --muted: #8b97a6;
+        --dim: #5d6675;
+        --accent: #6ee7ff;
+        --accent-2: #a78bfa;
+        --good: #56d987;
+        --warn: #f0b429;
+        --bad: #ff6b6b;
+        --radius: 14px;
+        --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+        --sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+      }
+      * { box-sizing: border-box; }
+      html, body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--text);
+        font-family: var(--sans);
+        -webkit-font-smoothing: antialiased;
+      }
+      body {
+        background:
+          radial-gradient(900px 500px at 12% -10%, rgba(110, 231, 255, 0.08), transparent 60%),
+          radial-gradient(800px 500px at 100% 0%, rgba(167, 139, 250, 0.08), transparent 55%),
+          var(--bg);
+        min-height: 100vh;
+        padding: 28px clamp(16px, 4vw, 48px) 80px;
+      }
+      a { color: var(--accent); }
+      h1, h2, h3 { margin: 0; letter-spacing: -0.01em; }
+      .wrap { max-width: 1180px; margin: 0 auto; }
+
+      header.top {
+        display: flex;
+        align-items: flex-end;
+        justify-content: space-between;
+        gap: 20px;
+        flex-wrap: wrap;
+        padding-bottom: 20px;
+        border-bottom: 1px solid var(--line);
+        margin-bottom: 26px;
+      }
+      .title-block h1 {
+        font-size: clamp(1.6rem, 1rem + 2.4vw, 2.6rem);
+        font-weight: 700;
+        line-height: 1.02;
+      }
+      .title-block p {
+        margin: 8px 0 0;
+        color: var(--muted);
+        font-size: 0.92rem;
+        max-width: 60ch;
+      }
+      .title-block .kicker {
+        font-family: var(--mono);
+        font-size: 0.72rem;
+        text-transform: uppercase;
+        letter-spacing: 0.22em;
+        color: var(--accent-2);
+        margin-bottom: 10px;
+      }
+      .top-actions {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        flex-wrap: wrap;
+      }
+      .updated {
+        font-family: var(--mono);
+        font-size: 0.75rem;
+        color: var(--dim);
+        text-align: right;
+      }
+      .updated b { color: var(--muted); font-weight: 600; }
+
+      button {
+        font-family: var(--sans);
+        font-size: 0.85rem;
+        font-weight: 600;
+        color: var(--text);
+        background: var(--panel-2);
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        padding: 9px 15px;
+        cursor: pointer;
+        transition: border-color 0.16s ease, background 0.16s ease, transform 0.08s ease;
+      }
+      button:hover { border-color: var(--accent); background: #202732; }
+      button:active { transform: translateY(1px); }
+      button.primary {
+        background: linear-gradient(180deg, rgba(110,231,255,0.16), rgba(167,139,250,0.12));
+        border-color: rgba(110, 231, 255, 0.45);
+        color: #eafcff;
+      }
+      button.primary:hover { border-color: var(--accent); }
+      button.ghost { background: transparent; }
+      button.tiny { padding: 4px 8px; font-size: 0.75rem; border-radius: 8px; }
+      button:disabled { opacity: 0.5; cursor: not-allowed; }
+
+      .panel {
+        background: linear-gradient(180deg, var(--panel), var(--panel-2));
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        padding: 20px 20px 18px;
+        margin-bottom: 24px;
+      }
+      .panel > .panel-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        margin-bottom: 14px;
+      }
+      .panel-head h2 {
+        font-size: 1.02rem;
+        font-weight: 650;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+      }
+      .panel-head h2 .dot {
+        width: 8px; height: 8px; border-radius: 50%;
+        background: var(--accent); box-shadow: 0 0 12px var(--accent);
+      }
+      .panel-head .sub { color: var(--dim); font-size: 0.78rem; font-family: var(--mono); }
+
+      /* KPI row */
+      /* Tables */
+      .table-scroll { overflow-x: auto; margin: 0 -4px; }
+      table { width: 100%; border-collapse: collapse; font-size: 0.86rem; }
+      th, td {
+        text-align: left;
+        padding: 10px 12px;
+        border-bottom: 1px solid var(--line);
+        white-space: nowrap;
+      }
+      th {
+        font-family: var(--mono);
+        font-size: 0.68rem;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: var(--muted);
+        cursor: pointer;
+        user-select: none;
+        position: sticky; top: 0;
+        background: var(--panel-2);
+      }
+      th.no-sort { cursor: default; }
+      th .arrow { color: var(--accent); font-size: 0.7rem; }
+      tbody tr:hover { background: rgba(110, 231, 255, 0.045); }
+      td.num { text-align: right; font-variant-numeric: tabular-nums; font-family: var(--mono); }
+      td.type-cell {
+        font-family: var(--mono);
+        font-size: 0.78rem;
+        letter-spacing: 0.02em;
+        color: var(--accent-2);
+      }
+      .id-cell { font-family: var(--mono); font-size: 0.72rem; color: var(--dim); }
+      .muted { color: var(--muted); }
+      .pill {
+        display: inline-block;
+        padding: 2px 8px;
+        border-radius: 999px;
+        font-size: 0.7rem;
+        font-family: var(--mono);
+        border: 1px solid var(--line);
+      }
+      .pill.good { color: var(--good); border-color: rgba(86,217,135,0.35); }
+      .pill.warn { color: var(--warn); border-color: rgba(240,180,41,0.35); }
+
+      /* Declaration editor */
+      .decl-table td, .decl-table th { white-space: nowrap; }
+      .decl-table input {
+        width: 100%;
+        min-width: 120px;
+        background: var(--bg);
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        color: var(--text);
+        padding: 7px 9px;
+        font-family: var(--mono);
+        font-size: 0.8rem;
+      }
+      .decl-table input:focus { outline: none; border-color: var(--accent); }
+      .decl-table .id-input { min-width: 280px; }
+      .row-actions { display: flex; gap: 4px; }
+      .decl-foot {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        margin-top: 14px;
+        flex-wrap: wrap;
+      }
+      .decl-foot .left { display: flex; gap: 8px; flex-wrap: wrap; }
+
+      details.decl { }
+      details.decl > summary {
+        cursor: pointer;
+        list-style: none;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        font-weight: 650;
+        font-size: 1.02rem;
+      }
+      details.decl > summary::-webkit-details-marker { display: none; }
+      details.decl > summary .chev {
+        transition: transform 0.18s ease;
+        color: var(--muted);
+        font-size: 0.8rem;
+      }
+      details.decl[open] > summary .chev { transform: rotate(90deg); }
+      summary .count-badge {
+        font-family: var(--mono);
+        font-size: 0.72rem;
+        color: var(--dim);
+        margin-left: auto;
+      }
+
+      .spark { display: block; width: 100%; }
+
+      /* right-align numeric headers so the label sits above its numbers */
+      th.num { text-align: right; }
+      /* artist name shown under the service type in the by-service table */
+      .sub-name {
+        font-family: var(--sans);
+        font-size: 0.78rem;
+        font-weight: 600;
+        color: var(--text);
+        text-transform: none;
+        letter-spacing: 0;
+        margin-top: 3px;
+      }
+      /* Fixed table layout + shared column widths so the by-service and by-artist
+         tables line up column-for-column through the "30d" column. Each table
+         keeps exactly one unsized column afterwards (Monthly flow / the trailing
+         blank) to absorb the leftover width. */
+      #svcTable, #artistTable { table-layout: fixed; }
+      .col-name { width: 172px; }
+      .col-spacer { width: 74px; }
+      .col-n { width: 72px; }
+      .col-star { width: 48px; }
+      /* drag-to-reorder handle in the declaration editor */
+      .drag-handle {
+        cursor: grab;
+        color: var(--dim);
+        user-select: none;
+        font-size: 1.05rem;
+        text-align: center;
+        line-height: 1;
+      }
+      .drag-handle:hover { color: var(--accent); }
+      .drag-handle:active { cursor: grabbing; }
+      tr.drag-over > td { box-shadow: inset 0 2px 0 var(--accent); }
+      /* monthly-flow window control */
+      .flow-tools { display: inline-flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+      .status {
+        font-family: var(--mono);
+        font-size: 0.78rem;
+        padding: 10px 14px;
+        border-radius: 10px;
+        margin-bottom: 18px;
+        border: 1px solid var(--line);
+        display: none;
+      }
+      .status.show { display: block; }
+      .status.err { color: var(--bad); border-color: rgba(255,107,107,0.4); background: rgba(255,107,107,0.06); }
+      .status.ok { color: var(--good); border-color: rgba(86,217,135,0.35); background: rgba(86,217,135,0.05); }
+      .status.info { color: var(--muted); }
+
+      .empty {
+        text-align: center;
+        color: var(--dim);
+        padding: 40px 20px;
+        font-family: var(--mono);
+        font-size: 0.85rem;
+      }
+      .foot-note {
+        color: var(--dim);
+        font-size: 0.76rem;
+        margin-top: 8px;
+        line-height: 1.5;
+      }
+      .seg { display: inline-flex; border: 1px solid var(--line); border-radius: 9px; overflow: hidden; }
+      .seg button { border: none; border-radius: 0; background: transparent; padding: 7px 12px; }
+      .seg button.active { background: var(--panel-2); color: var(--accent); }
+
+      /* Full-viewport loading overlay (mirrors the site's LoadingScreen brand). */
+      #loadingOverlay {
+        position: fixed; inset: 0; z-index: 100;
+        display: flex; flex-direction: column; align-items: center; justify-content: center;
+        gap: 16px; background: var(--bg); transition: opacity 0.25s ease;
+      }
+      #loadingOverlay.hidden { opacity: 0; pointer-events: none; }
+      #loadingOverlay img { width: 140px; height: auto; }
+      .lo-text {
+        color: var(--accent); font-weight: 700; font-size: 15px;
+        text-transform: uppercase; letter-spacing: 0.18em;
+        display: flex; align-items: baseline; font-family: var(--mono);
+      }
+      .lo-text .dots { display: inline-block; width: 22px; text-align: left; margin-left: 4px; }
+    </style>
+  </head>
+  <body>
+    <div id="loadingOverlay">
+      <img src="/general/loading.gif" alt="Loading" />
+      <div class="lo-text">Loading<span class="dots" id="loadDots">.</span></div>
+    </div>
+    <div class="wrap">
+      <header class="top">
+        <div class="title-block">
+          <div class="kicker">VGen · Tools</div>
+          <h1>Service Data</h1>
+          <p>
+            Where are VGen clients flowing? Public service reviews stand in for
+            completed commissions — track which services and artists capture
+            steady, repeat monthly business.
+          </p>
+        </div>
+        <div class="top-actions">
+          <div class="updated">
+            updated<br /><b id="lastUpdated">—</b>
+          </div>
+          <button id="refreshBtn" class="primary">↻ Refresh</button>
+        </div>
+      </header>
+
+      <div id="status" class="status"></div>
+
+      <!-- Per-service -->
+      <section class="panel">
+        <div class="panel-head">
+          <h2><span class="dot"></span>By service</h2>
+          <div class="flow-tools">
+            <span class="sub">flow window</span>
+            <span class="seg" id="flowSeg">
+              <button data-w="all" class="active">All</button>
+              <button data-w="24">24M</button>
+              <button data-w="12">12M</button>
+              <button data-w="6">6M</button>
+            </span>
+          </div>
+        </div>
+        <div class="table-scroll">
+          <table id="svcTable">
+            <thead>
+              <tr>
+                <th class="col-name" data-k="serviceType">Type</th>
+                <th class="no-sort col-spacer"></th>
+                <th class="num col-n" data-k="total">Reviews</th>
+                <th class="num col-n" data-k="uniqueClients">Unique</th>
+                <th class="num col-n" data-k="repeatClients">Repeat</th>
+                <th class="num col-n" data-k="repeatRate">Repeat %</th>
+                <th class="num col-n" data-k="anonymous">Anon</th>
+                <th class="num col-n" data-k="last90">90d</th>
+                <th class="num col-n" data-k="last30">30d</th>
+                <th class="num col-star" data-k="avgRating">★</th>
+                <th class="no-sort">Monthly flow</th>
+              </tr>
+            </thead>
+            <tbody id="svcBody"></tbody>
+          </table>
+        </div>
+        <div id="svcEmpty" class="empty">No services declared yet. Open “Declared services” above to add some.</div>
+      </section>
+
+      <!-- Per-artist -->
+      <section class="panel">
+        <div class="panel-head">
+          <h2><span class="dot" style="background:var(--accent-2);box-shadow:0 0 12px var(--accent-2)"></span>By artist</h2>
+        </div>
+        <div class="table-scroll">
+          <table id="artistTable">
+            <thead>
+              <tr>
+                <th class="col-name" data-k="artistName">Artist</th>
+                <th class="num col-spacer" data-k="serviceCount">Services</th>
+                <th class="num col-n" data-k="total">Reviews</th>
+                <th class="num col-n" data-k="uniqueClients">Unique</th>
+                <th class="num col-n" data-k="repeatClients">Repeat</th>
+                <th class="num col-n" data-k="repeatRate">Repeat %</th>
+                <th class="num col-n" data-k="anonymous">Anon</th>
+                <th class="num col-n" data-k="last90">90d</th>
+                <th class="num col-n" data-k="last30">30d</th>
+                <th class="no-sort"></th>
+              </tr>
+            </thead>
+            <tbody id="artistBody"></tbody>
+          </table>
+        </div>
+        <div id="artistEmpty" class="empty">—</div>
+      </section>
+
+      <!-- Declaration editor (kept at the bottom: config, not the main view) -->
+      <section class="panel">
+        <details class="decl" id="declWrap">
+          <summary>
+            <span class="chev">▶</span>
+            Declared services
+            <span class="count-badge" id="declCount">0 services</span>
+          </summary>
+          <div style="margin-top:16px">
+            <div class="table-scroll">
+              <table class="decl-table">
+                <thead>
+                  <tr>
+                    <th class="no-sort" style="width:32px" title="Drag to reorder">⣿</th>
+                    <th class="no-sort" style="width:32px">#</th>
+                    <th class="no-sort">Service Type</th>
+                    <th class="no-sort">Service ID</th>
+                    <th class="no-sort" style="width:48px"></th>
+                  </tr>
+                </thead>
+                <tbody id="declBody"></tbody>
+              </table>
+            </div>
+            <div class="decl-foot">
+              <div class="left">
+                <button id="addRowBtn" class="ghost">+ Add service</button>
+              </div>
+              <button id="saveBtn" class="primary">Save declaration</button>
+            </div>
+            <p class="foot-note">
+              Service Type is free text (animation / bg / ...). Service ID is the
+              VGen service UUID (e.g. 62b...). Drag the ⣿ handle to reorder.
+              Saving replaces the whole list; removing a service purges its
+              cached reviews.
+            </p>
+          </div>
+        </details>
+      </section>
+
+      <p class="foot-note" style="text-align:center">
+        Read-only survey of PUBLIC review data. Anonymous reviews count toward
+        total volume but are excluded from unique / repeat-client math. Fetch is
+        on-demand only (page load reads cache; Refresh pulls live from VGen).
+      </p>
+    </div>
+
+    <script>
+      // ---- config ----
+      const API = {
+        services: '/api/vgen-service-data/services',
+        data: '/api/vgen-service-data/data',
+      };
+
+      // ---- state ----
+      let declRows = []; // [{ serviceType, serviceID }]
+      let svcData = []; // analyzed per-service
+      let artistData = [];
+      let svcSort = { key: 'total', dir: -1 };
+      let artistSort = { key: 'total', dir: -1 };
+      let dotTimer = null; // loading-overlay dot animation
+
+      // ---- helpers ----
+      const $ = (id) => document.getElementById(id);
+      const esc = (s) =>
+        String(s == null ? '' : s).replace(/[&<>"']/g, (c) =>
+          ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])
+        );
+      const pct = (v) => (v == null ? '—' : Math.round(v * 100) + '%');
+      const num = (v) => (v == null ? '—' : v.toLocaleString('en-US'));
+      const shortId = (s) => (s ? String(s).slice(0, 8) : '—');
+      const fmtDate = (iso) => (iso ? String(iso).slice(0, 10) : '—');
+
+      function status(msg, kind) {
+        const el = $('status');
+        el.textContent = msg;
+        el.className = 'status show ' + (kind || 'info');
+        if (kind === 'ok') setTimeout(() => el.classList.remove('show'), 3500);
+      }
+
+      // ---- loading overlay (site-branded, mirrors the trending tool) ----
+      function showOverlay() {
+        const o = $('loadingOverlay');
+        if (!o) return;
+        o.classList.remove('hidden');
+        const dots = $('loadDots');
+        const seq = ['.', '..', '...'];
+        let i = 0;
+        clearInterval(dotTimer);
+        dotTimer = setInterval(() => {
+          if (dots) dots.textContent = seq[i++ % 3];
+        }, 400);
+      }
+      function hideOverlay() {
+        const o = $('loadingOverlay');
+        if (o) o.classList.add('hidden');
+        clearInterval(dotTimer);
+        dotTimer = null;
+      }
+
+      // ---- monthly-flow window + shared-scale sparkline ----
+      let flowWindow = 'all'; // 'all' | trailing month count as string
+
+      // Build ONE month axis shared by every service, so all sparklines cover the
+      // same time span AND the same vertical scale -> bars are comparable across
+      // rows. A service that hasn't started just plots as 0s over that axis.
+      function buildFlowAxis() {
+        const monthSet = new Set();
+        for (const s of svcData)
+          for (const m of s.monthly || []) monthSet.add(m.month);
+        let axis = [...monthSet].sort();
+        if (flowWindow !== 'all') {
+          const n = parseInt(flowWindow, 10);
+          if (n > 0) axis = axis.slice(-n);
+        }
+        // Per-month orders summed across ALL services -> denominator for each
+        // month's cross-service share (who captured the market that month). This
+        // drives BOTH the bar height and the tooltip percentage.
+        const monthTotals = new Map();
+        for (const s of svcData) {
+          const map = new Map((s.monthly || []).map((m) => [m.month, m.count]));
+          for (const mo of axis)
+            monthTotals.set(mo, (monthTotals.get(mo) || 0) + (map.get(mo) || 0));
+        }
+        return { axis, monthTotals };
+      }
+
+      function serviceFlow(s, axis) {
+        const map = new Map((s.monthly || []).map((m) => [m.month, m.count]));
+        // A service "exists" from the month of its first review onward. Before
+        // that month it has no track at all; after it (even with 0 orders) it
+        // shows an empty gray track.
+        const firstMonth = s.firstReview
+          ? String(s.firstReview).slice(0, 7)
+          : null;
+        return axis.map((mo) => ({
+          month: mo,
+          count: map.get(mo) || 0,
+          exists: firstMonth ? mo >= firstMonth : false,
+        }));
+      }
+
+      // Every month that the service existed gets a full-height GRAY track; a
+      // BLUE fill rises inside it to (count / shared-max), so each bar reads as
+      // that month's share of the global peak -> flow is comparable across rows.
+      // Months before the service started draw nothing (no gray track).
+      // `series` already sits on the shared axis; `max` is the shared global max.
+      // Truncate to 1 decimal WITHOUT rounding up, to mirror how VGen displays
+      // numbers (e.g. 25.06 -> "25.0", 4.99 -> "4.9", 66.66 -> "66.6").
+      function trunc1(v) {
+        return (Math.floor(v * 10) / 10).toFixed(1);
+      }
+      function truncPct(count, total) {
+        if (!total || total <= 0) return '0.0';
+        return trunc1((count / total) * 100);
+      }
+      // `monthTotals` maps each month -> orders across ALL services that month,
+      // so a bar's height AND tooltip both show this service's SHARE of that
+      // month's market (count / all-services-that-month). Track = 100% = whole
+      // month; blue fill = this service's slice.
+      function sparkline(series, monthTotals) {
+        if (!series || !series.length) return '<span class="muted">—</span>';
+        const w = 150, h = 26, pad = 2;
+        const n = series.length;
+        const bw = (w - pad * 2) / n;
+        const trackH = h - pad * 2;
+        const barW = Math.max(1, bw - 1).toFixed(1);
+        let cells = '';
+        series.forEach((pt, i) => {
+          if (!pt.exists) return; // not started yet -> blank slot
+          const x = (pad + i * bw).toFixed(1);
+          // Gray background track (the "100% = whole month across all services").
+          cells += `<rect x="${x}" y="${pad}" width="${barW}" height="${trackH.toFixed(
+            1
+          )}" rx="0.6" fill="#333c47"/>`;
+          // Blue fill = this service's share of that month's total orders.
+          const monthTotal = monthTotals.get(pt.month) || 0;
+          const share = monthTotal > 0 ? pt.count / monthTotal : 0;
+          const fh = pt.count > 0 ? Math.max(1.5, share * trackH) : 0;
+          if (fh > 0) {
+            const y = (h - pad - fh).toFixed(1);
+            cells += `<rect x="${x}" y="${y}" width="${barW}" height="${fh.toFixed(
+              1
+            )}" rx="0.6" fill="#6ee7ff"/>`;
+          }
+          cells += `<rect x="${x}" y="${pad}" width="${barW}" height="${trackH.toFixed(
+            1
+          )}" fill="transparent"><title>${pt.month}: ${pt.count} (${truncPct(
+            pt.count,
+            monthTotals.get(pt.month)
+          )}%)</title></rect>`;
+        });
+        return `<svg class="spark" width="100%" height="${h}" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none">${cells}</svg>`;
+      }
+
+      function repeatPill(rate) {
+        if (rate == null) return '<span class="muted">—</span>';
+        const cls = rate >= 0.25 ? 'good' : rate >= 0.1 ? 'warn' : '';
+        return `<span class="pill ${cls}">${Math.round(rate * 100)}%</span>`;
+      }
+      // ---- per-service table ----
+      function sortRows(rows, sort) {
+        const { key, dir } = sort;
+        return [...rows].sort((a, b) => {
+          let av = a[key], bv = b[key];
+          if (av == null) av = -Infinity;
+          if (bv == null) bv = -Infinity;
+          if (typeof av === 'string') return dir * av.localeCompare(bv);
+          return dir * (av - bv);
+        });
+      }
+
+      function renderServices() {
+        const body = $('svcBody');
+        $('svcEmpty').style.display = svcData.length ? 'none' : 'block';
+        const rows = sortRows(svcData, svcSort);
+        // Shared month axis + global vertical scale so every row's flow chart is
+        // directly comparable (see buildFlowAxis).
+        const { axis, monthTotals } = buildFlowAxis();
+        body.innerHTML = rows
+          .map((s) => {
+            const who = s.artistName
+              ? esc(s.artistName)
+              : shortId(s.artistUserID);
+            return `<tr>
+              <td class="type-cell">${esc(s.serviceType || '—')}<div class="sub-name" title="${esc(
+              s.serviceID
+            )}">${who}</div></td>
+              <td class="col-spacer"></td>
+              <td class="num">${num(s.total)}</td>
+              <td class="num">${num(s.uniqueClients)}</td>
+              <td class="num">${num(s.repeatClients)}</td>
+              <td class="num">${repeatPill(s.repeatRate)}</td>
+              <td class="num muted">${num(s.anonymous)}</td>
+              <td class="num">${num(s.last90)}</td>
+              <td class="num">${num(s.last30)}</td>
+              <td class="num">${s.avgRating == null ? '—' : trunc1(s.avgRating)}</td>
+              <td>${sparkline(serviceFlow(s, axis), monthTotals)}</td>
+            </tr>`;
+          })
+          .join('');
+        updateSortIndicators('svcTable', svcSort);
+      }
+
+      // ---- per-artist table ----
+      function renderArtists() {
+        const body = $('artistBody');
+        $('artistEmpty').style.display = artistData.length ? 'none' : 'block';
+        const rows = sortRows(artistData, artistSort);
+        body.innerHTML = rows
+          .map((a) => {
+            const types = (a.serviceTypes || []).map(esc).join(', ');
+            const who = a.artistName
+              ? esc(a.artistName)
+              : shortId(a.artistUserID);
+            // Artist table leads with the artist NAME on the colored top line and
+            // the service type(s) underneath (mirror-image of the by-service cell).
+            return `<tr>
+              <td class="type-cell" title="${esc(a.artistUserID || '')}">${who}<div class="sub-name">${
+              types || '—'
+            }</div></td>
+              <td class="num col-spacer">${num(a.serviceCount)}</td>
+              <td class="num">${num(a.total)}</td>
+              <td class="num">${num(a.uniqueClients)}</td>
+              <td class="num">${num(a.repeatClients)}</td>
+              <td class="num">${repeatPill(a.repeatRate)}</td>
+              <td class="num muted">${num(a.anonymous)}</td>
+              <td class="num">${num(a.last90)}</td>
+              <td class="num">${num(a.last30)}</td>
+              <td></td>
+            </tr>`;
+          })
+          .join('');
+        updateSortIndicators('artistTable', artistSort);
+      }
+
+      function updateSortIndicators(tableId, sort) {
+        $(tableId)
+          .querySelectorAll('thead th[data-k]')
+          .forEach((th) => {
+            const base = th.getAttribute('data-label') || th.textContent.replace(/[▲▼]/g, '').trim();
+            th.setAttribute('data-label', base);
+            const active = th.getAttribute('data-k') === sort.key;
+            th.innerHTML =
+              base + (active ? ` <span class="arrow">${sort.dir < 0 ? '▼' : '▲'}</span>` : '');
+          });
+      }
+
+      function wireSort(tableId, getSort, setSort, render) {
+        $(tableId)
+          .querySelectorAll('thead th[data-k]')
+          .forEach((th) => {
+            th.addEventListener('click', () => {
+              const key = th.getAttribute('data-k');
+              const s = getSort();
+              if (s.key === key) s.dir *= -1;
+              else { s.key = key; s.dir = -1; }
+              setSort(s);
+              render();
+            });
+          });
+      }
+
+      // ---- declaration editor ----
+      function renderDecl() {
+        $('declCount').textContent = declRows.length + ' service' + (declRows.length === 1 ? '' : 's');
+        const body = $('declBody');
+        body.innerHTML = declRows
+          .map(
+            (r, i) => `<tr draggable="true" data-row="${i}">
+            <td><span class="drag-handle" title="Drag to reorder">&#9776;</span></td>
+            <td class="muted">${i + 1}</td>
+            <td><input data-i="${i}" data-f="serviceType" placeholder="animation / bg / ..." value="${esc(
+              r.serviceType
+            )}" /></td>
+            <td><input class="id-input" data-i="${i}" data-f="serviceID" placeholder="62b..." value="${esc(
+              r.serviceID
+            )}" /></td>
+            <td><button class="tiny ghost" data-del="${i}" title="Remove">✕</button></td>
+          </tr>`
+          )
+          .join('');
+
+        body.querySelectorAll('input').forEach((inp) => {
+          inp.addEventListener('input', (e) => {
+            const i = +e.target.getAttribute('data-i');
+            const f = e.target.getAttribute('data-f');
+            declRows[i][f] = e.target.value;
+          });
+        });
+        body.querySelectorAll('[data-del]').forEach((b) =>
+          b.addEventListener('click', (e) => {
+            declRows.splice(+e.currentTarget.getAttribute('data-del'), 1);
+            renderDecl();
+          })
+        );
+
+        // HTML5 drag-and-drop reorder. dragstart stashes the source index;
+        // dragover marks the hovered row; drop splices the moved row into place.
+        let dragFrom = null;
+        body.querySelectorAll('tr[data-row]').forEach((tr) => {
+          tr.addEventListener('dragstart', (e) => {
+            dragFrom = +tr.getAttribute('data-row');
+            e.dataTransfer.effectAllowed = 'move';
+          });
+          tr.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            e.dataTransfer.dropEffect = 'move';
+            tr.classList.add('drag-over');
+          });
+          tr.addEventListener('dragleave', () => tr.classList.remove('drag-over'));
+          tr.addEventListener('drop', (e) => {
+            e.preventDefault();
+            tr.classList.remove('drag-over');
+            const to = +tr.getAttribute('data-row');
+            if (dragFrom == null || dragFrom === to) return;
+            const [moved] = declRows.splice(dragFrom, 1);
+            declRows.splice(to, 0, moved);
+            dragFrom = null;
+            renderDecl();
+          });
+        });
+      }
+
+      async function saveDecl() {
+        const clean = declRows
+          .map((r) => ({
+            serviceType: (r.serviceType || '').trim(),
+            serviceID: (r.serviceID || '').trim(),
+          }))
+          .filter((r) => r.serviceID);
+        try {
+          status('Saving declaration...', 'info');
+          const res = await fetch(API.services, {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ services: clean }),
+          });
+          const json = await res.json();
+          if (!res.ok) throw new Error(json.error || 'HTTP ' + res.status);
+          declRows = json.services.map((s) => ({ ...s }));
+          renderDecl();
+          status('Saved ' + declRows.length + ' services. Refresh to pull reviews.', 'ok');
+          await loadData(false);
+        } catch (e) {
+          status('Save failed: ' + e.message, 'err');
+        }
+      }
+
+      // ---- data loading ----
+      async function loadServices() {
+        const res = await fetch(API.services, { cache: 'no-store' });
+        const json = await res.json();
+        if (!res.ok) throw new Error(json.error || 'HTTP ' + res.status);
+        declRows = (json.services || []).map((s) => ({ ...s }));
+        renderDecl();
+      }
+
+      function applyData(json) {
+        svcData = json.services || [];
+        artistData = json.artists || [];
+        $('lastUpdated').textContent = json.lastFetchedAt
+          ? new Date(json.lastFetchedAt).toLocaleString()
+          : 'never';
+        renderServices();
+        renderArtists();
+        if (json.refreshErrors && json.refreshErrors.length) {
+          status(
+            json.refreshErrors.length +
+              ' service(s) failed to fetch (Cloudflare?). Others updated.',
+            'err'
+          );
+        } else if (json.refreshed) {
+          status('Refreshed ' + svcData.length + ' services from VGen.', 'ok');
+        }
+      }
+
+      async function loadData(refresh) {
+        const btn = $('refreshBtn');
+        try {
+          let url = API.data;
+          if (refresh) {
+            url += '?refresh=1';
+            btn.disabled = true;
+            btn.textContent = '↻ Fetching...';
+            status('Pulling live reviews from VGen (this can take a moment)...', 'info');
+          }
+          const res = await fetch(url, { cache: 'no-store' });
+          const json = await res.json();
+          if (!res.ok) throw new Error(json.error || 'HTTP ' + res.status);
+          applyData(json);
+        } catch (e) {
+          status((refresh ? 'Refresh' : 'Load') + ' failed: ' + e.message, 'err');
+        } finally {
+          btn.disabled = false;
+          btn.textContent = '↻ Refresh';
+        }
+      }
+
+      // ---- wire up ----
+      $('refreshBtn').addEventListener('click', () => loadData(true));
+      $('addRowBtn').addEventListener('click', () => {
+        declRows.push({ serviceType: '', serviceID: '' });
+        renderDecl();
+        $('declWrap').open = true;
+      });
+      $('saveBtn').addEventListener('click', saveDecl);
+
+      // Flow-window segmented control: changes the shared axis, then re-renders
+      // just the by-service table (the only place the flow chart lives).
+      $('flowSeg')
+        .querySelectorAll('button')
+        .forEach((b) =>
+          b.addEventListener('click', () => {
+            flowWindow = b.getAttribute('data-w');
+            $('flowSeg')
+              .querySelectorAll('button')
+              .forEach((x) => x.classList.toggle('active', x === b));
+            renderServices();
+          })
+        );
+
+      wireSort('svcTable', () => svcSort, (s) => (svcSort = s), renderServices);
+      wireSort(
+        'artistTable',
+        () => artistSort,
+        (s) => (artistSort = s),
+        renderArtists
+      );
+
+      // ---- boot ----
+      (async function init() {
+        showOverlay();
+        try {
+          await loadServices();
+          await loadData(false); // page-load read = cached, no VGen hit
+        } catch (e) {
+          status('Init failed: ' + e.message, 'err');
+        } finally {
+          hideOverlay(); // only reveal data after the first load settles
+        }
+      })();
+    </script>
+  </body>
+</html>
