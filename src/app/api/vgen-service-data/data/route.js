@@ -122,6 +122,18 @@ async function resolveArtistNames(artistIDs) {
 export async function GET(request) {
   const { searchParams } = new URL(request.url)
   const wantRefresh = searchParams.get('refresh') === '1'
+  // Optional `ids` (comma-separated) narrows a refresh to just those services,
+  // so adding one new service fetches only that service instead of re-pulling
+  // the whole watchlist. Absent = refresh everything (the ↻ Refresh button).
+  const idsParam = searchParams.get('ids')
+  const onlyIDs = idsParam
+    ? new Set(
+        idsParam
+          .split(',')
+          .map((s) => s.trim())
+          .filter(Boolean)
+      )
+    : null
 
   try {
     const services = await getServices()
@@ -130,7 +142,10 @@ export async function GET(request) {
 
     let refreshErrors = []
     if (wantRefresh) {
-      refreshErrors = await refreshAll(services, fetchedAt)
+      const toFetch = onlyIDs
+        ? services.filter((s) => onlyIDs.has(s.serviceID))
+        : services
+      refreshErrors = await refreshAll(toFetch, fetchedAt)
     }
 
     // Batch-read all cached review payloads in ONE round trip (was N sequential

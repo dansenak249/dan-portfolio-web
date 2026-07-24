@@ -580,7 +580,6 @@
                 <th class="num col-n" data-k="uniqueClients">Unique</th>
                 <th class="num col-n" data-k="repeatClients">Repeat</th>
                 <th class="num col-n" data-k="repeatRate">Repeat %</th>
-                <th class="num col-n" data-k="anonymous">Anon</th>
                 <th class="num col-n" data-k="last90">90d</th>
                 <th class="num col-n" data-k="last30">30d</th>
                 <th class="num col-star" data-k="avgRating">★</th>
@@ -833,6 +832,7 @@
       let categoryColorLookup = {}; // { categoryID: '#rrggbb' } built from catRows
       let svcData = []; // analyzed per-service
       let svcByID = {}; // { serviceID: analyzed metrics } for joins in modals
+      let svcMissing = []; // serviceIDs with no cached reviews yet (from last load)
       let svcSort = { key: 'total', dir: -1 };
       let svcFilter = 'all'; // 'all' | 'TYPE::<name>' (which group to show)
       let dotTimer = null; // loading-overlay dot animation
@@ -1105,6 +1105,18 @@
         for (const s of svcData) s._type = typeNameForService(s);
       }
 
+      // Turn a service title into a URL-safe slug for the vgen.co service link.
+      // VGen ignores this segment (it routes by the trailing serviceID), so this
+      // is purely cosmetic; returns '' when there is no usable title.
+      function slugifyName(name) {
+        return String(name || '')
+          .toLowerCase()
+          .normalize('NFKD')
+          .replace(/[^a-z0-9]+/g, '-')
+          .replace(/^-+|-+$/g, '')
+          .slice(0, 80);
+      }
+
       function renderServices() {
         // Resolve every row's display type first so sort/group/render agree.
         annotateTypes();
@@ -1131,15 +1143,20 @@
             const who = s.artistName
               ? esc(s.artistName)
               : shortId(s.artistUserID);
-            // When we know the artist's VGen handle, make the name a link to
-            // their public profile (vgen.co/<handle>) opening in a new tab.
+            // When we know the artist's VGen handle, make the name a link straight
+            // to THIS service on VGen, opening in a new tab. The URL is
+            // vgen.co/<handle>/service/<name-slug>/<serviceID>; the name slug is
+            // decorative (VGen routes by the trailing serviceID), so a placeholder
+            // works when we have no title — no need to store the service name.
             const handle = (s.artistHandle || '').trim();
+            const declRow = declLookup[s.serviceID];
+            const slug = slugifyName(declRow && declRow.serviceName) || 's';
             const whoHtml = handle
               ? `<a class="artist-link" href="https://vgen.co/${encodeURIComponent(
                   handle
-                )}" target="_blank" rel="noopener noreferrer" title="Open vgen.co/${esc(
-                  handle
-                )}">${who}</a>`
+                )}/service/${slug}/${encodeURIComponent(
+                  s.serviceID
+                )}" target="_blank" rel="noopener noreferrer" title="Open this service on vgen.co">${who}</a>`
               : who;
             const color = serviceTypeColor(s);
             const typeStyle = color ? ` style="color:${esc(color)}"` : '';
@@ -1154,7 +1171,6 @@
               <td class="num">${num(s.uniqueClients)}</td>
               <td class="num">${num(s.repeatClients)}</td>
               <td class="num">${repeatPill(s.repeatRate)}</td>
-              <td class="num muted">${num(s.anonymous)}</td>
               <td class="num">${num(s.last90)}</td>
               <td class="num">${num(s.last30)}</td>
               <td class="num">${s.avgRating == null ? '—' : trunc1(s.avgRating)}</td>
@@ -1481,6 +1497,10 @@
 
       // ---- persist the whole declaration (add / edit / overwrite / delete / import) ----
       async function persistDecl(okMsg) {
+        // declLookup still reflects the PREVIOUS saved state at this point (it is
+        // rebuilt only after a successful save/load), so any clean id not in it is
+        // a newly added service that has no cached reviews yet.
+        const prevIDs = new Set(Object.keys(declLookup));
         const clean = declRows
           .map((r) => ({
             serviceID: (r.serviceID || '').trim(),
@@ -1488,6 +1508,9 @@
             serviceName: (r.serviceName || '').trim(),
           }))
           .filter((r) => r.serviceID);
+        const addedIDs = clean
+          .map((r) => r.serviceID)
+          .filter((id) => !prevIDs.has(id));
         try {
           status('Saving\u2026', 'info');
           const res = await fetch(API.services, {
@@ -1501,7 +1524,11 @@
           reverseMapLegacyDecl();
           buildDeclLookup();
           status(okMsg || 'Saved.', 'ok');
-          await loadData(false); // re-read cache so the table + filter refresh
+          // New services have no cached reviews, so a cache-only read would show
+          // just their name (no metrics/artist). Fetch ONLY those live; otherwise
+          // just re-read the cache for the table + filter.
+          if (addedIDs.length) await loadData(true, addedIDs);
+          else await loadData(false);
         } catch (e) {
           status('Save failed: ' + e.message, 'err');
         }
@@ -1533,7 +1560,13 @@
               (failed ? ' (' + failed + ' failed, retry later).' : '.'),
             failed ? 'err' : 'ok'
           );
-          await loadData(false); // re-render the table + filter with fresh types
+          // Backfilling a category often means the service is freshly declared and
+          // has no cached reviews yet. Fetch live for exactly those uncached
+          // services (svcMissing from the last load) so their data + artist name
+          // appear too; otherwise just re-read the cache with the fresh types.
+          const toFetch = svcMissing.slice();
+          if (toFetch.length) await loadData(true, toFetch);
+          else await loadData(false);
         } catch (e) {
           status('Sync failed: ' + e.message, 'err');
         } finally {
@@ -1949,6 +1982,7 @@
 
       function applyData(json) {
         svcData = json.services || [];
+        svcMissing = Array.isArray(json.missing) ? json.missing.slice() : [];
         svcByID = {};
         for (const s of svcData) svcByID[s.serviceID] = s;
         buildDeclLookup(); // keep the id join fresh for modals + type resolution
@@ -1968,15 +2002,23 @@
         }
       }
 
-      async function loadData(refresh) {
+      async function loadData(refresh, ids) {
         const btn = $('refreshBtn');
         try {
           let url = API.data;
           if (refresh) {
             url += '?refresh=1';
+            // Narrow the live pull to specific services when given (e.g. only the
+            // service just added), so we don't re-fetch the whole watchlist.
+            if (ids && ids.length) url += '&ids=' + encodeURIComponent(ids.join(','));
             btn.disabled = true;
             btn.textContent = '↻ Fetching...';
-            status('Pulling live reviews from VGen (this can take a moment)...', 'info');
+            status(
+              ids && ids.length
+                ? 'Fetching reviews for ' + ids.length + ' new service(s)...'
+                : 'Pulling live reviews from VGen (this can take a moment)...',
+              'info'
+            );
           }
           const res = await fetch(url, { cache: 'no-store' });
           const json = await res.json();
