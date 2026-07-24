@@ -76,11 +76,14 @@ async function refreshAll(services, fetchedAt) {
 //     public showcase) is cached, so we never re-fetch it;
 //   - a failed lookup (intermittent Cloudflare 403) caches nothing, so the next
 //     read retries until one succeeds.
-// Returns a map artistUserID -> display string (displayName || username || null).
+// Returns { nameMap, handleMap }: artistUserID -> display string
+// (displayName || username) and artistUserID -> bare username (the VGen profile
+// handle, i.e. vgen.co/<username>). Both entries are null when unknown.
 async function resolveArtistNames(artistIDs) {
   const ids = [...artistIDs]
   const nameMap = {}
-  if (!ids.length) return nameMap
+  const handleMap = {}
+  if (!ids.length) return { nameMap, handleMap }
 
   const cached = await getArtistNamesMany(ids)
   const missing = ids.filter((id) => !cached[id])
@@ -108,9 +111,12 @@ async function resolveArtistNames(artistIDs) {
 
   for (const id of ids) {
     const n = cached[id]
-    if (n) nameMap[id] = n.displayName || n.username || null
+    if (n) {
+      nameMap[id] = n.displayName || n.username || null
+      handleMap[id] = n.username || null
+    }
   }
-  return nameMap
+  return { nameMap, handleMap }
 }
 
 export async function GET(request) {
@@ -173,12 +179,14 @@ export async function GET(request) {
 
     const artistIDs = new Set()
     for (const sm of serviceMetrics) if (sm.artistUserID) artistIDs.add(sm.artistUserID)
-    const nameMap = await resolveArtistNames(artistIDs)
+    const { nameMap, handleMap } = await resolveArtistNames(artistIDs)
     for (const sm of serviceMetrics) {
       sm.artistName = (sm.artistUserID && nameMap[sm.artistUserID]) || null
+      sm.artistHandle = (sm.artistUserID && handleMap[sm.artistUserID]) || null
     }
     for (const a of artists) {
       a.artistName = (a.artistUserID && nameMap[a.artistUserID]) || null
+      a.artistHandle = (a.artistUserID && handleMap[a.artistUserID]) || null
     }
 
     return NextResponse.json(

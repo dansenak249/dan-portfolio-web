@@ -285,6 +285,16 @@
         letter-spacing: 0;
         margin-top: 3px;
       }
+      .artist-link {
+        color: inherit;
+        text-decoration: none;
+        border-bottom: 1px dotted var(--dim);
+        transition: color var(--dur, 150ms) ease, border-color var(--dur, 150ms) ease;
+      }
+      .artist-link:hover {
+        color: var(--accent);
+        border-bottom-color: var(--accent);
+      }
       /* Fixed table layout + explicit column widths; the single unsized column
          (Monthly flow) absorbs the leftover width. */
       #svcTable { table-layout: fixed; }
@@ -1120,6 +1130,16 @@
             const who = s.artistName
               ? esc(s.artistName)
               : shortId(s.artistUserID);
+            // When we know the artist's VGen handle, make the name a link to
+            // their public profile (vgen.co/<handle>) opening in a new tab.
+            const handle = (s.artistHandle || '').trim();
+            const whoHtml = handle
+              ? `<a class="artist-link" href="https://vgen.co/${encodeURIComponent(
+                  handle
+                )}" target="_blank" rel="noopener noreferrer" title="Open vgen.co/${esc(
+                  handle
+                )}">${who}</a>`
+              : who;
             const color = serviceTypeColor(s);
             const typeStyle = color ? ` style="color:${esc(color)}"` : '';
             return `<tr>
@@ -1127,7 +1147,7 @@
               s._type || '—'
             )}</span><div class="sub-name" title="${esc(
               s.serviceID
-            )}">${who}</div></td>
+            )}">${whoHtml}</div></td>
               <td class="col-spacer"></td>
               <td class="num">${num(s.total)}</td>
               <td class="num">${num(s.uniqueClients)}</td>
