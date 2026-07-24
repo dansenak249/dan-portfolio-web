@@ -19,6 +19,12 @@
 // AUTH: intentionally open for now. This is a personal, noindex research tool;
 // auth will be added later as part of a unified /tools login. Until then refresh
 // is unauthenticated (mirrors the existing 1minutes timeline tool).
+//
+// SIGNAL FILTER: services with fewer than MIN_SERVICE_REVIEWS reviews are treated
+// as low-signal noise and dropped from the analysis output AND the artist rollups
+// (they never reach aggregation). Declared services are still fetched/cached as
+// usual; the threshold only gates what the analysis returns, so raising/lowering
+// it later re-reveals the same cached data with no re-fetch.
 
 import { NextResponse } from 'next/server'
 import {
@@ -42,6 +48,9 @@ const NO_STORE = { 'Cache-Control': 'no-store' }
 // Fetch services in small concurrent batches to stay polite to VGen/Cloudflare
 // and under the serverless time budget.
 const FETCH_BATCH = 4
+// Minimum review count for a service to count as signal. Anything below this is
+// dropped as junk before the analysis + artist aggregation run.
+const MIN_SERVICE_REVIEWS = 10
 
 // Live-fetch every declared service, caching each successful pull. Failures are
 // isolated per service (Cloudflare 403 etc.) and returned as errors[].
@@ -175,12 +184,20 @@ export async function GET(request) {
       }
     }
 
-    const artists = aggregateByArtist(serviceMetrics, reviewsByService)
+    // Drop low-signal services (junk) before anything downstream sees them, so
+    // both the service table AND the artist rollups only reflect services that
+    // cleared the review threshold.
+    const keptMetrics = serviceMetrics.filter(
+      (sm) => sm.total >= MIN_SERVICE_REVIEWS
+    )
+    const filteredOut = serviceMetrics.length - keptMetrics.length
+
+    const artists = aggregateByArtist(keptMetrics, reviewsByService)
 
     const artistIDs = new Set()
-    for (const sm of serviceMetrics) if (sm.artistUserID) artistIDs.add(sm.artistUserID)
+    for (const sm of keptMetrics) if (sm.artistUserID) artistIDs.add(sm.artistUserID)
     const { nameMap, handleMap } = await resolveArtistNames(artistIDs)
-    for (const sm of serviceMetrics) {
+    for (const sm of keptMetrics) {
       sm.artistName = (sm.artistUserID && nameMap[sm.artistUserID]) || null
       sm.artistHandle = (sm.artistUserID && handleMap[sm.artistUserID]) || null
     }
@@ -194,9 +211,11 @@ export async function GET(request) {
         refreshed: wantRefresh,
         lastFetchedAt,
         serviceCount: services.length,
+        minReviews: MIN_SERVICE_REVIEWS,
+        filteredOut,
         missing,
         refreshErrors,
-        services: serviceMetrics,
+        services: keptMetrics,
         artists,
       },
       { headers: NO_STORE }
