@@ -607,6 +607,7 @@
               <table class="decl-table">
                 <thead>
                   <tr>
+                    <th class="no-sort" style="width:26px"></th>
                     <th class="no-sort" style="width:32px">#</th>
                     <th class="no-sort" style="width:56px">Color</th>
                     <th class="no-sort">Category Name</th>
@@ -1179,9 +1180,13 @@
       // Rebuild the service filter dropdown as GROUPS by service type. Each
       // distinct type becomes one option (value "TYPE::<name>"); every service
       // with no type collapses into a single "Unclassified" option (value
-      // "TYPE::"), instead of showing up as several separate rows. Selection is
-      // preserved, falling back to "all" if its group is gone (e.g. after a save
-      // or when migrating from an old per-service filter value).
+      // "TYPE::"). Ordering mirrors the Category map table:
+      //   1. every NAMED category, in the map's row order (shown even at 0
+      //      services so the group stays selectable and visible);
+      //   2. then any UNMAPPED groups (a categoryID with no name shows as its raw
+      //      id) sorted alphabetically at the bottom;
+      //   3. then the Unclassified catch-all (services with no categoryID) last.
+      // Selection is preserved, falling back to "all" if its group is gone.
       function populateServiceFilter() {
         const sel = $('svcFilter');
         if (!sel) return;
@@ -1193,8 +1198,29 @@
           if (t) typeCounts.set(t, (typeCounts.get(t) || 0) + 1);
           else unclassified++;
         }
+        // Named categories in category-map row order (dedupe, keep first order).
+        const mappedNames = [];
+        const mappedSet = new Set();
+        for (const r of catRows) {
+          const name = (r.categoryName || '').trim();
+          if (name && !mappedSet.has(name)) {
+            mappedSet.add(name);
+            mappedNames.push(name);
+          }
+        }
         const opts = ['<option value="all">All services</option>'];
-        for (const t of [...typeCounts.keys()].sort((a, b) => a.localeCompare(b))) {
+        for (const name of mappedNames) {
+          opts.push(
+            `<option value="TYPE::${esc(name)}">${esc(name)} (${
+              typeCounts.get(name) || 0
+            })</option>`
+          );
+        }
+        // Unmapped groups (types not present as a named category) -> alphabetical.
+        const leftovers = [...typeCounts.keys()]
+          .filter((t) => !mappedSet.has(t))
+          .sort((a, b) => a.localeCompare(b));
+        for (const t of leftovers) {
           opts.push(
             `<option value="TYPE::${esc(t)}">${esc(t)} (${typeCounts.get(t)})</option>`
           );
@@ -1203,12 +1229,13 @@
           opts.push(`<option value="TYPE::">Unclassified (${unclassified})</option>`);
         }
         sel.innerHTML = opts.join('');
+        const key = svcFilter.startsWith('TYPE::') ? svcFilter.slice(6) : '';
         const valid =
           svcFilter === 'all' ||
           (svcFilter.startsWith('TYPE::') &&
             (svcFilter === 'TYPE::'
               ? unclassified > 0
-              : typeCounts.has(svcFilter.slice(6))));
+              : mappedSet.has(key) || typeCounts.has(key)));
         if (!valid) svcFilter = 'all';
         sel.value = svcFilter;
       }
@@ -1519,6 +1546,7 @@
       // Model: hue 0-360, saturation/value 0-1. The SV square picks s (x-axis) and
       // v (y-axis, top = 1); the hue bar picks h (top = 0deg). Everything renders
       // from cpHsv so hex input, square, and hue stay in sync.
+      let catDragSrc = -1; // category row index being dragged (-1 = no drag)
       let cpTarget = -1; // index into catRows currently being edited (-1 = none)
       let cpHsv = { h: 190, s: 0.6, v: 0.9 };
       let cpDrag = null; // 'sv' | 'hue' while a pointer drag is active
@@ -1638,7 +1666,8 @@
               ? `background:${esc(color)}`
               : 'background:transparent';
             const swatchCls = color ? 'cat-swatch' : 'cat-swatch is-empty';
-            return `<tr>
+            return `<tr data-rowidx="${i}">
+            <td class="drag-handle" draggable="true" data-drag="${i}" title="Drag to reorder">&#9776;</td>
             <td class="muted">${i + 1}</td>
             <td><button type="button" class="${swatchCls}" data-catcolor="${i}" style="${swatchStyle}" title="${
               color ? 'Text color ' + esc(color) : 'No color — click to pick'
@@ -1674,7 +1703,51 @@
           })
         );
 
+        // Drag-to-reorder: the grip handle starts the drag; each row is a drop
+        // target. Reordering rewrites catRows order -> the snapshot differs ->
+        // Save enables, and the service filter follows the new category order.
+        body.querySelectorAll('[data-drag]').forEach((h) => {
+          h.addEventListener('dragstart', (e) => {
+            catDragSrc = +h.getAttribute('data-drag');
+            e.dataTransfer.effectAllowed = 'move';
+            try {
+              e.dataTransfer.setData('text/plain', String(catDragSrc));
+            } catch {}
+          });
+          h.addEventListener('dragend', () => {
+            catDragSrc = -1;
+            body
+              .querySelectorAll('tr.drag-over')
+              .forEach((r) => r.classList.remove('drag-over'));
+          });
+        });
+        body.querySelectorAll('tr[data-rowidx]').forEach((tr) => {
+          tr.addEventListener('dragover', (e) => {
+            if (catDragSrc < 0) return;
+            e.preventDefault();
+            e.dataTransfer.dropEffect = 'move';
+            tr.classList.add('drag-over');
+          });
+          tr.addEventListener('dragleave', () => tr.classList.remove('drag-over'));
+          tr.addEventListener('drop', (e) => {
+            e.preventDefault();
+            tr.classList.remove('drag-over');
+            moveCatRow(catDragSrc, +tr.getAttribute('data-rowidx'));
+            catDragSrc = -1;
+          });
+        });
+
         updateCatButtons();
+      }
+
+      // Move a category row from one position to another, then re-render + re-sync
+      // the service filter so its option order matches the new category order.
+      function moveCatRow(from, to) {
+        if (from < 0 || to < 0 || from === to) return;
+        const [item] = catRows.splice(from, 1);
+        catRows.splice(to, 0, item);
+        renderCatEditor();
+        populateServiceFilter();
       }
 
       async function loadCategories() {
