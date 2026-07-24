@@ -195,7 +195,35 @@
         font-size: 0.8rem;
       }
       .decl-table input:focus { outline: none; border-color: var(--accent); }
-      .decl-table .id-input { min-width: 280px; }
+      /* Compact editable fields: the ID paste box and the type dropdown are kept
+         narrow so the read-only Artist / Service columns have room to identify a row. */
+      .decl-table .id-input { min-width: 150px; }
+      /* Read-only identity columns (Artist, Service name) filled after Save. */
+      .decl-table .ident-cell {
+        max-width: 180px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        font-family: var(--sans);
+        font-size: 0.8rem;
+        color: var(--text);
+      }
+      .decl-table .ident-cell.empty { color: var(--dim); font-style: italic; }
+      .decl-table select {
+        width: 100%;
+        min-width: 130px;
+        background: var(--bg);
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        color: var(--text);
+        padding: 7px 9px;
+        font-family: var(--mono);
+        font-size: 0.8rem;
+        cursor: pointer;
+      }
+      .decl-table select:focus { outline: none; border-color: var(--accent); }
+      /* a row whose type is still a raw (unmapped) category id */
+      .decl-table select.unmapped { border-color: rgba(240, 180, 41, 0.5); color: var(--warn); }
       .row-actions { display: flex; gap: 4px; }
       .decl-foot {
         display: flex;
@@ -206,6 +234,18 @@
         flex-wrap: wrap;
       }
       .decl-foot .left { display: flex; gap: 8px; flex-wrap: wrap; }
+      .decl-foot .right { display: flex; gap: 8px; align-items: center; }
+      /* square, icon-only revert button sitting next to Save */
+      button.icon-btn {
+        padding: 0;
+        width: 38px;
+        height: 38px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 1rem;
+        line-height: 1;
+      }
 
       details.decl { }
       details.decl > summary {
@@ -245,11 +285,9 @@
         letter-spacing: 0;
         margin-top: 3px;
       }
-      /* Fixed table layout + shared column widths so the by-service and by-artist
-         tables line up column-for-column through the "30d" column. Each table
-         keeps exactly one unsized column afterwards (Monthly flow / the trailing
-         blank) to absorb the leftover width. */
-      #svcTable, #artistTable { table-layout: fixed; }
+      /* Fixed table layout + explicit column widths; the single unsized column
+         (Monthly flow) absorbs the leftover width. */
+      #svcTable { table-layout: fixed; }
       .col-name { width: 172px; }
       .col-spacer { width: 74px; }
       .col-n { width: 72px; }
@@ -268,6 +306,96 @@
       tr.drag-over > td { box-shadow: inset 0 2px 0 var(--accent); }
       /* monthly-flow window control */
       .flow-tools { display: inline-flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+      .flow-check {
+        display: inline-flex; align-items: center; gap: 6px;
+        font-size: 0.8rem; font-weight: 600; color: var(--muted);
+        cursor: pointer; user-select: none;
+      }
+      .flow-check input { accent-color: var(--accent); cursor: pointer; margin: 0; }
+      /* category color swatch (opens the picker) */
+      .cat-swatch {
+        width: 26px; height: 20px; border-radius: 6px;
+        border: 1px solid var(--line); cursor: pointer; padding: 0;
+        display: inline-block; vertical-align: middle;
+        box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.25);
+      }
+      .cat-swatch:hover { border-color: var(--accent); }
+      .cat-swatch.is-empty {
+        background:
+          linear-gradient(45deg, var(--line) 25%, transparent 25%),
+          linear-gradient(-45deg, var(--line) 25%, transparent 25%),
+          linear-gradient(45deg, transparent 75%, var(--line) 75%),
+          linear-gradient(-45deg, transparent 75%, var(--line) 75%) !important;
+        background-size: 8px 8px !important;
+        background-position: 0 0, 0 4px, 4px -4px, -4px 0 !important;
+      }
+      /* photoshop-style HSV color picker */
+      .cp-body { margin-top: 10px; }
+      .cp-canvas { display: flex; gap: 12px; }
+      .cp-square {
+        position: relative; width: 240px; height: 200px; border-radius: 8px;
+        cursor: crosshair; overflow: hidden; flex: 1;
+        border: 1px solid var(--line);
+        background: hsl(0, 100%, 50%);
+      }
+      .cp-square-white {
+        position: absolute; inset: 0;
+        background: linear-gradient(to right, #fff, rgba(255, 255, 255, 0));
+      }
+      .cp-square-black {
+        position: absolute; inset: 0;
+        background: linear-gradient(to top, #000, rgba(0, 0, 0, 0));
+      }
+      .cp-sv-cursor {
+        position: absolute; width: 14px; height: 14px; border-radius: 50%;
+        border: 2px solid #fff; box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.6);
+        transform: translate(-50%, -50%); pointer-events: none;
+      }
+      .cp-hue {
+        position: relative; width: 20px; height: 200px; border-radius: 8px;
+        cursor: ns-resize; border: 1px solid var(--line);
+        background: linear-gradient(
+          to bottom,
+          #f00 0%, #ff0 17%, #0f0 33%, #0ff 50%, #00f 67%, #f0f 83%, #f00 100%
+        );
+      }
+      .cp-hue-cursor {
+        position: absolute; left: -3px; right: -3px; height: 6px;
+        border: 2px solid #fff; border-radius: 4px;
+        box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.6);
+        transform: translateY(-50%); pointer-events: none;
+      }
+      .cp-readout {
+        display: flex; align-items: center; gap: 12px; margin-top: 14px;
+      }
+      .cp-preview {
+        width: 40px; height: 28px; border-radius: 6px;
+        border: 1px solid var(--line); display: inline-block;
+        box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.25);
+      }
+      .cp-hex {
+        display: inline-flex; align-items: center; gap: 4px;
+        font-family: var(--mono); color: var(--muted); font-size: 0.85rem;
+      }
+      .cp-hex input {
+        width: 90px; background: var(--panel-2); border: 1px solid var(--line);
+        border-radius: 8px; color: var(--text); font-family: var(--mono);
+        font-size: 0.85rem; padding: 6px 8px; text-transform: lowercase;
+      }
+      .cp-hex input:focus { outline: none; border-color: var(--accent); }
+      .hdr-select {
+        background: var(--panel-2);
+        border: 1px solid var(--line);
+        border-radius: 9px;
+        color: var(--text);
+        font-family: var(--sans);
+        font-size: 0.8rem;
+        font-weight: 600;
+        padding: 7px 10px;
+        cursor: pointer;
+        max-width: 260px;
+      }
+      .hdr-select:focus { outline: none; border-color: var(--accent); }
       .status {
         font-family: var(--mono);
         font-size: 0.78rem;
@@ -313,6 +441,74 @@
         display: flex; align-items: baseline; font-family: var(--mono);
       }
       .lo-text .dots { display: inline-block; width: 22px; text-align: left; margin-left: 4px; }
+
+      /* Import preview modal */
+      .modal {
+        position: fixed; inset: 0; z-index: 200;
+        display: flex; align-items: center; justify-content: center;
+        padding: 24px; background: rgba(5, 7, 10, 0.72);
+        backdrop-filter: blur(3px); transition: opacity 0.2s ease;
+      }
+      .modal.hidden { opacity: 0; pointer-events: none; }
+      .modal-card {
+        background: linear-gradient(180deg, var(--panel), var(--panel-2));
+        border: 1px solid var(--line); border-radius: var(--radius);
+        width: min(760px, 100%); max-height: 84vh;
+        display: flex; flex-direction: column;
+        padding: 20px 20px 16px; box-shadow: 0 24px 70px rgba(0, 0, 0, 0.55);
+      }
+      .modal-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+      .modal-head h3 { font-size: 1.05rem; }
+      .modal-sub { margin: 8px 0 12px; color: var(--muted); font-size: 0.82rem; font-family: var(--mono); }
+      .modal-scroll { flex: 1; overflow-y: auto; min-height: 60px; }
+      .modal-foot {
+        display: flex; align-items: center; justify-content: space-between;
+        gap: 12px; margin-top: 14px; flex-wrap: wrap;
+      }
+      .modal-foot .foot-note { margin-top: 0; }
+      .modal-actions { display: flex; gap: 8px; margin-left: auto; }
+      .badge {
+        font-family: var(--mono); font-size: 0.68rem; font-weight: 600;
+        padding: 3px 8px; border-radius: 999px; border: 1px solid var(--line);
+        white-space: nowrap;
+      }
+      .badge.new { color: var(--good); border-color: rgba(86,217,135,0.4); background: rgba(86,217,135,0.06); }
+      .badge.dup { color: var(--warn); border-color: rgba(240,180,41,0.4); background: rgba(240,180,41,0.06); }
+      .badge.bad { color: var(--bad); border-color: rgba(255,107,107,0.4); background: rgba(255,107,107,0.06); }
+      tr.row-skip > td { opacity: 0.5; }
+      .mono { font-family: var(--mono); font-size: 0.8rem; }
+
+      /* per-row action buttons (edit / delete) in the service table */
+      .col-actions { width: 88px; }
+      .row-act { display: inline-flex; gap: 6px; justify-content: flex-end; width: 100%; }
+      button.sq {
+        padding: 0; width: 30px; height: 30px;
+        display: inline-flex; align-items: center; justify-content: center;
+        border-radius: 8px; color: var(--muted);
+      }
+      button.sq:hover { color: var(--accent); }
+      button.sq.danger:hover { border-color: var(--bad); color: var(--bad); background: rgba(255,107,107,0.06); }
+      button.sq svg { display: block; }
+
+      /* read-only info block shown inside confirm / overwrite modals */
+      .confirm-info {
+        border: 1px solid var(--line); border-radius: 10px; background: var(--bg);
+        padding: 12px 14px; margin: 6px 0; font-size: 0.84rem;
+        display: grid; grid-template-columns: auto 1fr; gap: 7px 16px; align-items: baseline;
+      }
+      .confirm-info .k {
+        color: var(--dim); font-family: var(--mono); font-size: 0.68rem;
+        text-transform: uppercase; letter-spacing: 0.08em;
+      }
+      .confirm-info .v { color: var(--text); overflow-wrap: anywhere; }
+      .confirm-info .v.mono { font-family: var(--mono); font-size: 0.78rem; color: var(--muted); }
+      /* destructive confirm button (Remove) */
+      button.primary.sq-danger {
+        background: rgba(255, 107, 107, 0.14);
+        border-color: rgba(255, 107, 107, 0.5);
+        color: #ffd9d9;
+      }
+      button.primary.sq-danger:hover { border-color: var(--bad); }
     </style>
   </head>
   <body>
@@ -335,6 +531,8 @@
           <div class="updated">
             updated<br /><b id="lastUpdated">—</b>
           </div>
+          <button id="addBtn" title="Declare a new service">+ Add</button>
+          <button id="syncBtn" title="Re-derive each service's category from its id (fills in any missing types)">⟳ Sync types</button>
           <button id="refreshBtn" class="primary">↻ Refresh</button>
         </div>
       </header>
@@ -344,8 +542,11 @@
       <!-- Per-service -->
       <section class="panel">
         <div class="panel-head">
-          <h2><span class="dot"></span>By service</h2>
+          <h2><span class="dot"></span>Service</h2>
           <div class="flow-tools">
+            <select id="svcFilter" class="hdr-select" title="Filter which service to show">
+              <option value="all">All services</option>
+            </select>
             <span class="sub">flow window</span>
             <span class="seg" id="flowSeg">
               <button data-w="all" class="active">All</button>
@@ -353,13 +554,17 @@
               <button data-w="12">12M</button>
               <button data-w="6">6M</button>
             </span>
+            <label class="flow-check" title="Scale each month's bars to the busiest single service that month instead of the month's total">
+              <input type="checkbox" id="justifyChk" />
+              <span>justify</span>
+            </label>
           </div>
         </div>
         <div class="table-scroll">
           <table id="svcTable">
             <thead>
               <tr>
-                <th class="col-name" data-k="serviceType">Type</th>
+                <th class="col-name" data-k="_type">Type</th>
                 <th class="no-sort col-spacer"></th>
                 <th class="num col-n" data-k="total">Reviews</th>
                 <th class="num col-n" data-k="uniqueClients">Unique</th>
@@ -370,79 +575,221 @@
                 <th class="num col-n" data-k="last30">30d</th>
                 <th class="num col-star" data-k="avgRating">★</th>
                 <th class="no-sort">Monthly flow</th>
+                <th class="no-sort col-actions"></th>
               </tr>
             </thead>
             <tbody id="svcBody"></tbody>
           </table>
         </div>
-        <div id="svcEmpty" class="empty">No services declared yet. Open “Declared services” above to add some.</div>
+        <div id="svcEmpty" class="empty">No services declared yet. Click “+ Add” up top to declare one.</div>
       </section>
 
-      <!-- Per-artist -->
+      <!-- Category map editor (GUI for searchCategoryID -> readable name) -->
       <section class="panel">
-        <div class="panel-head">
-          <h2><span class="dot" style="background:var(--accent-2);box-shadow:0 0 12px var(--accent-2)"></span>By artist</h2>
-        </div>
-        <div class="table-scroll">
-          <table id="artistTable">
-            <thead>
-              <tr>
-                <th class="col-name" data-k="artistName">Artist</th>
-                <th class="num col-spacer" data-k="serviceCount">Services</th>
-                <th class="num col-n" data-k="total">Reviews</th>
-                <th class="num col-n" data-k="uniqueClients">Unique</th>
-                <th class="num col-n" data-k="repeatClients">Repeat</th>
-                <th class="num col-n" data-k="repeatRate">Repeat %</th>
-                <th class="num col-n" data-k="anonymous">Anon</th>
-                <th class="num col-n" data-k="last90">90d</th>
-                <th class="num col-n" data-k="last30">30d</th>
-                <th class="no-sort"></th>
-              </tr>
-            </thead>
-            <tbody id="artistBody"></tbody>
-          </table>
-        </div>
-        <div id="artistEmpty" class="empty">—</div>
-      </section>
-
-      <!-- Declaration editor (kept at the bottom: config, not the main view) -->
-      <section class="panel">
-        <details class="decl" id="declWrap">
+        <details class="decl" id="catWrap">
           <summary>
             <span class="chev">▶</span>
-            Declared services
-            <span class="count-badge" id="declCount">0 services</span>
+            Category map
+            <span class="count-badge" id="catCount">0 categories</span>
           </summary>
           <div style="margin-top:16px">
             <div class="table-scroll">
               <table class="decl-table">
                 <thead>
                   <tr>
-                    <th class="no-sort" style="width:32px" title="Drag to reorder">⣿</th>
                     <th class="no-sort" style="width:32px">#</th>
-                    <th class="no-sort">Service Type</th>
-                    <th class="no-sort">Service ID</th>
+                    <th class="no-sort" style="width:56px">Color</th>
+                    <th class="no-sort">Category Name</th>
+                    <th class="no-sort">Category ID</th>
                     <th class="no-sort" style="width:48px"></th>
                   </tr>
                 </thead>
-                <tbody id="declBody"></tbody>
+                <tbody id="catBody"></tbody>
               </table>
             </div>
             <div class="decl-foot">
               <div class="left">
-                <button id="addRowBtn" class="ghost">+ Add service</button>
+                <button id="addCatBtn" class="ghost">+ Add category</button>
               </div>
-              <button id="saveBtn" class="primary">Save declaration</button>
+              <div class="right">
+                <button id="revertCatBtn" class="icon-btn" title="Revert unsaved changes" disabled>&#8634;</button>
+                <button id="saveCatBtn" class="primary" disabled>Save</button>
+              </div>
             </div>
             <p class="foot-note">
-              Service Type is free text (animation / bg / ...). Service ID is the
-              VGen service UUID (e.g. 62b...). Drag the ⣿ handle to reorder.
-              Saving replaces the whole list; removing a service purges its
-              cached reviews.
+              Maps VGen's opaque category id to a readable name. This is VGen's
+              <span class="mono">searchCategoryID</span> — an Airtable-style id
+              (e.g. rechY6VVD1EyfZbHe = “Animation Only”), which the harvester
+              stores under the key <span class="mono">categoryID</span>. The
+              Service Type dropdown above is built from these names — edit here to
+              rename a category with no code push. An id you spotted as “unmapped”
+              can be pasted in and named; leaving the name blank just parks it here
+              as a to-do.
             </p>
           </div>
         </details>
       </section>
+
+      <!-- Import preview modal: review a harvested list before adding to the editor -->
+      <div id="importModal" class="modal hidden">
+        <div class="modal-card">
+          <div class="modal-head">
+            <h3>Import preview</h3>
+            <button id="importClose" class="tiny ghost" title="Close">✕</button>
+          </div>
+          <p class="modal-sub" id="importSummary">—</p>
+          <div class="table-scroll modal-scroll">
+            <table class="decl-table">
+              <thead>
+                <tr>
+                  <th class="no-sort" style="width:56px">Count</th>
+                  <th class="no-sort">Service Name</th>
+                  <th class="no-sort" style="width:150px">Type</th>
+                  <th class="no-sort">Service ID</th>
+                  <th class="no-sort" style="width:96px">Status</th>
+                </tr>
+              </thead>
+              <tbody id="importBody"></tbody>
+            </table>
+          </div>
+          <div class="modal-foot">
+            <span class="foot-note" id="importHint"></span>
+            <div class="modal-actions">
+              <button id="importCancel" class="ghost">Cancel</button>
+              <button id="importConfirm" class="primary">Confirm import</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Shared hidden file picker for the Import flow (opened from the Add popup) -->
+      <input type="file" id="importFile" accept=".txt,.json,application/json" hidden />
+
+      <!-- Add / Edit popup: declare ONE service by its id ONLY. On Save the
+           category + title are auto-resolved from VGen (the category is NEVER
+           typed here — manual category naming lives in the Category map below).
+           Opened by the header "+ Add" button, or an inline row Edit button. -->
+      <div id="editModal" class="modal hidden">
+        <div class="modal-card" style="width:min(560px,100%)">
+          <div class="modal-head">
+            <h3 id="editTitle">Add service</h3>
+            <button id="editClose" class="tiny ghost" title="Close">✕</button>
+          </div>
+          <p class="modal-sub">
+            Paste a VGen service id and Save — the category and title are fetched
+            automatically. Or Import a harvested list to add many at once.
+          </p>
+          <div class="table-scroll">
+            <table class="decl-table">
+              <thead>
+                <tr>
+                  <th class="no-sort">Service ID</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>
+                    <input id="editServiceID" class="id-input" placeholder="62b..." />
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <div id="editResolved" class="confirm-info" style="display:none"></div>
+          <div class="modal-foot">
+            <button id="editImportBtn" class="ghost" title="Load a harvested service list (JSON) to review before adding">⇪ Import file</button>
+            <div class="modal-actions">
+              <button id="editCancel" class="ghost">Cancel</button>
+              <button id="editSave" class="primary">Save</button>
+            </div>
+          </div>
+          <p class="foot-note">
+            The category is derived from the id and named via the Category map
+            below. Press Enter to Save.
+          </p>
+        </div>
+      </div>
+
+      <!-- Delete confirmation: removes from the declaration AND purges cache. -->
+      <div id="delModal" class="modal hidden">
+        <div class="modal-card" style="width:min(460px,100%)">
+          <div class="modal-head">
+            <h3>Remove service?</h3>
+            <button id="delClose" class="tiny ghost" title="Close">✕</button>
+          </div>
+          <p class="modal-sub">
+            This drops it from your declaration and purges its cached reviews. You
+            can re-add it any time.
+          </p>
+          <div id="delInfo" class="confirm-info"></div>
+          <div class="modal-foot">
+            <span class="foot-note">Press Enter to confirm.</span>
+            <div class="modal-actions">
+              <button id="delCancel" class="ghost">Cancel</button>
+              <button id="delConfirm" class="primary sq-danger">Remove</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Overwrite prompt: raised when Add/Edit targets an already-declared id.
+           Shows the entry about to be overwritten. -->
+      <div id="owModal" class="modal hidden">
+        <div class="modal-card" style="width:min(480px,100%)">
+          <div class="modal-head">
+            <h3>Service already declared</h3>
+            <button id="owClose" class="tiny ghost" title="Close">✕</button>
+          </div>
+          <p class="modal-sub">
+            This service id is already in your list. Overwrite the existing entry
+            below with your new declaration?
+          </p>
+          <div id="owInfo" class="confirm-info"></div>
+          <div class="modal-foot">
+            <span class="foot-note">Press Enter to overwrite.</span>
+            <div class="modal-actions">
+              <button id="owCancel" class="ghost">Cancel</button>
+              <button id="owConfirm" class="primary">Overwrite</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Photoshop-style HSV color picker (SV square + hue bar) for category text -->
+      <div id="colorModal" class="modal hidden">
+        <div class="modal-card" style="width:min(360px,100%)">
+          <div class="modal-head">
+            <h3>Text color</h3>
+            <button id="colorClose" class="tiny ghost" title="Close">✕</button>
+          </div>
+          <div class="cp-body">
+            <div class="cp-canvas">
+              <div id="cpSquare" class="cp-square">
+                <div class="cp-square-white"></div>
+                <div class="cp-square-black"></div>
+                <div id="cpSvCursor" class="cp-sv-cursor"></div>
+              </div>
+              <div id="cpHue" class="cp-hue">
+                <div id="cpHueCursor" class="cp-hue-cursor"></div>
+              </div>
+            </div>
+            <div class="cp-readout">
+              <span id="cpSwatch" class="cp-preview"></span>
+              <label class="cp-hex">
+                <span>#</span>
+                <input id="cpHex" type="text" maxlength="6" spellcheck="false" placeholder="6ee7ff" />
+              </label>
+            </div>
+          </div>
+          <div class="modal-foot">
+            <button id="cpClear" class="ghost" title="Remove color (use default text color)">Clear</button>
+            <div class="modal-actions">
+              <button id="cpCancel" class="ghost">Cancel</button>
+              <button id="cpApply" class="primary">Apply</button>
+            </div>
+          </div>
+        </div>
+      </div>
 
       <p class="foot-note" style="text-align:center">
         Read-only survey of PUBLIC review data. Anonymous reviews count toward
@@ -455,16 +802,39 @@
       // ---- config ----
       const API = {
         services: '/api/vgen-service-data/services',
+        resolve: '/api/vgen-service-data/services/resolve',
+        resync: '/api/vgen-service-data/services/resync',
         data: '/api/vgen-service-data/data',
+        categories: '/api/vgen-service-data/categories',
       };
 
       // ---- state ----
-      let declRows = []; // [{ serviceType, serviceID }]
+      // Declared services now store VGen's opaque categoryID (searchCategoryID),
+      // NOT a resolved name, so renaming a category stays dynamic (the display
+      // type is resolved live from the category map on every render).
+      let declRows = []; // [{ serviceID, categoryID, serviceName }]
+      let declLookup = {}; // { serviceID: declRow } for O(1) joins
+      let catRows = []; // [{ categoryID, categoryName, color }] (GUI category map)
+      // Last-saved snapshot (JSON string) for the category map: it is "dirty" when
+      // current rows differ from baseline -> Save + Revert enable, else disable.
+      let catBaseline = '[]';
+      let categoryLookup = {}; // { categoryID: categoryName } built from catRows
+      let categoryColorLookup = {}; // { categoryID: '#rrggbb' } built from catRows
       let svcData = []; // analyzed per-service
-      let artistData = [];
+      let svcByID = {}; // { serviceID: analyzed metrics } for joins in modals
       let svcSort = { key: 'total', dir: -1 };
-      let artistSort = { key: 'total', dir: -1 };
+      let svcFilter = 'all'; // 'all' | 'TYPE::<name>' (which group to show)
       let dotTimer = null; // loading-overlay dot animation
+
+      // Inline row-action icons (edit / delete). Kept as SVG so they read as
+      // intentional buttons rather than ambiguous text glyphs.
+      const ICON_EDIT =
+        '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>';
+      const ICON_DEL =
+        '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg>';
+
+      // Persisted UI config so a refresh keeps the current view.
+      const UI_KEY = 'vgsd:ui';
 
       // ---- helpers ----
       const $ = (id) => document.getElementById(id);
@@ -482,6 +852,83 @@
         el.textContent = msg;
         el.className = 'status show ' + (kind || 'info');
         if (kind === 'ok') setTimeout(() => el.classList.remove('show'), 3500);
+      }
+
+      // ---- declaration lookup + legacy self-heal ----
+      // Index declared rows by serviceID for O(1) joins (type resolution, modals).
+      function buildDeclLookup() {
+        const m = {};
+        for (const r of declRows) {
+          const id = (r.serviceID || '').trim();
+          if (id) m[id] = r;
+        }
+        declLookup = m;
+      }
+      // Legacy self-heal. Two older shapes must re-link to a category id:
+      //   1. Oldest model stored the resolved NAME in a `serviceType` field and
+      //      had NO categoryID at all -> fold serviceType into categoryID first.
+      //   2. A row may hold a NAME in categoryID (name-as-id) -> swap it for the
+      //      matching category id.
+      // After this pass every legacy row carries a proper category id (when the
+      // name is known in the map), so it resolves dynamically instead of orphaning.
+      function reverseMapLegacyDecl() {
+        const idByName = {};
+        for (const r of catRows) {
+          const id = (r.categoryID || '').trim();
+          const name = (r.categoryName || '').trim();
+          if (id && name) idByName[name] = id;
+        }
+        for (const row of declRows) {
+          // (1) fold the oldest `serviceType` field into categoryID when empty.
+          if (!(row.categoryID || '').trim() && (row.serviceType || '').trim()) {
+            row.categoryID = row.serviceType.trim();
+          }
+          // (2) convert a name-as-id into its real category id.
+          const cid = (row.categoryID || '').trim();
+          if (cid && !categoryLookup[cid] && idByName[cid]) {
+            row.categoryID = idByName[cid];
+          }
+        }
+      }
+
+      // ---- category-map dirty tracking (Save / Revert enablement) ----
+      function catSnapshot(rows) {
+        return JSON.stringify(
+          (rows || []).map((r) => ({
+            categoryID: (r.categoryID || '').trim(),
+            categoryName: (r.categoryName || '').trim(),
+            color: (r.color || '').trim(),
+          }))
+        );
+      }
+      function updateCatButtons() {
+        const dirty = catSnapshot(catRows) !== catBaseline;
+        $('saveCatBtn').disabled = !dirty;
+        $('revertCatBtn').disabled = !dirty;
+      }
+
+      // ---- persisted UI config (service filter + flow window + sort) ----
+      function loadUiConfig() {
+        try {
+          const raw = localStorage.getItem(UI_KEY);
+          if (!raw) return;
+          const c = JSON.parse(raw);
+          if (!c || typeof c !== 'object') return;
+          if (typeof c.svcFilter === 'string') svcFilter = c.svcFilter;
+          if (typeof c.flowWindow === 'string') flowWindow = c.flowWindow;
+          if (typeof c.justify === 'boolean') justify = c.justify;
+          if (c.svcSort && typeof c.svcSort.key === 'string') {
+            svcSort = { key: c.svcSort.key, dir: c.svcSort.dir === 1 ? 1 : -1 };
+          }
+        } catch {}
+      }
+      function saveUiConfig() {
+        try {
+          localStorage.setItem(
+            UI_KEY,
+            JSON.stringify({ svcFilter, flowWindow, justify, svcSort })
+          );
+        } catch {}
       }
 
       // ---- loading overlay (site-branded, mirrors the trending tool) ----
@@ -506,29 +953,42 @@
 
       // ---- monthly-flow window + shared-scale sparkline ----
       let flowWindow = 'all'; // 'all' | trailing month count as string
+      // justify: when ON, each month's bars are scaled to the BUSIEST single
+      // service that month (monthMax) instead of the month's TOTAL across all
+      // visible services (monthTotals). So the top service that month reads as a
+      // full bar, and everyone else is relative to it.
+      let justify = false;
 
-      // Build ONE month axis shared by every service, so all sparklines cover the
-      // same time span AND the same vertical scale -> bars are comparable across
-      // rows. A service that hasn't started just plots as 0s over that axis.
-      function buildFlowAxis() {
+      // Build ONE month axis shared by every VISIBLE service, so all sparklines
+      // cover the same time span AND the same vertical scale -> bars are comparable
+      // across rows. `rows` is the currently filtered set: when a group is filtered,
+      // the axis AND the per-month denominator narrow to just those rows, so each
+      // bar reads as a share WITHIN the selected group (not the whole market).
+      function buildFlowAxis(rows) {
         const monthSet = new Set();
-        for (const s of svcData)
+        for (const s of rows)
           for (const m of s.monthly || []) monthSet.add(m.month);
         let axis = [...monthSet].sort();
         if (flowWindow !== 'all') {
           const n = parseInt(flowWindow, 10);
           if (n > 0) axis = axis.slice(-n);
         }
-        // Per-month orders summed across ALL services -> denominator for each
-        // month's cross-service share (who captured the market that month). This
-        // drives BOTH the bar height and the tooltip percentage.
+        // Per-month orders summed across the VISIBLE services -> denominator for
+        // each month's share (who captured that slice of the shown group that
+        // month). Drives BOTH the bar height and the tooltip percentage.
         const monthTotals = new Map();
-        for (const s of svcData) {
+        // Per-month MAX single-service count -> denominator when justify is on
+        // (the busiest service that month becomes a full-height bar).
+        const monthMax = new Map();
+        for (const s of rows) {
           const map = new Map((s.monthly || []).map((m) => [m.month, m.count]));
-          for (const mo of axis)
-            monthTotals.set(mo, (monthTotals.get(mo) || 0) + (map.get(mo) || 0));
+          for (const mo of axis) {
+            const c = map.get(mo) || 0;
+            monthTotals.set(mo, (monthTotals.get(mo) || 0) + c);
+            monthMax.set(mo, Math.max(monthMax.get(mo) || 0, c));
+          }
         }
-        return { axis, monthTotals };
+        return { axis, monthTotals, monthMax };
       }
 
       function serviceFlow(s, axis) {
@@ -560,12 +1020,16 @@
         if (!total || total <= 0) return '0.0';
         return trunc1((count / total) * 100);
       }
-      // `monthTotals` maps each month -> orders across ALL services that month,
-      // so a bar's height AND tooltip both show this service's SHARE of that
-      // month's market (count / all-services-that-month). Track = 100% = whole
-      // month; blue fill = this service's slice.
-      function sparkline(series, monthTotals) {
+      // `monthTotals` maps each month -> orders across ALL services that month;
+      // `monthMax` -> the busiest single service that month. The bar HEIGHT uses
+      // whichever is the active denominator: totals (default) reads each bar as a
+      // share of the whole month's market; max (justify on) makes the busiest
+      // service a full bar and scales everyone else relative to it. The TOOLTIP
+      // percentage always stays market-share (count / month total) so the number
+      // keeps a stable meaning regardless of the height mode.
+      function sparkline(series, monthTotals, monthMax) {
         if (!series || !series.length) return '<span class="muted">—</span>';
+        const denoms = justify ? monthMax : monthTotals;
         const w = 150, h = 26, pad = 2;
         const n = series.length;
         const bw = (w - pad * 2) / n;
@@ -575,13 +1039,13 @@
         series.forEach((pt, i) => {
           if (!pt.exists) return; // not started yet -> blank slot
           const x = (pad + i * bw).toFixed(1);
-          // Gray background track (the "100% = whole month across all services").
+          // Gray background track (the "100%" reference for the active mode).
           cells += `<rect x="${x}" y="${pad}" width="${barW}" height="${trackH.toFixed(
             1
           )}" rx="0.6" fill="#333c47"/>`;
-          // Blue fill = this service's share of that month's total orders.
-          const monthTotal = monthTotals.get(pt.month) || 0;
-          const share = monthTotal > 0 ? pt.count / monthTotal : 0;
+          // Blue fill = this service's count over the active denominator.
+          const denom = (denoms && denoms.get(pt.month)) || 0;
+          const share = denom > 0 ? pt.count / denom : 0;
           const fh = pt.count > 0 ? Math.max(1.5, share * trackH) : 0;
           if (fh > 0) {
             const y = (h - pad - fh).toFixed(1);
@@ -616,20 +1080,52 @@
         });
       }
 
+      // Resolve a service's DISPLAY type from its DECLARED categoryID via the
+      // category map, live -> a rename reflects instantly with no data reload.
+      // Unmapped id shows the raw id; no id -> '' (Unclassified). Annotated onto
+      // each svcData row as `_type` so sort + group filtering use the readable name.
+      function typeNameForService(s) {
+        const row = declLookup[s.serviceID];
+        const cid = row ? (row.categoryID || '').trim() : (s.serviceType || '').trim();
+        if (!cid) return '';
+        return resolveCategoryName(cid) || cid;
+      }
+      function annotateTypes() {
+        for (const s of svcData) s._type = typeNameForService(s);
+      }
+
       function renderServices() {
+        // Resolve every row's display type first so sort/group/render agree.
+        annotateTypes();
         const body = $('svcBody');
-        $('svcEmpty').style.display = svcData.length ? 'none' : 'block';
-        const rows = sortRows(svcData, svcSort);
-        // Shared month axis + global vertical scale so every row's flow chart is
-        // directly comparable (see buildFlowAxis).
-        const { axis, monthTotals } = buildFlowAxis();
+        // Filter by GROUP (service type). 'all' shows everything; 'TYPE::<name>'
+        // shows one type; 'TYPE::' (empty name) is the Unclassified catch-all. The
+        // flow axis + denominator then follow the filtered rows so each bar reads
+        // as a share WITHIN the shown group (see buildFlowAxis).
+        let rows = sortRows(svcData, svcSort);
+        if (svcFilter !== 'all' && svcFilter.startsWith('TYPE::')) {
+          const t = svcFilter.slice(6);
+          rows = rows.filter((s) => (s._type || '').trim() === t);
+        }
+        const empty = $('svcEmpty');
+        empty.style.display = rows.length ? 'none' : 'block';
+        empty.textContent = svcData.length
+          ? 'No service matches the current filter.'
+          : 'No services declared yet. Click “+ Add” up top to declare one.';
+        // Shared month axis + vertical scale across the VISIBLE rows so every row's
+        // flow chart is directly comparable within the shown group (see buildFlowAxis).
+        const { axis, monthTotals, monthMax } = buildFlowAxis(rows);
         body.innerHTML = rows
           .map((s) => {
             const who = s.artistName
               ? esc(s.artistName)
               : shortId(s.artistUserID);
+            const color = serviceTypeColor(s);
+            const typeStyle = color ? ` style="color:${esc(color)}"` : '';
             return `<tr>
-              <td class="type-cell">${esc(s.serviceType || '—')}<div class="sub-name" title="${esc(
+              <td class="type-cell"><span class="type-name"${typeStyle}>${esc(
+              s._type || '—'
+            )}</span><div class="sub-name" title="${esc(
               s.serviceID
             )}">${who}</div></td>
               <td class="col-spacer"></td>
@@ -641,43 +1137,60 @@
               <td class="num">${num(s.last90)}</td>
               <td class="num">${num(s.last30)}</td>
               <td class="num">${s.avgRating == null ? '—' : trunc1(s.avgRating)}</td>
-              <td>${sparkline(serviceFlow(s, axis), monthTotals)}</td>
+              <td>${sparkline(serviceFlow(s, axis), monthTotals, monthMax)}</td>
+              <td>
+                <span class="row-act">
+                  <button class="sq" data-edit="${esc(s.serviceID)}" title="Edit">${ICON_EDIT}</button>
+                  <button class="sq danger" data-del="${esc(s.serviceID)}" title="Remove">${ICON_DEL}</button>
+                </span>
+              </td>
             </tr>`;
           })
           .join('');
+        body.querySelectorAll('[data-edit]').forEach((b) =>
+          b.addEventListener('click', () => openEditModal(b.getAttribute('data-edit')))
+        );
+        body.querySelectorAll('[data-del]').forEach((b) =>
+          b.addEventListener('click', () => askDelete(b.getAttribute('data-del')))
+        );
         updateSortIndicators('svcTable', svcSort);
       }
 
-      // ---- per-artist table ----
-      function renderArtists() {
-        const body = $('artistBody');
-        $('artistEmpty').style.display = artistData.length ? 'none' : 'block';
-        const rows = sortRows(artistData, artistSort);
-        body.innerHTML = rows
-          .map((a) => {
-            const types = (a.serviceTypes || []).map(esc).join(', ');
-            const who = a.artistName
-              ? esc(a.artistName)
-              : shortId(a.artistUserID);
-            // Artist table leads with the artist NAME on the colored top line and
-            // the service type(s) underneath (mirror-image of the by-service cell).
-            return `<tr>
-              <td class="type-cell" title="${esc(a.artistUserID || '')}">${who}<div class="sub-name">${
-              types || '—'
-            }</div></td>
-              <td class="num col-spacer">${num(a.serviceCount)}</td>
-              <td class="num">${num(a.total)}</td>
-              <td class="num">${num(a.uniqueClients)}</td>
-              <td class="num">${num(a.repeatClients)}</td>
-              <td class="num">${repeatPill(a.repeatRate)}</td>
-              <td class="num muted">${num(a.anonymous)}</td>
-              <td class="num">${num(a.last90)}</td>
-              <td class="num">${num(a.last30)}</td>
-              <td></td>
-            </tr>`;
-          })
-          .join('');
-        updateSortIndicators('artistTable', artistSort);
+      // Rebuild the service filter dropdown as GROUPS by service type. Each
+      // distinct type becomes one option (value "TYPE::<name>"); every service
+      // with no type collapses into a single "Unclassified" option (value
+      // "TYPE::"), instead of showing up as several separate rows. Selection is
+      // preserved, falling back to "all" if its group is gone (e.g. after a save
+      // or when migrating from an old per-service filter value).
+      function populateServiceFilter() {
+        const sel = $('svcFilter');
+        if (!sel) return;
+        annotateTypes();
+        const typeCounts = new Map();
+        let unclassified = 0;
+        for (const s of svcData) {
+          const t = (s._type || '').trim();
+          if (t) typeCounts.set(t, (typeCounts.get(t) || 0) + 1);
+          else unclassified++;
+        }
+        const opts = ['<option value="all">All services</option>'];
+        for (const t of [...typeCounts.keys()].sort((a, b) => a.localeCompare(b))) {
+          opts.push(
+            `<option value="TYPE::${esc(t)}">${esc(t)} (${typeCounts.get(t)})</option>`
+          );
+        }
+        if (unclassified) {
+          opts.push(`<option value="TYPE::">Unclassified (${unclassified})</option>`);
+        }
+        sel.innerHTML = opts.join('');
+        const valid =
+          svcFilter === 'all' ||
+          (svcFilter.startsWith('TYPE::') &&
+            (svcFilter === 'TYPE::'
+              ? unclassified > 0
+              : typeCounts.has(svcFilter.slice(6))));
+        if (!valid) svcFilter = 'all';
+        sel.value = svcFilter;
       }
 
       function updateSortIndicators(tableId, sort) {
@@ -707,76 +1220,229 @@
           });
       }
 
-      // ---- declaration editor ----
-      function renderDecl() {
-        $('declCount').textContent = declRows.length + ' service' + (declRows.length === 1 ? '' : 's');
-        const body = $('declBody');
-        body.innerHTML = declRows
-          .map(
-            (r, i) => `<tr draggable="true" data-row="${i}">
-            <td><span class="drag-handle" title="Drag to reorder">&#9776;</span></td>
-            <td class="muted">${i + 1}</td>
-            <td><input data-i="${i}" data-f="serviceType" placeholder="animation / bg / ..." value="${esc(
-              r.serviceType
-            )}" /></td>
-            <td><input class="id-input" data-i="${i}" data-f="serviceID" placeholder="62b..." value="${esc(
-              r.serviceID
-            )}" /></td>
-            <td><button class="tiny ghost" data-del="${i}" title="Remove">✕</button></td>
-          </tr>`
-          )
-          .join('');
-
-        body.querySelectorAll('input').forEach((inp) => {
-          inp.addEventListener('input', (e) => {
-            const i = +e.target.getAttribute('data-i');
-            const f = e.target.getAttribute('data-f');
-            declRows[i][f] = e.target.value;
-          });
-        });
-        body.querySelectorAll('[data-del]').forEach((b) =>
-          b.addEventListener('click', (e) => {
-            declRows.splice(+e.currentTarget.getAttribute('data-del'), 1);
-            renderDecl();
-          })
+      // ---- category mapping (id -> readable name) ----
+      // Source of truth is the server-side map (edited via the Category map GUI
+      // below and cached in `categoryLookup`). The Add/Edit popup lists categories
+      // by NAME but stores their ID; an id with no mapping stays visible as its raw
+      // value (marked "unmapped") until you name it in the GUI.
+      function buildCategoryLookup() {
+        const m = {};
+        const c = {};
+        for (const r of catRows) {
+          const id = (r.categoryID || '').trim();
+          const name = (r.categoryName || '').trim();
+          const color = (r.color || '').trim();
+          if (id) {
+            m[id] = name;
+            if (color) c[id] = color;
+          }
+        }
+        categoryLookup = m;
+        categoryColorLookup = c;
+      }
+      function resolveCategoryName(id) {
+        const key = (id || '').trim();
+        return key && categoryLookup[key] ? String(categoryLookup[key]).trim() : '';
+      }
+      // Text color for a declared service's category (via its declared categoryID),
+      // used to tint the classify text. '' -> caller falls back to default color.
+      function resolveCategoryColor(id) {
+        const key = (id || '').trim();
+        return key && categoryColorLookup[key] ? categoryColorLookup[key] : '';
+      }
+      function serviceTypeColor(s) {
+        const row = declLookup[s.serviceID];
+        const cid = row ? (row.categoryID || '').trim() : (s.serviceType || '').trim();
+        return resolveCategoryColor(cid);
+      }
+      // Read-only summary of one declared entry, shown in the confirm / overwrite
+      // modals so an action always states exactly which listing it affects. Joins
+      // the artist name from analyzed data when it has been resolved.
+      function declInfoHtml(row) {
+        const id = (row.serviceID || '').trim();
+        const cid = (row.categoryID || '').trim();
+        const typeName = cid
+          ? resolveCategoryName(cid) || cid + ' \u00b7 unmapped'
+          : 'Unclassified';
+        const meta = svcByID[id];
+        const artist =
+          (meta && meta.artistName) || (meta && shortId(meta.artistUserID)) || '\u2014';
+        const svcName = (row.serviceName || '').trim() || '\u2014';
+        return (
+          `<div class="k">Type</div><div class="v">${esc(typeName)}</div>` +
+          `<div class="k">Service</div><div class="v">${esc(svcName)}</div>` +
+          `<div class="k">Artist</div><div class="v">${esc(artist)}</div>` +
+          `<div class="k">ID</div><div class="v mono">${esc(id)}</div>`
         );
-
-        // HTML5 drag-and-drop reorder. dragstart stashes the source index;
-        // dragover marks the hovered row; drop splices the moved row into place.
-        let dragFrom = null;
-        body.querySelectorAll('tr[data-row]').forEach((tr) => {
-          tr.addEventListener('dragstart', (e) => {
-            dragFrom = +tr.getAttribute('data-row');
-            e.dataTransfer.effectAllowed = 'move';
-          });
-          tr.addEventListener('dragover', (e) => {
-            e.preventDefault();
-            e.dataTransfer.dropEffect = 'move';
-            tr.classList.add('drag-over');
-          });
-          tr.addEventListener('dragleave', () => tr.classList.remove('drag-over'));
-          tr.addEventListener('drop', (e) => {
-            e.preventDefault();
-            tr.classList.remove('drag-over');
-            const to = +tr.getAttribute('data-row');
-            if (dragFrom == null || dragFrom === to) return;
-            const [moved] = declRows.splice(dragFrom, 1);
-            declRows.splice(to, 0, moved);
-            dragFrom = null;
-            renderDecl();
-          });
-        });
       }
 
-      async function saveDecl() {
+      // ---- Add / Edit popup ----
+      // editOriginalID is the serviceID of the row being edited ('' when adding),
+      // so Save can tell an id collision with a DIFFERENT entry (-> overwrite
+      // prompt) from the same row simply being updated in place. The category is
+      // NOT entered here: on Save we resolve it (and the title) live from VGen.
+      let editMode = 'add';
+      let editOriginalID = '';
+      let editServiceName = '';
+
+      function openEditModal(serviceID) {
+        const row = serviceID ? declLookup[serviceID] : null;
+        editMode = row ? 'edit' : 'add';
+        editOriginalID = row ? (row.serviceID || '').trim() : '';
+        editServiceName = row ? row.serviceName || '' : '';
+        $('editTitle').textContent = row ? 'Edit service' : 'Add service';
+        $('editServiceID').value = row ? row.serviceID || '' : '';
+        const rb = $('editResolved');
+        rb.style.display = 'none';
+        rb.innerHTML = '';
+        $('editModal').classList.remove('hidden');
+        setTimeout(() => $('editServiceID').focus(), 0);
+      }
+      function closeEditModal() {
+        $('editModal').classList.add('hidden');
+        editMode = 'add';
+        editOriginalID = '';
+        editServiceName = '';
+      }
+
+      // Auto-resolve category + title from the serviceID alone (the server hits
+      // VGen's service-detail endpoint). Returns { categoryID, serviceName } or
+      // throws with a user-facing message.
+      async function resolveService(serviceID) {
+        const res = await fetch(
+          API.resolve + '?serviceID=' + encodeURIComponent(serviceID),
+          { cache: 'no-store' }
+        );
+        const json = await res.json();
+        if (!res.ok) throw new Error(json.error || 'HTTP ' + res.status);
+        return {
+          categoryID: (json.categoryID || '').trim(),
+          serviceName: (json.serviceName || '').trim(),
+        };
+      }
+
+      async function saveEdit() {
+        const serviceID = $('editServiceID').value.trim();
+        if (!serviceID) {
+          status('Service ID is required.', 'err');
+          $('editServiceID').focus();
+          return;
+        }
+
+        // Resolve the category + title before committing so a bad id fails fast
+        // and the user sees exactly what will be stored.
+        const saveBtn = $('editSave');
+        saveBtn.disabled = true;
+        const rb = $('editResolved');
+        rb.style.display = '';
+        rb.innerHTML = '<div class="k">Status</div><div class="v">Resolving\u2026</div>';
+        let resolved;
+        try {
+          resolved = await resolveService(serviceID);
+        } catch (e) {
+          saveBtn.disabled = false;
+          rb.innerHTML =
+            '<div class="k">Error</div><div class="v">' + esc(e.message) + '</div>';
+          status('Resolve failed: ' + e.message, 'err');
+          return;
+        }
+        saveBtn.disabled = false;
+        editServiceName = resolved.serviceName || editServiceName || '';
+
+        const idx = declRows.findIndex((r) => (r.serviceID || '').trim() === serviceID);
+        const collides =
+          idx !== -1 &&
+          (editMode === 'add' || (declRows[idx].serviceID || '').trim() !== editOriginalID);
+        if (collides) {
+          askOverwrite(serviceID, resolved.categoryID, declRows[idx]);
+          return;
+        }
+        applyEdit(serviceID, resolved.categoryID, resolved.serviceName);
+      }
+
+      function applyEdit(serviceID, categoryID, serviceName) {
+        const name = (serviceName || editServiceName || '').trim();
+        if (editMode === 'edit' && editOriginalID) {
+          const oi = declRows.findIndex((r) => (r.serviceID || '').trim() === editOriginalID);
+          if (oi !== -1) {
+            declRows[oi] = { serviceID, categoryID, serviceName: name };
+          } else {
+            declRows.push({ serviceID, categoryID, serviceName: name });
+          }
+        } else {
+          declRows.push({ serviceID, categoryID, serviceName: name });
+        }
+        closeEditModal();
+        persistDecl(editMode === 'edit' ? 'Updated service.' : 'Added service.');
+      }
+
+      // ---- overwrite prompt (duplicate serviceID on Add/Edit) ----
+      let pendingOverwrite = null; // { serviceID, categoryID }
+      function askOverwrite(serviceID, categoryID, existingRow) {
+        pendingOverwrite = { serviceID, categoryID };
+        $('owInfo').innerHTML = declInfoHtml(existingRow);
+        $('owModal').classList.remove('hidden');
+        setTimeout(() => $('owConfirm').focus(), 0);
+      }
+      function closeOwModal() {
+        $('owModal').classList.add('hidden');
+        pendingOverwrite = null;
+      }
+      function confirmOverwrite() {
+        if (!pendingOverwrite) return;
+        const { serviceID, categoryID } = pendingOverwrite;
+        // If we were editing and the id was changed to collide with another entry,
+        // drop the original row so the two don't both survive (merge into target).
+        if (editMode === 'edit' && editOriginalID && editOriginalID !== serviceID) {
+          const oi = declRows.findIndex((r) => (r.serviceID || '').trim() === editOriginalID);
+          if (oi !== -1) declRows.splice(oi, 1);
+        }
+        const ti = declRows.findIndex((r) => (r.serviceID || '').trim() === serviceID);
+        // Prefer the freshly resolved title (editServiceName) over the stale one.
+        const name = (editServiceName || (ti !== -1 ? declRows[ti].serviceName : '') || '').trim();
+        if (ti !== -1) {
+          declRows[ti] = { serviceID, categoryID, serviceName: name };
+        } else {
+          declRows.push({ serviceID, categoryID, serviceName: name });
+        }
+        closeOwModal();
+        closeEditModal();
+        persistDecl('Overwrote the existing service.');
+      }
+
+      // ---- delete confirmation ----
+      let pendingDelete = null; // serviceID
+      function askDelete(serviceID) {
+        const row = declLookup[serviceID] || { serviceID, categoryID: '', serviceName: '' };
+        pendingDelete = serviceID;
+        $('delInfo').innerHTML = declInfoHtml(row);
+        $('delModal').classList.remove('hidden');
+        setTimeout(() => $('delConfirm').focus(), 0);
+      }
+      function closeDelModal() {
+        $('delModal').classList.add('hidden');
+        pendingDelete = null;
+      }
+      function confirmDelete() {
+        if (!pendingDelete) return;
+        const id = pendingDelete;
+        declRows = declRows.filter((r) => (r.serviceID || '').trim() !== id);
+        closeDelModal();
+        // Server diffs previous vs next and purges the removed service's cache.
+        persistDecl('Removed service and purged its cache.');
+      }
+
+      // ---- persist the whole declaration (add / edit / overwrite / delete / import) ----
+      async function persistDecl(okMsg) {
         const clean = declRows
           .map((r) => ({
-            serviceType: (r.serviceType || '').trim(),
             serviceID: (r.serviceID || '').trim(),
+            categoryID: (r.categoryID || '').trim(),
+            serviceName: (r.serviceName || '').trim(),
           }))
           .filter((r) => r.serviceID);
         try {
-          status('Saving declaration...', 'info');
+          status('Saving\u2026', 'info');
           const res = await fetch(API.services, {
             method: 'POST',
             headers: { 'content-type': 'application/json' },
@@ -785,12 +1451,397 @@
           const json = await res.json();
           if (!res.ok) throw new Error(json.error || 'HTTP ' + res.status);
           declRows = json.services.map((s) => ({ ...s }));
-          renderDecl();
-          status('Saved ' + declRows.length + ' services. Refresh to pull reviews.', 'ok');
-          await loadData(false);
+          reverseMapLegacyDecl();
+          buildDeclLookup();
+          status(okMsg || 'Saved.', 'ok');
+          await loadData(false); // re-read cache so the table + filter refresh
         } catch (e) {
           status('Save failed: ' + e.message, 'err');
         }
+      }
+
+      // ---- sync types (backfill categoryID + title from each serviceID) ----
+      // Restores the category for any declared service whose stored categoryID is
+      // empty (or all of them via force), by resolving each id server-side against
+      // VGen's service-detail endpoint. Used to heal older rows that lost their
+      // category, and any row that was added before auto-resolve existed.
+      async function syncTypes(force) {
+        const btn = $('syncBtn');
+        btn.disabled = true;
+        try {
+          status('Syncing types\u2026', 'info');
+          const res = await fetch(API.resync, {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ force: !!force }),
+          });
+          const json = await res.json();
+          if (!res.ok) throw new Error(json.error || 'HTTP ' + res.status);
+          declRows = (json.services || []).map((s) => ({ ...s }));
+          reverseMapLegacyDecl();
+          buildDeclLookup();
+          const failed = (json.errors && json.errors.length) || 0;
+          status(
+            'Synced ' + json.resolved + '/' + json.total + ' type(s)' +
+              (failed ? ' (' + failed + ' failed, retry later).' : '.'),
+            failed ? 'err' : 'ok'
+          );
+          await loadData(false); // re-render the table + filter with fresh types
+        } catch (e) {
+          status('Sync failed: ' + e.message, 'err');
+        } finally {
+          btn.disabled = false;
+        }
+      }
+
+      // ---- category map editor (GUI, server-persisted) ----
+      // ---- Photoshop-style HSV color picker (category text color) ----
+      // Model: hue 0-360, saturation/value 0-1. The SV square picks s (x-axis) and
+      // v (y-axis, top = 1); the hue bar picks h (top = 0deg). Everything renders
+      // from cpHsv so hex input, square, and hue stay in sync.
+      let cpTarget = -1; // index into catRows currently being edited (-1 = none)
+      let cpHsv = { h: 190, s: 0.6, v: 0.9 };
+      let cpDrag = null; // 'sv' | 'hue' while a pointer drag is active
+
+      function clamp01(v) { return v < 0 ? 0 : v > 1 ? 1 : v; }
+
+      function hsvToRgb(h, s, v) {
+        const c = v * s;
+        const hp = h / 60;
+        const x = c * (1 - Math.abs((hp % 2) - 1));
+        let r = 0, g = 0, b = 0;
+        if (hp >= 0 && hp < 1) [r, g, b] = [c, x, 0];
+        else if (hp < 2) [r, g, b] = [x, c, 0];
+        else if (hp < 3) [r, g, b] = [0, c, x];
+        else if (hp < 4) [r, g, b] = [0, x, c];
+        else if (hp < 5) [r, g, b] = [x, 0, c];
+        else [r, g, b] = [c, 0, x];
+        const m = v - c;
+        return {
+          r: Math.round((r + m) * 255),
+          g: Math.round((g + m) * 255),
+          b: Math.round((b + m) * 255),
+        };
+      }
+      function rgbToHsv(r, g, b) {
+        r /= 255; g /= 255; b /= 255;
+        const max = Math.max(r, g, b), min = Math.min(r, g, b);
+        const d = max - min;
+        let h = 0;
+        if (d !== 0) {
+          if (max === r) h = ((g - b) / d) % 6;
+          else if (max === g) h = (b - r) / d + 2;
+          else h = (r - g) / d + 4;
+          h *= 60;
+          if (h < 0) h += 360;
+        }
+        return { h, s: max === 0 ? 0 : d / max, v: max };
+      }
+      function rgbToHex(r, g, b) {
+        const to = (n) => n.toString(16).padStart(2, '0');
+        return '#' + to(r) + to(g) + to(b);
+      }
+      function hexToRgb(hex) {
+        const m = /^#?([0-9a-fA-F]{6})$/.exec((hex || '').trim());
+        if (!m) return null;
+        const int = parseInt(m[1], 16);
+        return { r: (int >> 16) & 255, g: (int >> 8) & 255, b: int & 255 };
+      }
+      function cpHex() {
+        const { r, g, b } = hsvToRgb(cpHsv.h, cpHsv.s, cpHsv.v);
+        return rgbToHex(r, g, b);
+      }
+
+      // Paint the picker from cpHsv (square hue tint, cursor spots, preview, hex).
+      function cpRender(syncHexInput = true) {
+        const hex = cpHex();
+        const square = $('cpSquare');
+        square.style.background = `hsl(${cpHsv.h}, 100%, 50%)`;
+        const svc = $('cpSvCursor');
+        svc.style.left = cpHsv.s * 100 + '%';
+        svc.style.top = (1 - cpHsv.v) * 100 + '%';
+        $('cpHueCursor').style.top = (cpHsv.h / 360) * 100 + '%';
+        $('cpSwatch').style.background = hex;
+        if (syncHexInput) $('cpHex').value = hex.slice(1);
+      }
+
+      function openColorPicker(index) {
+        cpTarget = index;
+        const cur = (catRows[index] && catRows[index].color) || '';
+        const rgb = hexToRgb(cur);
+        cpHsv = rgb ? rgbToHsv(rgb.r, rgb.g, rgb.b) : { h: 190, s: 0.6, v: 0.9 };
+        cpRender();
+        $('colorModal').classList.remove('hidden');
+      }
+      function closeColorPicker() {
+        cpTarget = -1;
+        cpDrag = null;
+        $('colorModal').classList.add('hidden');
+      }
+      function applyColorPicker() {
+        if (cpTarget >= 0 && catRows[cpTarget]) {
+          catRows[cpTarget].color = cpHex();
+          renderCatEditor();
+        }
+        closeColorPicker();
+      }
+      function clearColorPicker() {
+        if (cpTarget >= 0 && catRows[cpTarget]) {
+          catRows[cpTarget].color = '';
+          renderCatEditor();
+        }
+        closeColorPicker();
+      }
+
+      // Translate a pointer position within the SV square / hue bar into cpHsv.
+      function cpUpdateFromPointer(evt) {
+        if (cpDrag === 'sv') {
+          const r = $('cpSquare').getBoundingClientRect();
+          cpHsv.s = clamp01((evt.clientX - r.left) / r.width);
+          cpHsv.v = clamp01(1 - (evt.clientY - r.top) / r.height);
+          cpRender();
+        } else if (cpDrag === 'hue') {
+          const r = $('cpHue').getBoundingClientRect();
+          cpHsv.h = clamp01((evt.clientY - r.top) / r.height) * 360;
+          cpRender();
+        }
+      }
+
+      function renderCatEditor() {
+        $('catCount').textContent =
+          catRows.length + ' categor' + (catRows.length === 1 ? 'y' : 'ies');
+        const body = $('catBody');
+        body.innerHTML = catRows
+          .map((r, i) => {
+            const color = (r.color || '').trim();
+            const swatchStyle = color
+              ? `background:${esc(color)}`
+              : 'background:transparent';
+            const swatchCls = color ? 'cat-swatch' : 'cat-swatch is-empty';
+            return `<tr>
+            <td class="muted">${i + 1}</td>
+            <td><button type="button" class="${swatchCls}" data-catcolor="${i}" style="${swatchStyle}" title="${
+              color ? 'Text color ' + esc(color) : 'No color — click to pick'
+            }"></button></td>
+            <td><input data-ci="${i}" data-cf="categoryName" placeholder="e.g. 2D Animation" value="${esc(
+              r.categoryName
+            )}" /></td>
+            <td><input class="id-input" data-ci="${i}" data-cf="categoryID" placeholder="rechY6..." value="${esc(
+              r.categoryID
+            )}" /></td>
+            <td><button class="tiny ghost" data-catdel="${i}" title="Remove">✕</button></td>
+          </tr>`;
+          })
+          .join('');
+
+        body.querySelectorAll('input').forEach((inp) => {
+          inp.addEventListener('input', (e) => {
+            const i = +e.target.getAttribute('data-ci');
+            const f = e.target.getAttribute('data-cf');
+            catRows[i][f] = e.target.value;
+            updateCatButtons();
+          });
+        });
+        body.querySelectorAll('[data-catcolor]').forEach((b) =>
+          b.addEventListener('click', (e) => {
+            openColorPicker(+e.currentTarget.getAttribute('data-catcolor'));
+          })
+        );
+        body.querySelectorAll('[data-catdel]').forEach((b) =>
+          b.addEventListener('click', (e) => {
+            catRows.splice(+e.currentTarget.getAttribute('data-catdel'), 1);
+            renderCatEditor();
+          })
+        );
+
+        updateCatButtons();
+      }
+
+      async function loadCategories() {
+        const res = await fetch(API.categories, { cache: 'no-store' });
+        const json = await res.json();
+        if (!res.ok) throw new Error(json.error || 'HTTP ' + res.status);
+        catRows = (json.categories || []).map((c) => ({ ...c }));
+        catBaseline = catSnapshot(catRows);
+        buildCategoryLookup();
+        renderCatEditor();
+      }
+
+      async function saveCategories() {
+        const clean = catRows
+          .map((r) => ({
+            categoryID: (r.categoryID || '').trim(),
+            categoryName: (r.categoryName || '').trim(),
+            color: (r.color || '').trim(),
+          }))
+          .filter((r) => r.categoryID);
+        try {
+          status('Saving category map...', 'info');
+          const res = await fetch(API.categories, {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ categories: clean }),
+          });
+          const json = await res.json();
+          if (!res.ok) throw new Error(json.error || 'HTTP ' + res.status);
+          catRows = json.categories.map((c) => ({ ...c }));
+          catBaseline = catSnapshot(catRows);
+          buildCategoryLookup();
+          // Types resolve dynamically from the stored categoryID, so a rename needs
+          // no data reload: heal any legacy name-as-id rows, then re-render the
+          // service table + filter to reflect the new names instantly.
+          reverseMapLegacyDecl();
+          buildDeclLookup();
+          renderCatEditor();
+          populateServiceFilter();
+          renderServices();
+          status(
+            'Saved ' + catRows.length + ' categor' + (catRows.length === 1 ? 'y' : 'ies') + '.',
+            'ok'
+          );
+        } catch (e) {
+          status('Save failed: ' + e.message, 'err');
+        }
+      }
+
+      // ---- import from file (harvested service list) ----
+      // Accepts the harvester output
+      // ([{ count, serviceName, serviceID, categoryID, ... }, ...]) or a bare
+      // { services: [...] } / array of { serviceID, serviceType }. On confirm the
+      // stored serviceType is resolved from categoryID via the category map (raw
+      // id kept when unmapped).
+      let importStaged = []; // [{ count, serviceName, serviceID, categoryID, status }]
+
+      function classifyImport(entries) {
+        const existing = new Set(
+          declRows.map((r) => (r.serviceID || '').trim()).filter(Boolean)
+        );
+        const seenInFile = new Set();
+        return entries.map((raw) => {
+          const serviceID =
+            raw && typeof raw.serviceID === 'string' ? raw.serviceID.trim() : '';
+          const serviceName =
+            (raw && typeof raw.serviceName === 'string' && raw.serviceName.trim()) ||
+            (raw && typeof raw.serviceType === 'string' && raw.serviceType.trim()) ||
+            '';
+          const count =
+            raw && typeof raw.count === 'number' && isFinite(raw.count)
+              ? raw.count
+              : null;
+          const categoryID =
+            raw && typeof raw.categoryID === 'string' ? raw.categoryID.trim() : '';
+          let status;
+          if (!serviceID) status = 'bad';
+          else if (existing.has(serviceID) || seenInFile.has(serviceID)) status = 'dup';
+          else status = 'new';
+          if (serviceID) seenInFile.add(serviceID);
+          return { count, serviceName, serviceID, categoryID, status };
+        });
+      }
+
+      function renderImportPreview() {
+        const nNew = importStaged.filter((r) => r.status === 'new').length;
+        const nDup = importStaged.filter((r) => r.status === 'dup').length;
+        const nBad = importStaged.filter((r) => r.status === 'bad').length;
+        $('importSummary').textContent =
+          importStaged.length +
+          ' parsed \u00b7 ' +
+          nNew +
+          ' new, ' +
+          nDup +
+          ' duplicate, ' +
+          nBad +
+          ' invalid';
+        $('importHint').textContent = nNew
+          ? 'Confirm adds and saves the ' + nNew + ' new service(s).'
+          : 'Nothing new to add.';
+        $('importConfirm').disabled = nNew === 0;
+
+        const badge = (st) =>
+          st === 'new'
+            ? '<span class="badge new">new</span>'
+            : st === 'dup'
+            ? '<span class="badge dup">duplicate</span>'
+            : '<span class="badge bad">invalid</span>';
+
+        // Type preview: mapped -> readable name; unmapped -> raw id (so you can
+        // add it to the map); none -> dash.
+        const typeCell = (r) => {
+          const name = resolveCategoryName(r.categoryID);
+          if (name) return esc(name);
+          if (r.categoryID) return `<span class="mono muted">${esc(r.categoryID)}</span>`;
+          return '<span class="muted">\u2014</span>';
+        };
+
+        $('importBody').innerHTML = importStaged
+          .map(
+            (r) => `<tr class="${r.status === 'new' ? '' : 'row-skip'}">
+              <td class="muted">${r.count == null ? '\u2014' : num(r.count)}</td>
+              <td>${esc(r.serviceName) || '<span class="muted">(unknown)</span>'}</td>
+              <td>${typeCell(r)}</td>
+              <td class="mono muted">${esc(r.serviceID) || '<span class="badge bad">missing</span>'}</td>
+              <td>${badge(r.status)}</td>
+            </tr>`
+          )
+          .join('');
+      }
+
+      function handleImportFile(file) {
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onerror = () => status('Could not read file.', 'err');
+        reader.onload = () => {
+          let parsed;
+          try {
+            parsed = JSON.parse(String(reader.result));
+          } catch (e) {
+            status('Invalid file: not valid JSON (' + e.message + ')', 'err');
+            return;
+          }
+          const list = Array.isArray(parsed)
+            ? parsed
+            : parsed && Array.isArray(parsed.services)
+            ? parsed.services
+            : null;
+          if (!list) {
+            status('Invalid file: expected a JSON array of services.', 'err');
+            return;
+          }
+          if (!list.length) {
+            status('File parsed but contains no entries.', 'err');
+            return;
+          }
+          importStaged = classifyImport(list);
+          renderImportPreview();
+          $('importModal').classList.remove('hidden');
+        };
+        reader.readAsText(file);
+      }
+
+      function closeImportModal() {
+        $('importModal').classList.add('hidden');
+        $('importFile').value = ''; // allow re-selecting the same file
+        importStaged = [];
+      }
+
+      function confirmImport() {
+        const additions = importStaged
+          .filter((r) => r.status === 'new')
+          .map((r) => ({
+            serviceID: r.serviceID,
+            // Store VGen's raw searchCategoryID; the display type resolves from the
+            // category map dynamically (an unmapped id still works, shown as raw).
+            categoryID: (r.categoryID || '').trim(),
+            // Harvested title -> shown in confirm/overwrite modals and joins.
+            serviceName: (r.serviceName || '').trim(),
+          }));
+        if (!additions.length) {
+          closeImportModal();
+          return;
+        }
+        declRows = declRows.concat(additions);
+        closeImportModal();
+        persistDecl('Imported ' + additions.length + ' service(s).');
       }
 
       // ---- data loading ----
@@ -799,17 +1850,20 @@
         const json = await res.json();
         if (!res.ok) throw new Error(json.error || 'HTTP ' + res.status);
         declRows = (json.services || []).map((s) => ({ ...s }));
-        renderDecl();
+        reverseMapLegacyDecl(); // heal legacy name-as-id rows against the category map
+        buildDeclLookup();
       }
 
       function applyData(json) {
         svcData = json.services || [];
-        artistData = json.artists || [];
+        svcByID = {};
+        for (const s of svcData) svcByID[s.serviceID] = s;
+        buildDeclLookup(); // keep the id join fresh for modals + type resolution
         $('lastUpdated').textContent = json.lastFetchedAt
           ? new Date(json.lastFetchedAt).toLocaleString()
           : 'never';
+        populateServiceFilter();
         renderServices();
-        renderArtists();
         if (json.refreshErrors && json.refreshErrors.length) {
           status(
             json.refreshErrors.length +
@@ -845,15 +1899,106 @@
 
       // ---- wire up ----
       $('refreshBtn').addEventListener('click', () => loadData(true));
-      $('addRowBtn').addEventListener('click', () => {
-        declRows.push({ serviceType: '', serviceID: '' });
-        renderDecl();
-        $('declWrap').open = true;
+
+      // Add / Edit popup (declare one service; opened by "+ Add" or a row Edit).
+      $('addBtn').addEventListener('click', () => openEditModal(null));
+      // Sync types: backfill missing categories. Shift-click forces re-resolve of
+      // ALL services (also refreshes titles), not just the ones missing a type.
+      $('syncBtn').addEventListener('click', (e) => syncTypes(e.shiftKey));
+      $('editSave').addEventListener('click', saveEdit);
+      $('editCancel').addEventListener('click', closeEditModal);
+      $('editClose').addEventListener('click', closeEditModal);
+      $('editModal').addEventListener('click', (e) => {
+        if (e.target === $('editModal')) closeEditModal();
       });
-      $('saveBtn').addEventListener('click', saveDecl);
+      // Import from inside the popup: close it, then open the file picker.
+      $('editImportBtn').addEventListener('click', () => {
+        closeEditModal();
+        $('importFile').click();
+      });
+
+      // Delete confirmation.
+      $('delConfirm').addEventListener('click', confirmDelete);
+      $('delCancel').addEventListener('click', closeDelModal);
+      $('delClose').addEventListener('click', closeDelModal);
+      $('delModal').addEventListener('click', (e) => {
+        if (e.target === $('delModal')) closeDelModal();
+      });
+
+      // Overwrite prompt (duplicate serviceID on Add/Edit).
+      $('owConfirm').addEventListener('click', confirmOverwrite);
+      $('owCancel').addEventListener('click', closeOwModal);
+      $('owClose').addEventListener('click', closeOwModal);
+      $('owModal').addEventListener('click', (e) => {
+        if (e.target === $('owModal')) closeOwModal();
+      });
+
+      // Keyboard: Enter confirms the top-most open modal; Escape closes any modal.
+      document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') {
+          closeOwModal();
+          closeDelModal();
+          closeEditModal();
+          if (!$('colorModal').classList.contains('hidden')) closeColorPicker();
+          if (!$('importModal').classList.contains('hidden')) closeImportModal();
+          return;
+        }
+        if (e.key !== 'Enter') return;
+        if (!$('colorModal').classList.contains('hidden')) {
+          e.preventDefault();
+          applyColorPicker();
+        } else if (!$('owModal').classList.contains('hidden')) {
+          e.preventDefault();
+          confirmOverwrite();
+        } else if (!$('delModal').classList.contains('hidden')) {
+          e.preventDefault();
+          confirmDelete();
+        } else if (!$('editModal').classList.contains('hidden')) {
+          e.preventDefault();
+          saveEdit();
+        }
+      });
+
+      // Category map editor.
+      $('addCatBtn').addEventListener('click', () => {
+        catRows.push({ categoryID: '', categoryName: '', color: '' });
+        renderCatEditor();
+        $('catWrap').open = true;
+      });
+      $('saveCatBtn').addEventListener('click', saveCategories);
+      // Revert: drop unsaved edits back to the last-saved category snapshot, then
+      // re-resolve the service table types from the restored names.
+      $('revertCatBtn').addEventListener('click', () => {
+        catRows = JSON.parse(catBaseline);
+        buildCategoryLookup();
+        reverseMapLegacyDecl();
+        buildDeclLookup();
+        renderCatEditor();
+        populateServiceFilter();
+        renderServices();
+        status('Reverted unsaved category changes.', 'info');
+      });
+
+      // Import: pick file -> preview modal -> confirm saves the new services.
+      $('importFile').addEventListener('change', (e) =>
+        handleImportFile(e.target.files && e.target.files[0])
+      );
+      $('importConfirm').addEventListener('click', confirmImport);
+      $('importCancel').addEventListener('click', closeImportModal);
+      $('importClose').addEventListener('click', closeImportModal);
+      $('importModal').addEventListener('click', (e) => {
+        if (e.target === $('importModal')) closeImportModal();
+      });
+
+      // Service filter: pick which service to show; persisted so a refresh keeps it.
+      $('svcFilter').addEventListener('change', (e) => {
+        svcFilter = e.target.value;
+        saveUiConfig();
+        renderServices();
+      });
 
       // Flow-window segmented control: changes the shared axis, then re-renders
-      // just the by-service table (the only place the flow chart lives).
+      // just the service table (the only place the flow chart lives).
       $('flowSeg')
         .querySelectorAll('button')
         .forEach((b) =>
@@ -862,22 +2007,69 @@
             $('flowSeg')
               .querySelectorAll('button')
               .forEach((x) => x.classList.toggle('active', x === b));
+            saveUiConfig();
             renderServices();
           })
         );
 
-      wireSort('svcTable', () => svcSort, (s) => (svcSort = s), renderServices);
-      wireSort(
-        'artistTable',
-        () => artistSort,
-        (s) => (artistSort = s),
-        renderArtists
-      );
+      // Justify toggle: switch the sparkline height denominator between the
+      // month's total (off) and the busiest single service that month (on).
+      $('justifyChk').addEventListener('change', (e) => {
+        justify = e.target.checked;
+        saveUiConfig();
+        renderServices();
+      });
+
+      // ---- color picker wiring ----
+      $('cpSquare').addEventListener('pointerdown', (e) => {
+        cpDrag = 'sv';
+        cpUpdateFromPointer(e);
+      });
+      $('cpHue').addEventListener('pointerdown', (e) => {
+        cpDrag = 'hue';
+        cpUpdateFromPointer(e);
+      });
+      // Drag tracking happens on the document so the pointer can leave the target.
+      document.addEventListener('pointermove', (e) => {
+        if (cpDrag) {
+          e.preventDefault();
+          cpUpdateFromPointer(e);
+        }
+      });
+      document.addEventListener('pointerup', () => { cpDrag = null; });
+      // Manual hex entry: only re-derive HSV once it's a full valid 6-digit hex,
+      // and don't clobber the input field the user is typing into.
+      $('cpHex').addEventListener('input', (e) => {
+        const rgb = hexToRgb('#' + e.target.value.trim());
+        if (rgb) {
+          cpHsv = rgbToHsv(rgb.r, rgb.g, rgb.b);
+          cpRender(false);
+        }
+      });
+      $('cpApply').addEventListener('click', applyColorPicker);
+      $('cpClear').addEventListener('click', clearColorPicker);
+      $('cpCancel').addEventListener('click', closeColorPicker);
+      $('colorClose').addEventListener('click', closeColorPicker);
+      $('colorModal').addEventListener('click', (e) => {
+        if (e.target.id === 'colorModal') closeColorPicker();
+      });
+
+      wireSort('svcTable', () => svcSort, (s) => (svcSort = s), () => {
+        saveUiConfig();
+        renderServices();
+      });
 
       // ---- boot ----
       (async function init() {
         showOverlay();
+        loadUiConfig(); // restore saved filter / flow window / sort first
+        // Reflect the restored flow window in the segmented control.
+        $('flowSeg')
+          .querySelectorAll('button')
+          .forEach((b) => b.classList.toggle('active', b.getAttribute('data-w') === flowWindow));
+        $('justifyChk').checked = justify; // reflect restored justify toggle
         try {
+          await loadCategories(); // build the map first so decl dropdowns populate
           await loadServices();
           await loadData(false); // page-load read = cached, no VGen hit
         } catch (e) {

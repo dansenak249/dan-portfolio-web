@@ -87,6 +87,33 @@ export async function fetchServiceReviews(serviceID) {
   return { serviceID, artistUserID, count: reviews.length, reviews }
 }
 
+// Single-service detail lookup. Unlike the reviews feed (which carries no
+// category), the commission service-detail endpoint returns the FULL service
+// object for a bare serviceID, including `searchCategoryID` (VGen's opaque
+// category id) and `serviceName`. This is what lets the dashboard auto-derive a
+// service's category from just its id — the user never types the category on Add.
+// A non-existent id returns 404 (surfaced as an HTTP error the caller isolates).
+const SERVICE_DETAIL_URL = 'https://api.vgen.co/commission/service/'
+
+/**
+ * Resolve one service's category + title from its id alone. Returns empty
+ * strings for fields VGen omits. Throws on a non-200 (404 unknown id, or an
+ * intermittent Cloudflare 403) so the caller can report it per service.
+ * @param {string} serviceID
+ * @returns {Promise<{ serviceID: string, categoryID: string, serviceName: string }>}
+ */
+export async function fetchServiceDetail(serviceID) {
+  const id = encodeURIComponent(serviceID)
+  const data = await fetchJson(`${SERVICE_DETAIL_URL}${id}`)
+  // The endpoint returns the bare service object; tolerate a { service } wrapper.
+  const node = (data && data.service) || data || {}
+  return {
+    serviceID: node.serviceID || serviceID,
+    categoryID: node.searchCategoryID || '',
+    serviceName: node.serviceName || '',
+  }
+}
+
 // The public reviews feed only carries the artist as a bare userID, so we
 // resolve a human-readable name from the artist's public portfolio (the same
 // discoverability endpoint the trending tool uses). username/displayName live

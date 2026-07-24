@@ -9,6 +9,13 @@
 // 403 (intermittent) is isolated as a per-service error instead of failing the
 // whole survey.
 //
+// PERFORMANCE: a plain page load reads every service's cached reviews and every
+// artist's cached name. Doing that with per-item sequential GETs was the dominant
+// load-time cost (~1 min at 300 services = ~600-800 sequential Upstash round
+// trips). We now batch: ONE MGET for all review payloads and ONE MGET for all
+// cached artist names, then fetch ONLY the still-missing names concurrently. This
+// keeps load time roughly flat as the watchlist grows.
+//
 // AUTH: intentionally open for now. This is a personal, noindex research tool;
 // auth will be added later as part of a unified /tools login. Until then refresh
 // is unauthenticated (mirrors the existing 1minutes timeline tool).
@@ -20,9 +27,9 @@ import {
 } from '@/lib/vgenServiceData/fetchReviews'
 import {
   getServices,
-  getCachedReviews,
+  getCachedReviewsMany,
   setCachedReviews,
-  getArtistName,
+  getArtistNamesMany,
   setArtistName,
 } from '@/lib/vgenServiceData/store'
 import { analyzeService, aggregateByArtist } from '@/lib/vgenServiceData/analyze'
@@ -53,13 +60,57 @@ async function refreshAll(services, fetchedAt) {
       } else {
         errors.push({
           serviceID: svc.serviceID,
-          serviceType: svc.serviceType,
+          categoryID: svc.categoryID,
           message: String(result.reason && result.reason.message),
         })
       }
     }
   }
   return errors
+}
+
+// Resolve human-readable artist names. Cached names are read in ONE MGET; only
+// the artists we still have no cached name for are fetched live (concurrently,
+// in small batches). This is best-effort and self-healing:
+//   - a successful lookup (even one returning null fields for an artist with no
+//     public showcase) is cached, so we never re-fetch it;
+//   - a failed lookup (intermittent Cloudflare 403) caches nothing, so the next
+//     read retries until one succeeds.
+// Returns a map artistUserID -> display string (displayName || username || null).
+async function resolveArtistNames(artistIDs) {
+  const ids = [...artistIDs]
+  const nameMap = {}
+  if (!ids.length) return nameMap
+
+  const cached = await getArtistNamesMany(ids)
+  const missing = ids.filter((id) => !cached[id])
+
+  // Fetch only the missing names, in small concurrent batches.
+  for (let i = 0; i < missing.length; i += FETCH_BATCH) {
+    const batch = missing.slice(i, i + FETCH_BATCH)
+    const settled = await Promise.allSettled(
+      batch.map((id) => fetchArtistProfile(id))
+    )
+    for (let j = 0; j < settled.length; j++) {
+      const id = batch[j]
+      const result = settled[j]
+      if (result.status === 'fulfilled') {
+        await setArtistName(id, result.value)
+        cached[id] = {
+          userID: id,
+          username: result.value.username ?? null,
+          displayName: result.value.displayName ?? null,
+        }
+      }
+      // On failure: leave uncached so a later request retries.
+    }
+  }
+
+  for (const id of ids) {
+    const n = cached[id]
+    if (n) nameMap[id] = n.displayName || n.username || null
+  }
+  return nameMap
 }
 
 export async function GET(request) {
@@ -76,18 +127,23 @@ export async function GET(request) {
       refreshErrors = await refreshAll(services, fetchedAt)
     }
 
-    // Build analysis from whatever is cached now (fresh if we just refreshed).
+    // Batch-read all cached review payloads in ONE round trip (was N sequential
+    // GETs). Fresh if we just refreshed above.
+    const serviceIDs = services.map((s) => s.serviceID)
+    const reviewsMap = await getCachedReviewsMany(serviceIDs)
+
     const serviceMetrics = []
     const reviewsByService = {}
     const missing = []
+    let lastFetchedAt = null
     for (const svc of services) {
-      const cached = await getCachedReviews(svc.serviceID)
+      const cached = reviewsMap[svc.serviceID]
       if (!cached) {
         missing.push(svc.serviceID)
         serviceMetrics.push(
           analyzeService({
             serviceID: svc.serviceID,
-            serviceType: svc.serviceType,
+            serviceType: svc.categoryID,
             artistUserID: null,
             reviews: [],
             now,
@@ -100,57 +156,29 @@ export async function GET(request) {
       serviceMetrics.push(
         analyzeService({
           serviceID: svc.serviceID,
-          serviceType: svc.serviceType,
+          serviceType: svc.categoryID,
           artistUserID: cached.artistUserID,
           reviews: cached.reviews,
           now,
         })
       )
+      // Track the freshest cache timestamp from the records we already loaded
+      // (no second read pass needed).
+      if (cached.fetchedAt && (!lastFetchedAt || cached.fetchedAt > lastFetchedAt)) {
+        lastFetchedAt = cached.fetchedAt
+      }
     }
 
     const artists = aggregateByArtist(serviceMetrics, reviewsByService)
 
-    // Resolve human-readable artist names. We look up any artist we don't have a
-    // cached name for yet on EVERY request (not just refresh) so names appear on
-    // a normal page load too. This is best-effort and self-healing:
-    //   - a successful lookup (even one returning null fields for an artist with
-    //     no public showcase) is cached, so we never re-fetch it;
-    //   - a failed lookup (intermittent Cloudflare 403) caches nothing, so the
-    //     next read retries until one succeeds.
-    // Cost is bounded: only missing names are fetched, and names cache forever.
     const artistIDs = new Set()
     for (const sm of serviceMetrics) if (sm.artistUserID) artistIDs.add(sm.artistUserID)
-    for (const id of artistIDs) {
-      const existing = await getArtistName(id)
-      if (existing) continue
-      try {
-        const profile = await fetchArtistProfile(id)
-        await setArtistName(id, profile)
-      } catch {
-        // Ignore: name is cosmetic, the survey still works without it.
-      }
-    }
-    const nameMap = {}
-    for (const id of artistIDs) {
-      const n = await getArtistName(id)
-      if (n) nameMap[id] = n.displayName || n.username || null
-    }
+    const nameMap = await resolveArtistNames(artistIDs)
     for (const sm of serviceMetrics) {
       sm.artistName = (sm.artistUserID && nameMap[sm.artistUserID]) || null
     }
     for (const a of artists) {
       a.artistName = (a.artistUserID && nameMap[a.artistUserID]) || null
-    }
-
-    // Freshest cache timestamp across services (for a "last updated" label).
-    let lastFetchedAt = null
-    for (const svc of services) {
-      const cached = await getCachedReviews(svc.serviceID)
-      if (cached && cached.fetchedAt) {
-        if (!lastFetchedAt || cached.fetchedAt > lastFetchedAt) {
-          lastFetchedAt = cached.fetchedAt
-        }
-      }
     }
 
     return NextResponse.json(

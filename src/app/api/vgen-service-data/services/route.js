@@ -1,9 +1,20 @@
 // VGen service-data watchlist endpoint (read public, write protected)
 // -------------------------------------------------------------------
-// GET  -> { services: [{ serviceID, serviceType }, ...] }   (public, read-only)
+// GET  -> { services: [{ serviceID, categoryID, serviceName }, ...] }  (public, read-only)
 // POST -> replace the whole declared-service list (add / remove / reorder in one
 //         shot). Body:
-//           { services: [{ serviceID, serviceType }, ...] }
+//           { services: [{ serviceID, categoryID, serviceName }, ...] }
+//
+// categoryID is VGen's opaque searchCategoryID (Airtable-style "rec..." id). We
+// store the ID rather than a resolved name so the readable type stays DYNAMIC:
+// renaming a category in the category map instantly reflects everywhere, with no
+// unlink. Legacy rows may still carry `serviceType` (a resolved name); it is
+// tolerated on input and folded into categoryID (the client reverse-maps a known
+// name back to its id before saving, so stored data self-heals over time).
+//
+// serviceName is the harvested listing title. It carries no analytical weight; it
+// is stored purely so the dashboard can display which listing each row is
+// (alongside the artist name, which the client joins from cached review data).
 //
 // Removing a service immediately purges its cached reviews + meta so a dropped
 // listing's data is scrubbed at once. Empty list IS allowed here (unlike the
@@ -25,8 +36,11 @@ export const revalidate = 0
 const MAX_SERVICES = 200
 
 // Normalize + validate the incoming list: keep only well-formed entries, trim
-// strings, dedupe by serviceID (first wins), and cap the length. serviceType is
-// free text and MAY be empty (user can label later); serviceID is required.
+// strings, dedupe by serviceID (first wins), and cap the length. categoryID and
+// serviceName MAY be empty (a service may be unclassified, and a manually added
+// row has no harvested title); serviceID is required. Legacy `serviceType` is
+// accepted as a fallback source for categoryID so older stored rows still round-
+// trip until the client rewrites them with a proper categoryID.
 function sanitizeServices(input) {
   if (!Array.isArray(input)) return null
   const out = []
@@ -35,12 +49,18 @@ function sanitizeServices(input) {
     if (!raw || typeof raw !== 'object') continue
     const serviceID =
       typeof raw.serviceID === 'string' ? raw.serviceID.trim() : ''
-    const serviceType =
-      typeof raw.serviceType === 'string' ? raw.serviceType.trim() : ''
+    const categoryID =
+      typeof raw.categoryID === 'string' && raw.categoryID.trim()
+        ? raw.categoryID.trim()
+        : typeof raw.serviceType === 'string'
+        ? raw.serviceType.trim()
+        : ''
+    const serviceName =
+      typeof raw.serviceName === 'string' ? raw.serviceName.trim() : ''
     if (!serviceID) continue
     if (seen.has(serviceID)) continue
     seen.add(serviceID)
-    out.push({ serviceID, serviceType })
+    out.push({ serviceID, categoryID, serviceName })
     if (out.length >= MAX_SERVICES) break
   }
   return out
@@ -74,7 +94,10 @@ export async function POST(request) {
   const services = sanitizeServices(body && body.services)
   if (services === null) {
     return NextResponse.json(
-      { error: 'Body must be { services: [{ serviceID, serviceType }, ...] }' },
+      {
+        error:
+          'Body must be { services: [{ serviceID, categoryID, serviceName }, ...] }',
+      },
       { status: 400 }
     )
   }

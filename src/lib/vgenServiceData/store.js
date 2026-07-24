@@ -10,7 +10,12 @@
 // and overwrite it on refresh.
 //
 // Storage layout:
-//   vgsd:services            -> JSON array of { serviceID, serviceType }
+//   vgsd:services            -> JSON array of { serviceID, categoryID, serviceName }
+//                               (categoryID is VGen's opaque searchCategoryID; the
+//                                readable type is resolved DYNAMICALLY from the
+//                                category map so a rename never unlinks a service.
+//                                serviceName is the harvested title, kept so the
+//                                dashboard can show which listing a row is)
 //   vgsd:reviews:<serviceID> -> JSON { serviceID, artistUserID, count, reviews, fetchedAt }
 //   vgsd:meta:<serviceID>    -> JSON { serviceID, artistUserID, count, fetchedAt } (lightweight)
 //
@@ -33,6 +38,7 @@ const redis = HAS_KV
   : null
 
 const SERVICES_KEY = `${NS}:services`
+const CATEGORIES_KEY = `${NS}:categories`
 const reviewsKey = (serviceID) => `${NS}:reviews:${serviceID}`
 const metaKey = (serviceID) => `${NS}:meta:${serviceID}`
 const artistKey = (userID) => `${NS}:artist:${userID}`
@@ -55,7 +61,7 @@ function parseMaybe(value) {
 
 /**
  * The declared service watchlist. Empty is valid (no default seeding).
- * @returns {Promise<{ serviceID: string, serviceType: string }[]>}
+ * @returns {Promise<{ serviceID: string, categoryID: string, serviceName: string }[]>}
  */
 export async function getServices() {
   const stored = parseMaybe(await ensureRedis().get(SERVICES_KEY))
@@ -63,10 +69,28 @@ export async function getServices() {
 }
 
 /**
- * @param {{ serviceID: string, serviceType: string }[]} list
+ * @param {{ serviceID: string, categoryID?: string, serviceName?: string }[]} list
  */
 export async function setServices(list) {
   await ensureRedis().set(SERVICES_KEY, JSON.stringify(list))
+}
+
+/**
+ * The category map: VGen's opaque searchCategoryID -> a readable name, edited
+ * from the dashboard GUI (so no code push is needed to rename a category).
+ * Stored as an ordered array to preserve the editor's row order. Empty is valid.
+ * @returns {Promise<{ categoryID: string, categoryName: string, color?: string }[]>}
+ */
+export async function getCategoryMap() {
+  const stored = parseMaybe(await ensureRedis().get(CATEGORIES_KEY))
+  return Array.isArray(stored) ? stored : []
+}
+
+/**
+ * @param {{ categoryID: string, categoryName: string, color?: string }[]} list
+ */
+export async function setCategoryMap(list) {
+  await ensureRedis().set(CATEGORIES_KEY, JSON.stringify(list))
 }
 
 /**
@@ -108,6 +132,25 @@ export async function getCachedReviews(serviceID) {
 }
 
 /**
+ * Batch-read many services' cached review pulls in ONE round trip (Redis MGET)
+ * instead of N sequential GETs. This is what keeps a plain page load fast as the
+ * watchlist grows (sequential per-service reads were the dominant load-time cost).
+ * @param {string[]} serviceIDs
+ * @returns {Promise<Object<string, null | object>>} map serviceID -> record|null
+ */
+export async function getCachedReviewsMany(serviceIDs) {
+  const ids = Array.isArray(serviceIDs) ? serviceIDs : []
+  const out = {}
+  if (!ids.length) return out
+  const values = await ensureRedis().mget(...ids.map(reviewsKey))
+  ids.forEach((id, i) => {
+    const v = parseMaybe(values[i])
+    out[id] = v && typeof v === 'object' ? v : null
+  })
+  return out
+}
+
+/**
  * Lightweight freshness record for one service (no reviews array).
  * @param {string} serviceID
  * @returns {Promise<null | { serviceID: string, artistUserID: string|null, count: number, fetchedAt: string }>}
@@ -137,6 +180,24 @@ export async function purgeService(serviceID) {
 export async function getArtistName(userID) {
   const stored = parseMaybe(await ensureRedis().get(artistKey(userID)))
   return stored && typeof stored === 'object' ? stored : null
+}
+
+/**
+ * Batch-read many artists' cached names in ONE round trip (Redis MGET). Used on
+ * every request to resolve display names without N sequential reads.
+ * @param {string[]} userIDs
+ * @returns {Promise<Object<string, null | { userID: string, username: string|null, displayName: string|null }>>}
+ */
+export async function getArtistNamesMany(userIDs) {
+  const ids = Array.isArray(userIDs) ? userIDs : []
+  const out = {}
+  if (!ids.length) return out
+  const values = await ensureRedis().mget(...ids.map(artistKey))
+  ids.forEach((id, i) => {
+    const v = parseMaybe(values[i])
+    out[id] = v && typeof v === 'object' ? v : null
+  })
+  return out
 }
 
 /**
