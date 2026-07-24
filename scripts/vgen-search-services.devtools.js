@@ -16,6 +16,14 @@
 //   `tags`       = artist-set tags (note: tags[0] is usually just the search
 //                  term, so a weak discriminator).
 //
+// REVIEW FILTER (CONFIG.minReviews, default 10): before download, both modes
+// make ONE extra pass hitting each captured service's public reviews feed and
+// DROP any service with fewer than `minReviews` reviews (junk / low-signal
+// listings). Each kept row gains `reviewCount` (a lower bound once the
+// threshold is met — see `reviewCountAtLeast`). Set CONFIG.minReviews = 0 to
+// disable. Because this pass is async, in capture mode `vgenDump()` now returns
+// a promise (just `await vgenDump()` or ignore it — the download still fires).
+//
 // TWO MODES (set CONFIG.mode):
 //
 //   'capture'  (default, lazy-load friendly, no endpoint guessing)
@@ -66,7 +74,21 @@
     body: null,
     pageGapMs: 250, // pause between pages in fetch mode
     maxPages: 40, // hard page cap in fetch mode
+    // ---- review-count filter (both modes) -----------------------------------
+    // Drop low-signal services before download: keep only those whose public
+    // review feed has at least `minReviews` reviews. Set to 0 to disable. The
+    // search endpoint carries NO review count, so this makes ONE extra pass that
+    // fetches each captured service's reviews feed (stopping as soon as the
+    // threshold is met, so it's usually a single request per service).
+    minReviews: 10,
+    reviewConcurrency: 4, // parallel review lookups per batch
+    reviewMaxPages: 60, // safety cap when a service is UNDER the threshold
   };
+
+  // Public per-service reviews feed (same endpoint the dashboard uses). Bare
+  // JSON array, newest-first, hard cap limit=20.
+  const REVIEWS_URL = 'https://api.vgen.co/discoverability/reviews/service/';
+  const REVIEW_PAGE = 20;
 
   const API_BASE = 'https://api.vgen.co';
   const API_HOST_RE = /(^|\/\/)api\.vgen\.co/i;
@@ -200,6 +222,97 @@
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
   // =====================================================================
+  // Review-count filter (both modes)
+  // =====================================================================
+  // The search endpoint carries NO review count, so to keep only services with
+  // >= CONFIG.minReviews reviews we make ONE extra pass hitting each captured
+  // service's public reviews feed. This is efficient: we stop paging a service
+  // the moment its running total reaches the threshold (usually a single
+  // request), and only keep paging past that for services still UNDER it (up to
+  // reviewMaxPages) so we know they truly fall short.
+
+  // Count a service's reviews, short-circuiting once `min` is reached.
+  // Returns { count, atLeast } where atLeast=true means "count >= min"
+  // (count is then a lower bound, not the exact total).
+  async function reviewCount(serviceID, min, maxPages) {
+    let total = 0;
+    for (let page = 0; page < maxPages; page++) {
+      const url =
+        `${REVIEWS_URL}${encodeURIComponent(serviceID)}` +
+        `?offset=${page * REVIEW_PAGE}&limit=${REVIEW_PAGE}`;
+      let arr;
+      try {
+        const res = await fetch(url, {
+          credentials: 'include',
+          headers: { accept: 'application/json' },
+          cache: 'no-store',
+        });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        arr = await res.json();
+      } catch {
+        break; // network/Cloudflare hiccup: treat what we have as final
+      }
+      const n = Array.isArray(arr) ? arr.length : 0;
+      total += n;
+      if (min > 0 && total >= min) return { count: total, atLeast: true };
+      if (n < REVIEW_PAGE) break; // short page = end of this service's feed
+    }
+    return { count: total, atLeast: false };
+  }
+
+  // Enrich rows with their review count and drop those under CONFIG.minReviews.
+  // Runs in small concurrent batches to stay polite. When minReviews <= 0 the
+  // filter is disabled and rows pass through untouched.
+  async function enrichAndFilter(rows) {
+    const min = Number(CONFIG.minReviews) || 0;
+    if (min <= 0) return rows;
+
+    const batchSize = Math.max(1, Number(CONFIG.reviewConcurrency) || 4);
+    const maxPages = Math.max(1, Number(CONFIG.reviewMaxPages) || 60);
+    const kept = [];
+    let dropped = 0;
+
+    console.log(
+      `%c[vgen] review filter: checking ${rows.length} services for >= ${min} reviews...`,
+      'color:#6ee7ff;font-weight:bold'
+    );
+
+    for (let i = 0; i < rows.length; i += batchSize) {
+      const batch = rows.slice(i, i + batchSize);
+      const results = await Promise.all(
+        batch.map((row) => reviewCount(row.serviceID, min, maxPages))
+      );
+      for (let j = 0; j < batch.length; j++) {
+        const row = batch[j];
+        const { count, atLeast } = results[j];
+        if (atLeast || count >= min) {
+          kept.push({ ...row, reviewCount: count, reviewCountAtLeast: atLeast });
+        } else {
+          dropped++;
+        }
+      }
+      console.log(
+        `[vgen] review filter: ${Math.min(i + batchSize, rows.length)}/${rows.length} ` +
+          `checked (kept ${kept.length}, dropped ${dropped})`
+      );
+      await sleep(CONFIG.pageGapMs);
+    }
+
+    // Preserve the original ordering signal (frequency), then review count.
+    kept.sort(
+      (a, b) =>
+        b.count - a.count ||
+        b.reviewCount - a.reviewCount ||
+        a.serviceName.localeCompare(b.serviceName)
+    );
+    console.log(
+      `%c[vgen] review filter done: kept ${kept.length}, dropped ${dropped} (< ${min} reviews)`,
+      'color:#56d987;font-weight:bold'
+    );
+    return kept;
+  }
+
+  // =====================================================================
   // CAPTURE mode: hook fetch + XHR, harvest as the page lazy-loads
   // =====================================================================
   function startCapture() {
@@ -271,7 +384,8 @@
       },
     };
 
-    window.vgenDump = () => downloadRows(mapToRows(map));
+    window.vgenDump = async () =>
+      downloadRows(await enrichAndFilter(mapToRows(map)));
     window.vgenPeek = () => {
       const rows = mapToRows(map);
       console.table(rows);
@@ -434,8 +548,9 @@
       );
       return;
     }
-    console.table(rows);
-    downloadRows(rows);
+    const kept = await enrichAndFilter(rows);
+    console.table(kept);
+    downloadRows(kept);
   }
 
   // ---- dispatch --------------------------------------------------------------
