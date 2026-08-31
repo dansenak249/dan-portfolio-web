@@ -214,3 +214,201 @@ export async function setArtistName(userID, name) {
     })
   )
 }
+
+// ---------------------------------------------------------------------------
+// Category listing layer (the census produced by fetchCategory.js)
+// ---------------------------------------------------------------------------
+// Layout:
+//   vgsd:cat:<categoryID>:meta       -> { categoryID, count, chunks, pages,
+//                                         duplicates, offCategory, startedAt,
+//                                         finishedAt }
+//   vgsd:cat:<categoryID>:chunk:<i>  -> slim service records (CHUNK_SIZE each)
+//   vgsd:cat:<categoryID>:job        -> in-progress crawl state
+//
+// Services are stored in CHUNKS rather than one key per service. A category runs
+// to a few thousand services; one key each would mean thousands of Redis writes
+// per refresh (the metered cost here is commands, not bytes), while one key for
+// the whole category would push a single value past the request size limit.
+// A few hundred per chunk keeps both in bounds.
+const CHUNK_SIZE = 300
+
+const catMetaKey = (categoryID) => `${NS}:cat:${categoryID}:meta`
+const catChunkKey = (categoryID, i) => `${NS}:cat:${categoryID}:chunk:${i}`
+const catJobKey = (categoryID) => `${NS}:cat:${categoryID}:job`
+
+/**
+ * In-progress crawl state, or null when no crawl is running.
+ * @param {string} categoryID
+ */
+export async function getCategoryJob(categoryID) {
+  const stored = parseMaybe(await ensureRedis().get(catJobKey(categoryID)))
+  return stored && typeof stored === 'object' ? stored : null
+}
+
+/**
+ * @param {string} categoryID
+ * @param {object} job
+ */
+export async function setCategoryJob(categoryID, job) {
+  await ensureRedis().set(catJobKey(categoryID), JSON.stringify(job))
+}
+
+/** @param {string} categoryID */
+export async function clearCategoryJob(categoryID) {
+  await ensureRedis().del(catJobKey(categoryID))
+}
+
+/**
+ * Write one chunk of slim service records.
+ * @param {string} categoryID
+ * @param {number} index
+ * @param {object[]} services
+ */
+export async function setCategoryChunk(categoryID, index, services) {
+  await ensureRedis().set(catChunkKey(categoryID, index), JSON.stringify(services))
+}
+
+/**
+ * The finished census summary for one category, or null if never crawled.
+ * @param {string} categoryID
+ */
+export async function getCategoryMeta(categoryID) {
+  const stored = parseMaybe(await ensureRedis().get(catMetaKey(categoryID)))
+  return stored && typeof stored === 'object' ? stored : null
+}
+
+/**
+ * @param {string} categoryID
+ * @param {object} meta
+ */
+export async function setCategoryMeta(categoryID, meta) {
+  await ensureRedis().set(catMetaKey(categoryID), JSON.stringify(meta))
+}
+
+/**
+ * Read every stored service for one category (all chunks, in order). Chunks are
+ * read in ONE round trip so load time stays flat as a category grows.
+ * @param {string} categoryID
+ * @returns {Promise<object[]>}
+ */
+export async function listCategoryServices(categoryID) {
+  const meta = await getCategoryMeta(categoryID)
+  if (!meta || !meta.chunks) return []
+  const keys = []
+  for (let i = 0; i < meta.chunks; i++) keys.push(catChunkKey(categoryID, i))
+  const values = await ensureRedis().mget(...keys)
+  const out = []
+  for (const value of values) {
+    const rows = parseMaybe(value)
+    if (Array.isArray(rows)) out.push(...rows)
+  }
+  return out
+}
+
+/**
+ * Drop a category's stored census (chunks + meta + any half-finished job). Used
+ * before a fresh crawl so a shrunk category cannot leave stale rows behind.
+ * @param {string} categoryID
+ */
+export async function purgeCategory(categoryID) {
+  const r = ensureRedis()
+  const meta = await getCategoryMeta(categoryID)
+  const chunks = (meta && meta.chunks) || 0
+  for (let i = 0; i < chunks; i++) await r.del(catChunkKey(categoryID, i))
+  await r.del(catMetaKey(categoryID))
+  await r.del(catJobKey(categoryID))
+}
+
+export { CHUNK_SIZE }
+
+// ---------------------------------------------------------------------------
+// Exchange-rate cache
+// ---------------------------------------------------------------------------
+// VGen's rate matrix is ~347 KB and its numbers move slowly, so the reduced
+// "<CODE> -> USD" map is cached and only refetched when stale. Cached, not
+// stored per price: basePrice + currency stay raw in the census, so re-rating is
+// always just a re-render.
+const FX_KEY = `${NS}:fx`
+
+/** @returns {Promise<null | { fetchedAt: string, count: number, rates: Record<string, number> }>} */
+export async function getExchangeRates() {
+  const stored = parseMaybe(await ensureRedis().get(FX_KEY))
+  return stored && typeof stored === 'object' ? stored : null
+}
+
+/** @param {{ fetchedAt: string, count: number, rates: Record<string, number> }} payload */
+export async function setExchangeRates(payload) {
+  await ensureRedis().set(FX_KEY, JSON.stringify(payload))
+}
+
+// ---------------------------------------------------------------------------
+// Legacy cleanup
+// ---------------------------------------------------------------------------
+// Keys written by the OLD flow (declare services one by one, then pull each
+// service's review feed). The category census replaces all of it: services now
+// arrive from the crawl, and artist names ride along in the listing instead of
+// needing their own lookup + cache.
+//
+// Everything still in use is deliberately absent from this list:
+//   vgsd:categories  the hand-curated category map (names + colours)
+//   vgsd:cat:*       the new census (chunks / meta / in-flight jobs)
+//   vgsd:fx          the cached exchange rates
+// Note `vgsd:meta:*` matches only the old per-service freshness records; the
+// census keys are `vgsd:cat:<id>:meta`, which that pattern does not touch.
+const LEGACY_PATTERNS = [
+  `${NS}:services`,
+  `${NS}:reviews:*`,
+  `${NS}:meta:*`,
+  `${NS}:artist:*`,
+]
+
+const SCAN_COUNT = 200
+
+async function scanKeys(pattern) {
+  const r = ensureRedis()
+  const found = []
+  let cursor = '0'
+  do {
+    const [next, keys] = await r.scan(cursor, {
+      match: pattern,
+      count: SCAN_COUNT,
+    })
+    cursor = String(next)
+    if (Array.isArray(keys)) found.push(...keys)
+    // Upstash returns '0' when the sweep is complete.
+  } while (cursor !== '0')
+  return found
+}
+
+/**
+ * Find (and optionally delete) every key left over from the pre-census flow.
+ *
+ * @param {object} [options]
+ * @param {boolean} [options.dryRun] when true, only report what WOULD go
+ * @returns {Promise<{ dryRun: boolean, deleted: number, byPattern: Record<string, number>, sample: string[] }>}
+ */
+export async function purgeLegacyServiceData(options = {}) {
+  const { dryRun = true } = options
+  const r = ensureRedis()
+
+  const byPattern = {}
+  const all = []
+  for (const pattern of LEGACY_PATTERNS) {
+    const keys = await scanKeys(pattern)
+    byPattern[pattern] = keys.length
+    all.push(...keys)
+  }
+
+  if (!dryRun) {
+    for (const key of all) await r.del(key)
+  }
+
+  return {
+    dryRun,
+    deleted: dryRun ? 0 : all.length,
+    found: all.length,
+    byPattern,
+    // A short sample so the caller can eyeball that nothing unexpected matched.
+    sample: all.slice(0, 10),
+  }
+}

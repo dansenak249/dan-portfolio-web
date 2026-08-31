@@ -108,6 +108,15 @@
       button.primary:hover { border-color: var(--accent); }
       button.ghost { background: transparent; }
       button.tiny { padding: 4px 8px; font-size: 0.75rem; border-radius: 8px; }
+      /* Per-category fetch button. While a category is in flight the button dims,
+         stops taking clicks, and its reload glyph spins. */
+      .cat-load svg { display: block; }
+      .cat-load:disabled { opacity: 0.4; cursor: default; }
+      .cat-load.is-loading svg { animation: cat-spin 0.9s linear infinite; }
+      @keyframes cat-spin { to { transform: rotate(360deg); } }
+      @media (prefers-reduced-motion: reduce) {
+        .cat-load.is-loading svg { animation-duration: 2.4s; }
+      }
       button:disabled { opacity: 0.5; cursor: not-allowed; }
 
       .panel {
@@ -301,6 +310,9 @@
       .col-name { width: 172px; }
       .col-spacer { width: 74px; }
       .col-n { width: 72px; }
+      /* Base price needs more room than a plain count column: the header word is
+         wider, and amounts can run to "¥32000" / "$1,234.56". */
+      .col-price { width: 96px; }
       .col-star { width: 48px; }
       /* drag-to-reorder handle in the declaration editor */
       .drag-handle {
@@ -541,9 +553,6 @@
           <div class="updated">
             updated<br /><b id="lastUpdated">—</b>
           </div>
-          <button id="addBtn" title="Declare a new service">+ Add</button>
-          <button id="syncBtn" title="Re-derive each service's category from its id (fills in any missing types)">⟳ Sync types</button>
-          <button id="refreshBtn" class="primary">↻ Refresh</button>
         </div>
       </header>
 
@@ -576,11 +585,9 @@
               <tr>
                 <th class="col-name" data-k="_type">Type</th>
                 <th class="no-sort col-spacer"></th>
+                <th class="num col-price" data-k="_priceUSD">Price</th>
                 <th class="num col-n" data-k="total">Reviews</th>
-                <th class="num col-n" data-k="uniqueClients">Unique</th>
                 <th class="num col-n" data-k="repeatClients">Repeat</th>
-                <th class="num col-n" data-k="repeatRate">Repeat %</th>
-                <th class="num col-n" data-k="last90">90d</th>
                 <th class="num col-n" data-k="last30">30d</th>
                 <th class="num col-star" data-k="avgRating">★</th>
                 <th class="no-sort">Monthly flow</th>
@@ -590,7 +597,7 @@
             <tbody id="svcBody"></tbody>
           </table>
         </div>
-        <div id="svcEmpty" class="empty">No services declared yet. Click “+ Add” up top to declare one.</div>
+        <div id="svcEmpty" class="empty">No services yet. Add a category below, then press its fetch button.</div>
       </section>
 
       <!-- Category map editor (GUI for searchCategoryID -> readable name) -->
@@ -611,6 +618,7 @@
                     <th class="no-sort" style="width:56px">Color</th>
                     <th class="no-sort">Category Name</th>
                     <th class="no-sort">Category ID</th>
+                    <th class="no-sort" style="width:48px"></th>
                     <th class="no-sort" style="width:48px"></th>
                   </tr>
                 </thead>
@@ -816,7 +824,13 @@
         resync: '/api/vgen-service-data/services/resync',
         data: '/api/vgen-service-data/data',
         categories: '/api/vgen-service-data/categories',
+        exchangeRate: '/api/vgen-service-data/exchange-rate',
+        collect: '/api/vgen-service-data/categories/collect',
       };
+
+      // categoryIDs currently being fetched, so their row button shows a spinner
+      // and stays disabled until the request settles.
+      const catLoading = new Set();
 
       // ---- state ----
       // Declared services now store VGen's opaque categoryID (searchCategoryID),
@@ -843,6 +857,10 @@
         '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>';
       const ICON_DEL =
         '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg>';
+      // Per-category "fetch now" icon. The SAME glyph doubles as the busy
+      // spinner: the row adds .is-loading, which spins it via CSS.
+      const ICON_RELOAD =
+        '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg>';
 
       // Persisted UI config so a refresh keeps the current view.
       const UI_KEY = 'vgsd:ui';
@@ -1031,6 +1049,68 @@
         if (!total || total <= 0) return '0.0';
         return trunc1((count / total) * 100);
       }
+      // VGen stores basePrice in the currency's MINOR unit (cents): 700 -> $7,
+      // 38000 -> $380. Zero-decimal currencies (JPY and friends) have no minor
+      // unit, so their value is already the whole amount and must NOT be divided.
+      const ZERO_DECIMAL = new Set(['JPY', 'KRW', 'VND', 'CLP', 'ISK']);
+      // Every price renders in USD so the column is comparable at a glance.
+      // This table is only a FALLBACK for the very first paint (and for when the
+      // rate endpoint is unreachable): loadExchangeRates() replaces it with live
+      // rates from VGen at init. It is approximate on purpose - do not tune it.
+      // The raw basePrice + currency stay untouched in storage, so re-rating is
+      // only ever a re-render, never a re-crawl.
+      let USD_RATE = {
+        USD: 1,
+        EUR: 1.08,
+        GBP: 1.27,
+        JPY: 0.0067,
+        CAD: 0.73,
+        AUD: 0.66,
+        KRW: 0.00075,
+        VND: 0.00004,
+      };
+      // -> "$214.40". An unknown currency is NOT silently converted: it falls
+      // back to "<amount> <CODE>" so a missing rate can never look like USD.
+      function price(minor, currency) {
+        if (typeof minor !== 'number' || !isFinite(minor)) return '—';
+        const code = (currency || 'USD').toUpperCase();
+        const amount = ZERO_DECIMAL.has(code) ? minor : minor / 100;
+        const rate = USD_RATE[code];
+        if (rate == null) return amount.toFixed(2) + ' ' + code;
+        return '$' + (amount * rate).toFixed(2).replace(/.00$/, '');
+      }
+      // Pull live "<CODE> -> USD" rates from VGen (proxied + cached server-side,
+      // ~3 KB). Best-effort: on any failure the fallback table above stays in
+      // place, so prices still render, just less precisely.
+      async function loadExchangeRates() {
+        try {
+          const res = await fetch(API.exchangeRate, { cache: 'no-store' });
+          const json = await res.json();
+          if (!res.ok) throw new Error(json.error || 'HTTP ' + res.status);
+          if (json.rates && Object.keys(json.rates).length) {
+            USD_RATE = json.rates;
+            fxLoadedAt = json.fetchedAt || null;
+            fxStale = !!json.stale;
+          }
+        } catch (e) {
+          // Keep the fallback table; note it so the UI can say so.
+          fxError = e.message;
+        }
+      }
+      let fxLoadedAt = null;
+      let fxStale = false;
+      let fxError = null;
+
+      // Same conversion as price(), but as a NUMBER, so sorting the column
+      // compares real value instead of raw minor units (JPY 700 and USD 700 are
+      // not the same money). Annotated onto each row as `_priceUSD`.
+      function priceUSD(minor, currency) {
+        if (typeof minor !== 'number' || !isFinite(minor)) return null;
+        const code = (currency || 'USD').toUpperCase();
+        const amount = ZERO_DECIMAL.has(code) ? minor : minor / 100;
+        const rate = USD_RATE[code];
+        return rate == null ? null : amount * rate;
+      }
       // `monthTotals` maps each month -> orders across ALL services that month;
       // `monthMax` -> the busiest single service that month. The bar HEIGHT uses
       // whichever is the active denominator: totals (default) reads each bar as a
@@ -1102,7 +1182,10 @@
         return resolveCategoryName(cid) || cid;
       }
       function annotateTypes() {
-        for (const s of svcData) s._type = typeNameForService(s);
+        for (const s of svcData) {
+          s._type = typeNameForService(s);
+          s._priceUSD = priceUSD(s.basePrice, s.currency);
+        }
       }
 
       // Turn a service title into a URL-safe slug for the vgen.co service link.
@@ -1134,7 +1217,7 @@
         empty.style.display = rows.length ? 'none' : 'block';
         empty.textContent = svcData.length
           ? 'No service matches the current filter.'
-          : 'No services declared yet. Click “+ Add” up top to declare one.';
+          : 'No services yet. Add a category below, then press its fetch button.';
         // Shared month axis + vertical scale across the VISIBLE rows so every row's
         // flow chart is directly comparable within the shown group (see buildFlowAxis).
         const { axis, monthTotals, monthMax } = buildFlowAxis(rows);
@@ -1167,11 +1250,9 @@
               s.serviceID
             )}">${whoHtml}</div></td>
               <td class="col-spacer"></td>
+              <td class="num">${price(s.basePrice, s.currency)}</td>
               <td class="num">${num(s.total)}</td>
-              <td class="num">${num(s.uniqueClients)}</td>
               <td class="num">${num(s.repeatClients)}</td>
-              <td class="num">${repeatPill(s.repeatRate)}</td>
-              <td class="num">${num(s.last90)}</td>
               <td class="num">${num(s.last30)}</td>
               <td class="num">${s.avgRating == null ? '—' : trunc1(s.avgRating)}</td>
               <td>${sparkline(serviceFlow(s, axis), monthTotals, monthMax)}</td>
@@ -1534,44 +1615,104 @@
         }
       }
 
-      // ---- sync types (backfill categoryID + title from each serviceID) ----
-      // Restores the category for any declared service whose stored categoryID is
-      // empty (or all of them via force), by resolving each id server-side against
-      // VGen's service-detail endpoint. Used to heal older rows that lost their
-      // category, and any row that was added before auto-resolve existed.
-      async function syncTypes(force) {
-        const btn = $('syncBtn');
-        btn.disabled = true;
+
+      // Fetch ONE category's services straight from VGen, using the category
+      // crawl that replaces the old keyword harvest. It runs per category on
+      // purpose: a whole-marketplace pull is far too large for a single request,
+      // so one category is the unit we can actually watch and re-run.
+      // Crawl ONE category into the store. The server does a page-budgeted SLICE
+      // per call and hands back the resume point, so the loop lives HERE, in the
+      // browser. That is exactly why resumeRunningJobs() below exists: a reload
+      // stops this loop mid-crawl while the server still holds the cursor, and
+      // without a resume the next press would throw that progress away.
+      async function runCollect(categoryID, label, force) {
+        if (!categoryID || catLoading.has(categoryID)) return;
+        catLoading.add(categoryID);
+        renderCatEditor(); // repaint so THIS row's button spins + disables
         try {
-          status('Syncing types\u2026', 'info');
-          const res = await fetch(API.resync, {
-            method: 'POST',
-            headers: { 'content-type': 'application/json' },
-            body: JSON.stringify({ force: !!force }),
-          });
-          const json = await res.json();
-          if (!res.ok) throw new Error(json.error || 'HTTP ' + res.status);
-          declRows = (json.services || []).map((s) => ({ ...s }));
-          reverseMapLegacyDecl();
-          buildDeclLookup();
-          const failed = (json.errors && json.errors.length) || 0;
+          let guard = 0;
+          let result = null;
+          status('Fetching ' + label + '…', 'info');
+          do {
+            const res = await fetch(API.collect, {
+              method: 'POST',
+              headers: { 'content-type': 'application/json' },
+              // Only an explicit force restarts from page 1; otherwise the
+              // server resumes whatever job it still holds for this category.
+              body: JSON.stringify({
+                categoryID,
+                reset: force && guard === 0 ? 1 : 0,
+              }),
+            });
+            result = await res.json();
+            if (!res.ok) throw new Error(result.error || 'HTTP ' + res.status);
+            status(
+              'Fetching ' + label + '… ' + result.stored + ' service(s), ' +
+                result.pages + ' page(s)' +
+                (result.resumed && guard === 0 ? ' (resumed)' : ''),
+              'info'
+            );
+            guard++;
+          } while (!result.done && guard < 400);
+
+          // duplicates > 0 means VGen recomputed its sort key mid-crawl, which
+          // SKIPS services as well as repeating them. Treat any duplicate as
+          // 'this run is holed, fetch it again' rather than accepting the data.
+          const holed = Number(result.duplicates) > 0;
           status(
-            'Synced ' + json.resolved + '/' + json.total + ' type(s)' +
-              (failed ? ' (' + failed + ' failed, retry later).' : '.'),
-            failed ? 'err' : 'ok'
+            'Fetched ' + label + ': ' + result.stored + ' service(s) in ' +
+              result.pages + ' page(s)' +
+              (holed
+                ? ' — ' + result.duplicates +
+                  ' duplicate(s): VGen reshuffled mid-crawl, run this category again.'
+                : '.'),
+            holed ? 'err' : 'ok'
           );
-          // Backfilling a category often means the service is freshly declared and
-          // has no cached reviews yet. Fetch live for exactly those uncached
-          // services (svcMissing from the last load) so their data + artist name
-          // appear too; otherwise just re-read the cache with the fresh types.
-          const toFetch = svcMissing.slice();
-          if (toFetch.length) await loadData(true, toFetch);
-          else await loadData(false);
+          await loadData(false);
         } catch (e) {
-          status('Sync failed: ' + e.message, 'err');
+          status('Fetch failed for ' + label + ': ' + e.message, 'err');
         } finally {
-          btn.disabled = false;
+          catLoading.delete(categoryID);
+          renderCatEditor();
         }
+      }
+
+      // Row button. Shift-click forces a restart from page 1; a plain click
+      // resumes an unfinished crawl instead of discarding it.
+      function collectCategory(index, force) {
+        const row = catRows[index];
+        if (!row) return;
+        const categoryID = (row.categoryID || '').trim();
+        const label = (row.categoryName || '').trim() || categoryID;
+        return runCollect(categoryID, label, !!force);
+      }
+
+      // On load, pick up any crawl a previous page-view left half-finished, so a
+      // mid-crawl reload costs a few seconds instead of the whole run. Failures
+      // are swallowed: this is a convenience, never a reason to block startup.
+      async function resumeRunningJobs() {
+        const ids = catRows
+          .map((r) => (r.categoryID || '').trim())
+          .filter(Boolean);
+        if (!ids.length) return;
+        try {
+          const res = await fetch(
+            API.collect + '?ids=' + encodeURIComponent(ids.join(',')),
+            { cache: 'no-store' }
+          );
+          const json = await res.json();
+          if (!res.ok || !json.jobs) return;
+          for (const categoryID of Object.keys(json.jobs)) {
+            if (!json.jobs[categoryID]) continue;
+            const row = catRows.find(
+              (r) => (r.categoryID || '').trim() === categoryID
+            );
+            const label = (row && (row.categoryName || '').trim()) || categoryID;
+            // Deliberately NOT awaited: each resumed category runs its own loop
+            // so one slow crawl does not hold up the others or the first paint.
+            runCollect(categoryID, label, false);
+          }
+        } catch {}
       }
 
       // ---- category map editor (GUI, server-persisted) ----
@@ -1699,6 +1840,16 @@
               ? `background:${esc(color)}`
               : 'background:transparent';
             const swatchCls = color ? 'cat-swatch' : 'cat-swatch is-empty';
+            // Fetch button: disabled while this category is in flight, and also
+            // when the row has no id yet (nothing to fetch).
+            const catId = (r.categoryID || '').trim();
+            const busy = catLoading.has(catId);
+            const loadCls = 'tiny ghost cat-load' + (busy ? ' is-loading' : '');
+            const loadTitle = busy
+              ? 'Fetching…'
+              : catId
+              ? 'Fetch this category from VGen (shift-click to restart from scratch)'
+              : 'Enter a category ID first';
             return `<tr data-rowidx="${i}">
             <td class="drag-handle" draggable="true" data-drag="${i}" title="Drag to reorder">&#9776;</td>
             <td class="muted">${i + 1}</td>
@@ -1711,6 +1862,9 @@
             <td><input class="id-input" data-ci="${i}" data-cf="categoryID" placeholder="rechY6..." value="${esc(
               r.categoryID
             )}" /></td>
+            <td><button class="${loadCls}" data-catload="${i}"${
+              busy || !catId ? ' disabled' : ''
+            } title="${loadTitle}">${ICON_RELOAD}</button></td>
             <td><button class="tiny ghost" data-catdel="${i}" title="Remove">✕</button></td>
           </tr>`;
           })
@@ -1728,6 +1882,11 @@
           b.addEventListener('click', (e) => {
             openColorPicker(+e.currentTarget.getAttribute('data-catcolor'));
           })
+        );
+        body.querySelectorAll('[data-catload]').forEach((b) =>
+          b.addEventListener('click', (e) =>
+            collectCategory(+e.currentTarget.getAttribute('data-catload'), e.shiftKey)
+          )
         );
         body.querySelectorAll('[data-catdel]').forEach((b) =>
           b.addEventListener('click', (e) => {
@@ -2002,8 +2161,10 @@
         }
       }
 
+      // Read the analysis. `refresh` still pulls live review data, but it is no
+      // longer driven by a global button: the per-category fetch and Sync types
+      // are what call it now, so there is no button state to toggle here.
       async function loadData(refresh, ids) {
-        const btn = $('refreshBtn');
         try {
           let url = API.data;
           if (refresh) {
@@ -2011,8 +2172,6 @@
             // Narrow the live pull to specific services when given (e.g. only the
             // service just added), so we don't re-fetch the whole watchlist.
             if (ids && ids.length) url += '&ids=' + encodeURIComponent(ids.join(','));
-            btn.disabled = true;
-            btn.textContent = '↻ Fetching...';
             status(
               ids && ids.length
                 ? 'Fetching reviews for ' + ids.length + ' new service(s)...'
@@ -2026,20 +2185,13 @@
           applyData(json);
         } catch (e) {
           status((refresh ? 'Refresh' : 'Load') + ' failed: ' + e.message, 'err');
-        } finally {
-          btn.disabled = false;
-          btn.textContent = '↻ Refresh';
         }
       }
 
       // ---- wire up ----
-      $('refreshBtn').addEventListener('click', () => loadData(true));
-
-      // Add / Edit popup (declare one service; opened by "+ Add" or a row Edit).
-      $('addBtn').addEventListener('click', () => openEditModal(null));
-      // Sync types: backfill missing categories. Shift-click forces re-resolve of
-      // ALL services (also refreshes titles), not just the ones missing a type.
-      $('syncBtn').addEventListener('click', (e) => syncTypes(e.shiftKey));
+      // The global "+ Add" and "↻ Refresh" buttons are gone: services now arrive
+      // from the per-category fetch button in the Category map, not one at a time.
+      // openEditModal() is still reachable from a row's inline Edit button.
       $('editSave').addEventListener('click', saveEdit);
       $('editCancel').addEventListener('click', closeEditModal);
       $('editClose').addEventListener('click', closeEditModal);
@@ -2204,9 +2356,11 @@
           .forEach((b) => b.classList.toggle('active', b.getAttribute('data-w') === flowWindow));
         $('justifyChk').checked = justify; // reflect restored justify toggle
         try {
+          await loadExchangeRates(); // live FX before the first price renders
           await loadCategories(); // build the map first so decl dropdowns populate
           await loadServices();
           await loadData(false); // page-load read = cached, no VGen hit
+          resumeRunningJobs(); // continue any crawl a reload interrupted
         } catch (e) {
           status('Init failed: ' + e.message, 'err');
         } finally {
