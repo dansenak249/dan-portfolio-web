@@ -107,6 +107,11 @@ export async function setCachedReviews(serviceID, payload, fetchedAt) {
     count: payload.count ?? (payload.reviews ? payload.reviews.length : 0),
     reviews: Array.isArray(payload.reviews) ? payload.reviews : [],
     fetchedAt,
+    // The census's artist review total AT THE TIME OF THIS PULL. The next run
+    // compares it against the fresh census to decide whether anything can have
+    // changed, which is what lets an unchanged service be skipped instead of
+    // re-fetched and re-written.
+    sourceTotalReviews: payload.sourceTotalReviews ?? null,
   }
   await r.set(reviewsKey(serviceID), JSON.stringify(record))
   // Lightweight meta lets the dashboard show freshness without loading reviews.

@@ -596,7 +596,6 @@
                 <th class="num col-n" data-k="last30">30d</th>
                 <th class="num col-star" data-k="avgRating">★</th>
                 <th class="no-sort">Monthly flow</th>
-                <th class="no-sort col-actions"></th>
               </tr>
             </thead>
             <tbody id="svcBody"></tbody>
@@ -831,6 +830,7 @@
         categories: '/api/vgen-service-data/categories',
         exchangeRate: '/api/vgen-service-data/exchange-rate',
         collect: '/api/vgen-service-data/categories/collect',
+        reviews: '/api/vgen-service-data/reviews/collect',
       };
 
       // categoryIDs currently being fetched, so their row button shows a spinner
@@ -885,7 +885,6 @@
         const el = $('status');
         el.textContent = msg;
         el.className = 'status show ' + (kind || 'info');
-        if (kind === 'ok') setTimeout(() => el.classList.remove('show'), 3500);
       }
 
       // ---- declaration lookup + legacy self-heal ----
@@ -1261,21 +1260,9 @@
               <td class="num">${num(s.last30)}</td>
               <td class="num">${s.avgRating == null ? '—' : trunc1(s.avgRating)}</td>
               <td>${sparkline(serviceFlow(s, axis), monthTotals, monthMax)}</td>
-              <td>
-                <span class="row-act">
-                  <button class="sq" data-edit="${esc(s.serviceID)}" title="Edit">${ICON_EDIT}</button>
-                  <button class="sq danger" data-del="${esc(s.serviceID)}" title="Remove">${ICON_DEL}</button>
-                </span>
-              </td>
             </tr>`;
           })
           .join('');
-        body.querySelectorAll('[data-edit]').forEach((b) =>
-          b.addEventListener('click', () => openEditModal(b.getAttribute('data-edit')))
-        );
-        body.querySelectorAll('[data-del]').forEach((b) =>
-          b.addEventListener('click', () => askDelete(b.getAttribute('data-del')))
-        );
         updateSortIndicators('svcTable', svcSort);
       }
 
@@ -1664,9 +1651,43 @@
           // SKIPS services as well as repeating them. Treat any duplicate as
           // 'this run is holed, fetch it again' rather than accepting the data.
           const holed = Number(result.duplicates) > 0;
+
+          // Phase 2: the census carries no reviews, so the volume / repeat /
+          // monthly columns stay empty until each qualifying service's feed is
+          // pulled. That is one request per service, so the server works in
+          // batches and we loop. Services whose artist review total has not
+          // moved are skipped server-side, which is what keeps a repeat run
+          // cheap: only genuinely changed listings are refetched and rewritten.
+          const minEl = $('minReviews');
+          const minReviews =
+            minEl && minEl.value !== '' ? Number(minEl.value) : 10;
+          let rGuard = 0;
+          let rResult = null;
+          let pulledTotal = 0;
+          do {
+            const res = await fetch(API.reviews, {
+              method: 'POST',
+              headers: { 'content-type': 'application/json' },
+              body: JSON.stringify({ categoryID, minReviews }),
+            });
+            rResult = await res.json();
+            if (!res.ok) throw new Error(rResult.error || 'HTTP ' + res.status);
+            pulledTotal += rResult.pulled || 0;
+            status(
+              'Reviews for ' + label + '… ' + pulledTotal + ' pulled, ' +
+                rResult.remaining + ' to go' +
+                (rResult.skipped
+                  ? ' (' + rResult.skipped + ' unchanged, skipped)'
+                  : ''),
+              'info'
+            );
+            rGuard++;
+          } while (!rResult.done && rGuard < 600);
+
           status(
             'Fetched ' + label + ': ' + result.stored + ' service(s) in ' +
-              result.pages + ' page(s)' +
+              result.pages + ' page(s); ' + pulledTotal + ' review pull(s), ' +
+              (rResult.skipped || 0) + ' unchanged' +
               (holed
                 ? ' — ' + result.duplicates +
                   ' duplicate(s): VGen reshuffled mid-crawl, run this category again.'
