@@ -307,7 +307,16 @@
       /* Fixed table layout + explicit column widths; the single unsized column
          (Monthly flow) absorbs the leftover width. */
       #svcTable { table-layout: fixed; }
-      .col-name { width: 172px; }
+      .col-name { width: 280px; }
+      /* Titles are long and arbitrary. Clip both lines to the column so they
+         cannot overrun the next cell; the full text stays on hover. */
+      .type-name,
+      .sub-name {
+        display: block;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
       .col-spacer { width: 74px; }
       .col-n { width: 72px; }
       /* Base price needs more room than a plain count column: the header word is
@@ -588,7 +597,7 @@
           <table id="svcTable">
             <thead>
               <tr>
-                <th class="col-name" data-k="_type">Type</th>
+                <th class="col-name" data-k="serviceName">Service</th>
                 <th class="no-sort col-spacer"></th>
                 <th class="num col-price" data-k="_priceUSD">Price</th>
                 <th class="num col-n" data-k="total">Reviews</th>
@@ -1204,6 +1213,15 @@
           .slice(0, 80);
       }
 
+      // A service's display title: the census stores it on the row, while
+      // legacy declared rows keep theirs in declRows.
+      function svcTitle(s) {
+        const fromCensus = (s.serviceName || '').trim();
+        if (fromCensus) return fromCensus;
+        const decl = declLookup[s.serviceID];
+        return (decl && (decl.serviceName || '').trim()) || '';
+      }
+
       function renderServices() {
         // Resolve every row's display type first so sort/group/render agree.
         annotateTypes();
@@ -1237,7 +1255,7 @@
             // works when we have no title — no need to store the service name.
             const handle = (s.artistHandle || '').trim();
             const declRow = declLookup[s.serviceID];
-            const slug = slugifyName(declRow && declRow.serviceName) || 's';
+            const slug = slugifyName(svcTitle(s)) || 's';
             const whoHtml = handle
               ? `<a class="artist-link" href="https://vgen.co/${encodeURIComponent(
                   handle
@@ -1248,11 +1266,15 @@
             const color = serviceTypeColor(s);
             const typeStyle = color ? ` style="color:${esc(color)}"` : '';
             return `<tr>
-              <td class="type-cell"><span class="type-name"${typeStyle}>${esc(
-              s._type || '—'
+              <td class="type-cell"><span class="type-name" title="${esc(
+              svcTitle(s)
+            )}"${typeStyle}>${esc(
+              svcTitle(s) || '—'
             )}</span><div class="sub-name" title="${esc(
               s.serviceID
-            )}">${whoHtml}</div></td>
+            )}">${whoHtml}${
+              s._type ? ' &middot; ' + esc(s._type) : ''
+            }</div></td>
               <td class="col-spacer"></td>
               <td class="num">${price(s.basePrice, s.currency)}</td>
               <td class="num">${num(s.total)}</td>
