@@ -308,9 +308,9 @@
          (Monthly flow) absorbs the leftover width. */
       #svcTable { table-layout: fixed; }
       .col-name { width: 280px; }
-      .type-name { font-weight: 400; color: var(--muted); }
-      /* Category tag sits on the artist line and carries the category
-         colour, so classification stays visible without a heavy title. */
+      .type-name { font-weight: 600; }
+      /* Category tag trails the artist name. It repeats on every row of a
+         filtered view, so it stays thin and grey rather than competing. */
       .type-tag { font-weight: 400; color: var(--dim); }
       /* Titles are long and arbitrary. Clip both lines to the column so they
          cannot overrun the next cell; the full text stays on hover. */
@@ -1272,17 +1272,13 @@
             return `<tr>
               <td class="type-cell"><span class="type-name" title="${esc(
               svcTitle(s)
-            )}">${esc(
+            )}"${typeStyle}>${esc(
               svcTitle(s) || '—'
             )}</span><div class="sub-name" title="${esc(
               s.serviceID
             )}">${whoHtml}${
               s._type
-                ? ' <span class="type-tag"' +
-                  typeStyle +
-                  '>&middot; ' +
-                  esc(s._type) +
-                  '</span>'
+                ? ' <span class="type-tag">&middot; ' + esc(s._type) + '</span>'
                 : ''
             }</div></td>
               <td class="col-spacer"></td>
