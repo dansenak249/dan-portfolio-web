@@ -42,9 +42,15 @@ export const maxDuration = 60
 const NO_STORE = { 'Cache-Control': 'no-store' }
 
 // Page budget per call. Measured ~0.7s/page including the politeness gap, so 25
-// pages lands around 18s — comfortably inside the function budget even when a
-// page needs a retry.
+// pages lands around 18s on a good run.
 const MAX_PAGES_PER_CALL = 25
+
+// The budget that actually matters. A page that needs retries costs its backoff
+// too (up to ~15s), so a handful of flaky pages can spend the whole function
+// limit well before 25 pages are done — which killed the invocation outright and
+// returned Vercel's HTML error page instead of JSON. Stopping on time leaves a
+// valid cursor behind, so the client simply continues.
+const SLICE_BUDGET_MS = 30000
 
 // VGen category ids are opaque Airtable-style ids ("rechY6VVD1EyfZbHe").
 const CATEGORY_ID = /^rec[A-Za-z0-9]{10,20}$/
@@ -100,6 +106,7 @@ export async function POST(request) {
     const slice = await fetchCategorySlice(categoryID, {
       cursor: job.cursor,
       maxPages: MAX_PAGES_PER_CALL,
+      maxMs: SLICE_BUDGET_MS,
       seen,
     })
 
@@ -156,6 +163,7 @@ export async function POST(request) {
         categoryID,
         done: slice.done,
         resumed: resuming,
+        stoppedOnTime: slice.stoppedOnTime,
         pagesThisCall: slice.pages,
         elapsedMs: Date.now() - startedNow,
         ...totals,

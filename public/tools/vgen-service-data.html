@@ -1645,6 +1645,39 @@
       // browser. That is exactly why resumeRunningJobs() below exists: a reload
       // stops this loop mid-crawl while the server still holds the cursor, and
       // without a resume the next press would throw that progress away.
+      // POST that survives a non-JSON reply. A dead function returns an HTML
+      // error page; parsing it blind produces a confusing syntax error instead
+      // of the status that actually explains the failure.
+      async function postJson(url, body) {
+        const res = await fetch(url, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify(body),
+        });
+        const text = await res.text();
+        let json = null;
+        try {
+          json = JSON.parse(text);
+        } catch {
+          // not JSON: keep the raw text for the message below
+        }
+        if (!res.ok) {
+          // An HTML body means the function itself died rather than
+          // answering: quoting the markup back helps nobody, so name the
+          // condition instead.
+          const looksHtml = /^s*<(!doctype|html)/i.test(text || '');
+          const detail =
+            (json && json.error) ||
+            (looksHtml
+              ? 'the server returned an error page (the function crashed or timed out)'
+              : (text || '').slice(0, 120).replace(/s+/g, ' ').trim());
+          throw new Error('HTTP ' + res.status + (detail ? ' - ' + detail : ''));
+        }
+        if (!json) {
+          throw new Error('HTTP ' + res.status + ' returned a non-JSON body');
+        }
+        return json;
+      }
       async function runCollect(categoryID, label, force) {
         if (!categoryID || catLoading.has(categoryID)) return;
         catLoading.add(categoryID);
@@ -1654,18 +1687,12 @@
           let result = null;
           status('Fetching ' + label + '…', 'info');
           do {
-            const res = await fetch(API.collect, {
-              method: 'POST',
-              headers: { 'content-type': 'application/json' },
-              // Only an explicit force restarts from page 1; otherwise the
-              // server resumes whatever job it still holds for this category.
-              body: JSON.stringify({
-                categoryID,
-                reset: force && guard === 0 ? 1 : 0,
-              }),
+            // Only an explicit force restarts from page 1; otherwise the
+            // server resumes whatever job it still holds for this category.
+            result = await postJson(API.collect, {
+              categoryID,
+              reset: force && guard === 0 ? 1 : 0,
             });
-            result = await res.json();
-            if (!res.ok) throw new Error(result.error || 'HTTP ' + res.status);
             status(
               'Fetching ' + label + '… ' + result.stored + ' service(s), ' +
                 result.pages + ' page(s)' +
@@ -1693,13 +1720,7 @@
           let rResult = null;
           let pulledTotal = 0;
           do {
-            const res = await fetch(API.reviews, {
-              method: 'POST',
-              headers: { 'content-type': 'application/json' },
-              body: JSON.stringify({ categoryID, minReviews }),
-            });
-            rResult = await res.json();
-            if (!res.ok) throw new Error(rResult.error || 'HTTP ' + res.status);
+            rResult = await postJson(API.reviews, { categoryID, minReviews });
             pulledTotal += rResult.pulled || 0;
             status(
               'Reviews for ' + label + '… ' + pulledTotal + ' pulled, ' +

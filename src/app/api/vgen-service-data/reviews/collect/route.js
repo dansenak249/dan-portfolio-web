@@ -45,6 +45,12 @@ const FETCH_BATCH = 4 // concurrent feeds, to stay polite to Cloudflare
 const READ_BATCH = 200 // cached-review reads per MGET
 const MAX_CACHE_AGE_MS = 7 * 24 * 60 * 60 * 1000
 
+// A service with hundreds of reviews pages several times, and a Cloudflare
+// hiccup costs a retry on top, so `limit` alone cannot bound the call. Stop on
+// the clock instead: whatever was pulled is already stored, and the caller's
+// next request simply picks up the rest.
+const BATCH_BUDGET_MS = 30000
+
 async function readCachedReviews(serviceIDs) {
   const out = {}
   for (let i = 0; i < serviceIDs.length; i += READ_BATCH) {
@@ -131,8 +137,11 @@ export async function POST(request) {
     const errors = []
     let pulled = 0
 
+    let attempted = 0
     for (let i = 0; i < batch.length; i += FETCH_BATCH) {
+      if (Date.now() - startedNow > BATCH_BUDGET_MS) break
       const slice = batch.slice(i, i + FETCH_BATCH)
+      attempted += slice.length
       const settled = await Promise.allSettled(
         slice.map((row) => fetchServiceReviews(row.serviceID))
       )
@@ -161,7 +170,10 @@ export async function POST(request) {
       }
     }
 
-    const remaining = Math.max(0, stale.length - batch.length)
+    // Count only what was actually attempted: stopping on the clock leaves the
+    // tail of the batch untouched, and reporting it as handled would end the
+    // caller's loop with services still unpulled.
+    const remaining = Math.max(0, stale.length - attempted)
     return NextResponse.json(
       {
         ok: true,

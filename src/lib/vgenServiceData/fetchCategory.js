@@ -133,16 +133,30 @@ export function slimService(item, categoryID) {
  * just this slice) — it is what makes the duplicate count meaningful, so callers
  * must carry it between slices.
  *
+ * A page budget alone is not enough to bound the call: a page that needs
+ * retries costs its backoff too (up to ~15s), so a run of flaky pages can blow
+ * a serverless limit long before the page count is spent. `maxMs` is the real
+ * guard — the loop stops as soon as the elapsed time is spent, and the caller
+ * just resumes from the returned cursor.
+ *
  * @param {string} categoryID VGen's opaque searchCategoryID ("rec...")
  * @param {object} [options]
  * @param {string|null} [options.cursor] resume point; null/undefined starts over
  * @param {number} [options.maxPages] page budget for THIS call
+ * @param {number} [options.maxMs] wall-clock budget for THIS call
  * @param {Set<string>} [options.seen] serviceIDs already collected
  * @returns {Promise<{ services: object[], nextCursor: string|null, done: boolean,
- *   pages: number, fetched: number, duplicates: number, offCategory: number }>}
+ *   pages: number, fetched: number, duplicates: number, offCategory: number,
+ *   stoppedOnTime: boolean }>}
  */
 export async function fetchCategorySlice(categoryID, options = {}) {
-  const { cursor = null, maxPages = 20, seen = new Set() } = options
+  const {
+    cursor = null,
+    maxPages = 20,
+    maxMs = 30000,
+    seen = new Set(),
+  } = options
+  const startedAt = Date.now()
 
   const services = []
   let nextCursor = cursor
@@ -151,8 +165,13 @@ export async function fetchCategorySlice(categoryID, options = {}) {
   let duplicates = 0
   let offCategory = 0
   let done = false
+  let stoppedOnTime = false
 
   while (pages < maxPages) {
+    if (Date.now() - startedAt > maxMs) {
+      stoppedOnTime = true
+      break
+    }
     const data = await fetchPage(categoryID, nextCursor)
     pages++
 
@@ -197,5 +216,14 @@ export async function fetchCategorySlice(categoryID, options = {}) {
     if (pages < maxPages) await sleep(PAGE_GAP_MS)
   }
 
-  return { services, nextCursor, done, pages, fetched, duplicates, offCategory }
+  return {
+    services,
+    nextCursor,
+    done,
+    pages,
+    fetched,
+    duplicates,
+    offCategory,
+    stoppedOnTime,
+  }
 }
