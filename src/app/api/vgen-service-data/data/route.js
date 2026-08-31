@@ -31,6 +31,9 @@ import {
   setCachedReviews,
   getArtistNamesMany,
   setArtistName,
+  getCategoryMap,
+  getCategoryMeta,
+  listCategoryServices,
 } from '@/lib/vgenServiceData/store'
 import { analyzeService, aggregateByArtist } from '@/lib/vgenServiceData/analyze'
 
@@ -42,6 +45,50 @@ const NO_STORE = { 'Cache-Control': 'no-store' }
 // Fetch services in small concurrent batches to stay polite to VGen/Cloudflare
 // and under the serverless time budget.
 const FETCH_BATCH = 4
+
+// Default review floor. The census keeps EVERY service VGen lists; this decides
+// which ones are worth computing on. It reads artistTotalReviews, which is an
+// ARTIST-level total and therefore an upper bound on the service's own count —
+// so the gate can let a service through that turns out to be quieter, but it can
+// never hide one that qualifies.
+const DEFAULT_MIN_REVIEWS = 10
+
+// Cached-review reads are batched: one MGET per slice rather than one giant
+// command, which a few thousand keys would otherwise blow past.
+const READ_BATCH = 200
+
+// Ceiling on how many services one unqualified ?refresh=1 will pull reviews for.
+// A full census is far past what a single request can fetch, so the refresh
+// becomes incremental: each call takes the next uncached slice.
+const MAX_REFRESH_PER_CALL = 40
+
+/**
+ * Build the working service list from the category census.
+ * Returns [] when nothing has been crawled yet, which is the caller's signal to
+ * fall back to the legacy declared list so the dashboard is never blanked.
+ */
+async function listCensusServices() {
+  const map = await getCategoryMap()
+  const rows = []
+  for (const entry of map) {
+    const categoryID = (entry.categoryID || '').trim()
+    if (!categoryID) continue
+    const meta = await getCategoryMeta(categoryID)
+    if (!meta || !meta.chunks) continue // never crawled: nothing to read
+    rows.push(...(await listCategoryServices(categoryID)))
+  }
+  return rows
+}
+
+// Read cached reviews for many services without building one oversized command.
+async function readCachedReviews(serviceIDs) {
+  const out = {}
+  for (let i = 0; i < serviceIDs.length; i += READ_BATCH) {
+    const slice = serviceIDs.slice(i, i + READ_BATCH)
+    Object.assign(out, await getCachedReviewsMany(slice))
+  }
+  return out
+}
 
 // Live-fetch every declared service, caching each successful pull. Failures are
 // isolated per service (Cloudflare 403 etc.) and returned as errors[].
@@ -135,23 +182,54 @@ export async function GET(request) {
       )
     : null
 
+  // Review floor for what gets COMPUTED. The census still stores every service;
+  // this only decides what the dashboard works on. `minReviews=0` shows all.
+  const minParam = searchParams.get('minReviews')
+  const minReviews =
+    minParam === null || minParam === '' || !isFinite(Number(minParam))
+      ? DEFAULT_MIN_REVIEWS
+      : Math.max(0, Number(minParam))
+
   try {
-    const services = await getServices()
+    // Prefer the census produced by the category crawl. While nothing has been
+    // crawled yet, fall back to the legacy declared list so the dashboard is
+    // never blanked mid-migration.
+    const census = await listCensusServices()
+    const usingCensus = census.length > 0
+    const censusByID = {}
+    for (const row of census) censusByID[row.serviceID] = row
+
+    const services = usingCensus
+      ? census.filter((row) => (row.artistTotalReviews ?? 0) >= minReviews)
+      : await getServices()
+
     const now = Date.now()
     const fetchedAt = new Date(now).toISOString()
 
     let refreshErrors = []
+    let refreshedCount = 0
     if (wantRefresh) {
-      const toFetch = onlyIDs
+      let toFetch = onlyIDs
         ? services.filter((s) => onlyIDs.has(s.serviceID))
         : services
+      // With a census in play an unqualified refresh would mean thousands of
+      // review pulls in one request, which cannot finish. Cap it, and spend the
+      // budget on services with nothing cached yet so repeated calls make
+      // progress instead of re-pulling the same head of the list.
+      if (!onlyIDs && toFetch.length > MAX_REFRESH_PER_CALL) {
+        const already = await readCachedReviews(toFetch.map((s) => s.serviceID))
+        toFetch = toFetch
+          .filter((s) => !already[s.serviceID])
+          .slice(0, MAX_REFRESH_PER_CALL)
+      }
+      refreshedCount = toFetch.length
       refreshErrors = await refreshAll(toFetch, fetchedAt)
     }
 
     // Batch-read all cached review payloads in ONE round trip (was N sequential
     // GETs). Fresh if we just refreshed above.
     const serviceIDs = services.map((s) => s.serviceID)
-    const reviewsMap = await getCachedReviewsMany(serviceIDs)
+    const reviewsMap = await readCachedReviews(serviceIDs)
 
     const serviceMetrics = []
     const reviewsByService = {}
@@ -165,7 +243,9 @@ export async function GET(request) {
           analyzeService({
             serviceID: svc.serviceID,
             serviceType: svc.categoryID,
-            artistUserID: null,
+            // The census carries the artist even with no reviews pulled yet, so
+            // a freshly crawled service still shows who it belongs to.
+            artistUserID: svc.userID || null,
             reviews: [],
             now,
           })
@@ -190,20 +270,52 @@ export async function GET(request) {
       }
     }
 
+    // Carry over what the census knows and the review analysis cannot: price,
+    // currency and the listing title.
+    for (const sm of serviceMetrics) {
+      const row = censusByID[sm.serviceID]
+      if (!row) continue
+      sm.basePrice = row.basePrice ?? null
+      sm.currency = row.currency || ''
+      sm.serviceName = row.serviceName || ''
+    }
+
     const artists = aggregateByArtist(serviceMetrics, reviewsByService)
 
+    // Only artists the census does NOT already name need a lookup. The crawl
+    // brings username/displayName along with every listing, so on a censused
+    // dashboard this set is usually empty — which is what keeps a few thousand
+    // services from turning into a few thousand profile requests.
     const artistIDs = new Set()
-    for (const sm of serviceMetrics) if (sm.artistUserID) artistIDs.add(sm.artistUserID)
-    const { nameMap, handleMap } = await resolveArtistNames(artistIDs)
     for (const sm of serviceMetrics) {
-      sm.artistName = (sm.artistUserID && nameMap[sm.artistUserID]) || null
-      sm.artistHandle = (sm.artistUserID && handleMap[sm.artistUserID]) || null
+      const row = censusByID[sm.serviceID]
+      if (row && (row.displayName || row.username)) continue
+      if (sm.artistUserID) artistIDs.add(sm.artistUserID)
+    }
+    const { nameMap, handleMap } = await resolveArtistNames(artistIDs)
+
+    const nameFor = (userID, row) =>
+      (row && (row.displayName || row.username)) ||
+      (userID && nameMap[userID]) ||
+      null
+    const handleFor = (userID, row) =>
+      (row && row.username) || (userID && handleMap[userID]) || null
+
+    for (const sm of serviceMetrics) {
+      const row = censusByID[sm.serviceID]
+      sm.artistName = nameFor(sm.artistUserID, row)
+      sm.artistHandle = handleFor(sm.artistUserID, row)
+    }
+    // Artist rollups have no single census row; fall back to any listing by them.
+    const censusByUser = {}
+    for (const row of census) {
+      if (row.userID && !censusByUser[row.userID]) censusByUser[row.userID] = row
     }
     for (const a of artists) {
-      a.artistName = (a.artistUserID && nameMap[a.artistUserID]) || null
-      a.artistHandle = (a.artistUserID && handleMap[a.artistUserID]) || null
+      const row = a.artistUserID ? censusByUser[a.artistUserID] : null
+      a.artistName = nameFor(a.artistUserID, row)
+      a.artistHandle = handleFor(a.artistUserID, row)
     }
-
     return NextResponse.json(
       {
         refreshed: wantRefresh,
@@ -213,6 +325,12 @@ export async function GET(request) {
         refreshErrors,
         services: serviceMetrics,
         artists,
+        // Where the list came from, so the UI can say "2709 crawled, 1460 shown"
+        // instead of silently looking empty when the floor is set too high.
+        source: usingCensus ? 'census' : 'legacy',
+        minReviews,
+        censusTotal: census.length,
+        refreshedCount,
       },
       { headers: NO_STORE }
     )

@@ -566,6 +566,11 @@
             <select id="svcFilter" class="hdr-select" title="Filter which service to show">
               <option value="all">All services</option>
             </select>
+            <label class="flow-check" title="Only compute services whose artist has at least this many reviews. The census still stores every service.">
+              <span class="sub">min reviews</span>
+              <input type="number" id="minReviews" min="0" step="1" value="10" style="width:56px" />
+            </label>
+            <span class="sub" id="svcCount"></span>
             <span class="sub">flow window</span>
             <span class="seg" id="flowSeg">
               <button data-w="all" class="active">All</button>
@@ -2150,6 +2155,13 @@
           : 'never';
         populateServiceFilter();
         renderServices();
+        const countEl = $('svcCount');
+        if (countEl) {
+          countEl.textContent =
+            json.source === 'census'
+              ? svcData.length + ' of ' + json.censusTotal + ' crawled'
+              : svcData.length + ' declared';
+        }
         if (json.refreshErrors && json.refreshErrors.length) {
           status(
             json.refreshErrors.length +
@@ -2166,12 +2178,16 @@
       // are what call it now, so there is no button state to toggle here.
       async function loadData(refresh, ids) {
         try {
-          let url = API.data;
+          const params = new URLSearchParams();
+          // The floor travels with every read: it decides what the server
+          // computes, not just what the table hides.
+          const minEl = $('minReviews');
+          if (minEl && minEl.value !== '') params.set('minReviews', minEl.value);
           if (refresh) {
-            url += '?refresh=1';
+            params.set('refresh', '1');
             // Narrow the live pull to specific services when given (e.g. only the
             // service just added), so we don't re-fetch the whole watchlist.
-            if (ids && ids.length) url += '&ids=' + encodeURIComponent(ids.join(','));
+            if (ids && ids.length) params.set('ids', ids.join(','));
             status(
               ids && ids.length
                 ? 'Fetching reviews for ' + ids.length + ' new service(s)...'
@@ -2179,7 +2195,10 @@
               'info'
             );
           }
-          const res = await fetch(url, { cache: 'no-store' });
+          const qs = params.toString();
+          const res = await fetch(API.data + (qs ? '?' + qs : ''), {
+            cache: 'no-store',
+          });
           const json = await res.json();
           if (!res.ok) throw new Error(json.error || 'HTTP ' + res.status);
           applyData(json);
@@ -2192,6 +2211,7 @@
       // The global "+ Add" and "↻ Refresh" buttons are gone: services now arrive
       // from the per-category fetch button in the Category map, not one at a time.
       // openEditModal() is still reachable from a row's inline Edit button.
+      $('minReviews').addEventListener('change', () => loadData(false));
       $('editSave').addEventListener('click', saveEdit);
       $('editCancel').addEventListener('click', closeEditModal);
       $('editClose').addEventListener('click', closeEditModal);
