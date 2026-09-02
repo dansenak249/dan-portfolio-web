@@ -318,6 +318,28 @@
       /* Fixed table layout + explicit column widths; the single unsized column
          (Monthly flow) absorbs the leftover width. */
       #svcTable { table-layout: fixed; }
+      .pager {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 4px;
+        padding: 12px 0 2px;
+        flex-wrap: wrap;
+      }
+      .pager button {
+        min-width: 30px;
+        padding: 4px 8px;
+        font-size: 0.78rem;
+        border-radius: 8px;
+      }
+      .pager button.current {
+        border-color: var(--accent);
+        color: var(--accent);
+        background: #202732;
+      }
+      .pager button:disabled { opacity: 0.35; cursor: default; }
+      .pager .gap { color: var(--dim); padding: 0 2px; }
+      .pager .range { color: var(--muted); font-size: 0.75rem; margin-left: 8px; }
       .col-name { width: 280px; }
       .type-name { font-weight: 600; }
       /* Category tag trails the artist name. It repeats on every row of a
@@ -626,6 +648,7 @@
           </table>
         </div>
         <div id="svcEmpty" class="empty">No services yet. Add a category below, then press its fetch button.</div>
+        <div id="svcPager" class="pager"></div>
       </section>
 
       <!-- Category map editor (GUI for searchCategoryID -> readable name) -->
@@ -947,6 +970,11 @@
       let svcMissing = []; // serviceIDs with no cached reviews yet (from last load)
       let svcSort = { key: 'total', dir: -1 };
       let svcFilter = 'all'; // 'all' | 'TYPE::<name>' (which group to show)
+      // The table pages rather than running to the bottom: a censused category
+      // returns up to a thousand rows, and rendering them all builds a very tall
+      // DOM for a view that only ever shows a screenful.
+      const SVC_PAGE_SIZE = 10;
+      let svcPage = 1;
       let dotTimer = null; // loading-overlay dot animation
 
       // Inline row-action icons (edit / delete). Kept as SVG so they read as
@@ -1316,6 +1344,64 @@
         return (decl && (decl.serviceName || '').trim()) || '';
       }
 
+      // Numbered pager with prev/next. A thousand rows is a hundred pages, far
+      // too many to list, so it shows a window around the current page with the
+      // first and last always reachable.
+      function renderPager(total, pageCount, start, shown) {
+        const el = $('svcPager');
+        if (!el) return;
+        if (!total) {
+          el.innerHTML = '';
+          return;
+        }
+
+        const nums = [];
+        const WINDOW = 2; // pages either side of the current one
+        for (let p = 1; p <= pageCount; p++) {
+          const near = Math.abs(p - svcPage) <= WINDOW;
+          if (p === 1 || p === pageCount || near) nums.push(p);
+        }
+
+        let html =
+          '<button data-page="prev"' + (svcPage === 1 ? ' disabled' : '') +
+          ' title="Previous page">&lsaquo;</button>';
+        let prev = 0;
+        for (const p of nums) {
+          // An ellipsis standing in for a single page is worse than the page
+          // itself, so a one-page hole is filled rather than elided.
+          if (prev && p - prev === 2) {
+            html += '<button data-page="' + (p - 1) + '">' + (p - 1) + '</button>';
+          } else if (prev && p - prev > 2) {
+            html += '<span class="gap">…</span>';
+          }
+          html +=
+            '<button data-page="' + p + '"' +
+            (p === svcPage ? ' class="current"' : '') + '>' + p + '</button>';
+          prev = p;
+        }
+        html +=
+          '<button data-page="next"' + (svcPage === pageCount ? ' disabled' : '') +
+          ' title="Next page">&rsaquo;</button>';
+        html +=
+          '<span class="range">' + (start + 1) + '&ndash;' + (start + shown) +
+          ' of ' + total + '</span>';
+        el.innerHTML = html;
+
+        el.querySelectorAll('[data-page]').forEach((b) =>
+          b.addEventListener('click', () => {
+            const v = b.getAttribute('data-page');
+            if (v === 'prev') svcPage--;
+            else if (v === 'next') svcPage++;
+            else svcPage = +v;
+            renderServices();
+            // Jump back to the top of the table, otherwise page 7 opens
+            // mid-scroll wherever page 6 was left.
+            const table = $('svcTable');
+            if (table) table.scrollIntoView({ block: 'nearest' });
+          })
+        );
+      }
+
       function renderServices() {
         // Resolve every row's display type first so sort/group/render agree.
         annotateTypes();
@@ -1334,10 +1420,19 @@
         empty.textContent = svcData.length
           ? 'No service matches the current filter.'
           : 'No services yet. Add a category below, then press its fetch button.';
-        // Shared month axis + vertical scale across the VISIBLE rows so every row's
-        // flow chart is directly comparable within the shown group (see buildFlowAxis).
+        // The axis and scale are built from EVERY filtered row, not just the
+        // page on screen: scoping them to the page would rescale the bars each
+        // time you move between pages, so nothing could be compared across them.
         const { axis, monthTotals, monthMax } = buildFlowAxis(rows);
-        body.innerHTML = rows
+
+        const pageCount = Math.max(1, Math.ceil(rows.length / SVC_PAGE_SIZE));
+        if (svcPage > pageCount) svcPage = pageCount;
+        if (svcPage < 1) svcPage = 1;
+        const start = (svcPage - 1) * SVC_PAGE_SIZE;
+        const pageRows = rows.slice(start, start + SVC_PAGE_SIZE);
+        renderPager(rows.length, pageCount, start, pageRows.length);
+
+        body.innerHTML = pageRows
           .map((s) => {
             const who = s.artistName
               ? esc(s.artistName)
@@ -1469,6 +1564,7 @@
               if (s.key === key) s.dir *= -1;
               else { s.key = key; s.dir = -1; }
               setSort(s);
+              svcPage = 1; // re-sorted: page numbers no longer refer to the same rows
               render();
             });
           });
@@ -2551,6 +2647,7 @@
 
       function applyData(json) {
         svcData = json.services || [];
+        svcPage = 1; // fresh data, fresh paging
         svcMissing = Array.isArray(json.missing) ? json.missing.slice() : [];
         svcByID = {};
         for (const s of svcData) svcByID[s.serviceID] = s;
@@ -2724,6 +2821,7 @@
       // Service filter: pick which service to show; persisted so a refresh keeps it.
       $('svcFilter').addEventListener('change', (e) => {
         svcFilter = e.target.value;
+        svcPage = 1; // a different group is a different list
         saveUiConfig();
         renderServices();
       });
