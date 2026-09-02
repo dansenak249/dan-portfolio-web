@@ -1857,10 +1857,35 @@
           } while (!res.done && guard < 60);
 
           discFound = all.filter((r) => r.categoryID && !r.known);
+
+          // Fill in VGen's name for rows that predate this field, so their
+          // placeholder stops showing the generic hint. This only ever writes
+          // defaultName, never categoryName: a rename you made stays yours.
+          const vgenName = {};
+          for (const r of all) {
+            if (r.categoryID) vgenName[r.categoryID] = r.name || r.label || '';
+          }
+          let backfilled = 0;
+          for (const row of catRows) {
+            const id = (row.categoryID || '').trim();
+            const known = id ? vgenName[id] : '';
+            if (known && (row.defaultName || '').trim() !== known) {
+              row.defaultName = known;
+              backfilled++;
+            }
+          }
+          if (backfilled) {
+            buildCategoryLookup();
+            renderCatEditor();
+          }
           const via = res.source === 'bundle' ? '' : ' (via page fallback)';
 
           if (!discFound.length) {
-            status('Nothing new: all ' + all.length + ' VGen categories are already mapped' + via + '.', 'ok');
+            status(
+              'Nothing new: all ' + all.length + ' VGen categories are already mapped' + via +
+                (backfilled ? ' — filled in VGen names for ' + backfilled + ' row(s), press Save to keep them.' : '.'),
+              'ok'
+            );
             return;
           }
           $('discSummary').textContent =
@@ -1869,7 +1894,11 @@
             'Adding appends only. Your names, colours and ordering stay as they are.';
           renderDiscover();
           $('discModal').classList.remove('hidden');
-          status('Found ' + discFound.length + ' new categor' + (discFound.length === 1 ? 'y' : 'ies') + '.', 'ok');
+          status(
+            'Found ' + discFound.length + ' new categor' + (discFound.length === 1 ? 'y' : 'ies') +
+              (backfilled ? '; filled in VGen names for ' + backfilled + ' existing row(s)' : '') + '.',
+            'ok'
+          );
         } catch (e) {
           status('Discover failed: ' + e.message, 'err');
         } finally {
