@@ -303,11 +303,36 @@ export async function listCategoryServices(categoryID) {
   for (let i = 0; i < meta.chunks; i++) keys.push(catChunkKey(categoryID, i))
   const values = await ensureRedis().mget(...keys)
   const out = []
+  // Duplicates are only suppressed within a crawl slice, so a service can land
+  // in two chunks when VGen reshuffles mid-crawl. De-duplicate on the way out;
+  // first occurrence wins.
+  const seen = new Set()
   for (const value of values) {
     const rows = parseMaybe(value)
-    if (Array.isArray(rows)) out.push(...rows)
+    if (!Array.isArray(rows)) continue
+    for (const row of rows) {
+      if (!row || typeof row.serviceID !== 'string') continue
+      if (seen.has(row.serviceID)) continue
+      seen.add(row.serviceID)
+      out.push(row)
+    }
   }
   return out
+}
+
+/**
+ * Delete chunks from `fromIndex` upward. Used after a crawl trims itself down to
+ * the busiest services: the earlier, larger run left chunks the shorter one no
+ * longer covers, and meta.chunks alone would just orphan them.
+ * @param {string} categoryID
+ * @param {number} fromIndex
+ * @param {number} throughIndex last index to try, inclusive
+ */
+export async function deleteCategoryChunks(categoryID, fromIndex, throughIndex) {
+  const r = ensureRedis()
+  for (let i = fromIndex; i <= throughIndex; i++) {
+    await r.del(catChunkKey(categoryID, i))
+  }
 }
 
 /**

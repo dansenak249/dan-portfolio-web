@@ -36,6 +36,7 @@ import {
   listCategoryServices,
 } from '@/lib/vgenServiceData/store'
 import { analyzeService, aggregateByArtist } from '@/lib/vgenServiceData/analyze'
+import { serviceScore } from '@/lib/vgenServiceData/fetchCategory'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -56,6 +57,14 @@ const DEFAULT_MIN_REVIEWS = 10
 // Cached-review reads are batched: one MGET per slice rather than one giant
 // command, which a few thousand keys would otherwise blow past.
 const READ_BATCH = 200
+
+// Ceiling on how many services one response may carry. A census category can
+// hold tens of thousands of services; returning them all would mean a
+// multi-megabyte payload built in a serverless function and parsed in the
+// browser on every page load. Past this, the highest-review services are kept
+// and the response says it was truncated, so the shortfall is visible instead of
+// looking like missing data. Raise the review floor to see further down.
+const MAX_SERVICES_RETURNED = 1000
 
 // Ceiling on how many services one unqualified ?refresh=1 will pull reviews for.
 // A full census is far past what a single request can fetch, so the refresh
@@ -199,9 +208,18 @@ export async function GET(request) {
     const censusByID = {}
     for (const row of census) censusByID[row.serviceID] = row
 
-    const services = usingCensus
+    const gated = usingCensus
       ? census.filter((row) => (row.artistTotalReviews ?? 0) >= minReviews)
       : await getServices()
+
+    // Keep the busiest listings when trimming: an arbitrary slice would drop
+    // exactly the services the survey is about.
+    const truncated = gated.length > MAX_SERVICES_RETURNED
+    const services = truncated
+      ? [...gated]
+          .sort((a, b) => serviceScore(b) - serviceScore(a))
+          .slice(0, MAX_SERVICES_RETURNED)
+      : gated
 
     const now = Date.now()
     const fetchedAt = new Date(now).toISOString()
@@ -278,6 +296,8 @@ export async function GET(request) {
       sm.basePrice = row.basePrice ?? null
       sm.currency = row.currency || ''
       sm.serviceName = row.serviceName || ''
+      // Completed commissions for this service, where VGen publishes them.
+      sm.completedComms = row.serviceCompletedComms ?? null
     }
 
     const artists = aggregateByArtist(serviceMetrics, reviewsByService)
@@ -330,6 +350,8 @@ export async function GET(request) {
         source: usingCensus ? 'census' : 'legacy',
         minReviews,
         censusTotal: census.length,
+        matchedCount: gated.length,
+        truncated,
         refreshedCount,
       },
       { headers: NO_STORE }

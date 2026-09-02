@@ -22,9 +22,11 @@
 // login.
 
 import { NextResponse } from 'next/server'
-import { fetchCategorySlice } from '@/lib/vgenServiceData/fetchCategory'
+import { fetchCategorySlice, serviceScore } from '@/lib/vgenServiceData/fetchCategory'
 import {
   CHUNK_SIZE,
+  listCategoryServices,
+  deleteCategoryChunks,
   getCategoryJob,
   setCategoryJob,
   clearCategoryJob,
@@ -51,6 +53,13 @@ const MAX_PAGES_PER_CALL = 25
 // returned Vercel's HTML error page instead of JSON. Stopping on time leaves a
 // valid cursor behind, so the client simply continues.
 const SLICE_BUDGET_MS = 30000
+
+// How many services survive a finished crawl. Every page still has to be walked
+// — VGen offers no way to sort or filter server-side, so the busiest services
+// can only be found by looking at all of them — but there is no reason to KEEP
+// the long tail, which the dashboard never shows and the review pull never
+// touches. Raising this later means crawling the category again.
+const CENSUS_KEEP = 1000
 
 // VGen category ids are opaque Airtable-style ids ("rechY6VVD1EyfZbHe").
 const CATEGORY_ID = /^rec[A-Za-z0-9]{10,20}$/
@@ -95,19 +104,20 @@ export async function POST(request) {
           duplicates: 0,
           offCategory: 0,
           chunkIndex: 0,
-          seen: [],
+          // One number, not every id seen: see fetchCategorySlice.
+          lastIndex: null,
+          reshuffles: 0,
           buffer: [],
           startedAt: new Date().toISOString(),
         }
 
-    // `seen` must span the WHOLE crawl, not just this slice, or the duplicate
-    // count (our only data-loss alarm) would reset on every call.
-    const seen = new Set(job.seen)
     const slice = await fetchCategorySlice(categoryID, {
       cursor: job.cursor,
       maxPages: MAX_PAGES_PER_CALL,
       maxMs: SLICE_BUDGET_MS,
-      seen,
+      // Carrying the last searchIndex is what lets the reshuffle alarm span
+      // slices, at the cost of a single number rather than a growing set.
+      lastIndex: job.lastIndex ?? null,
     })
 
     const buffer = job.buffer.concat(slice.services)
@@ -131,17 +141,46 @@ export async function POST(request) {
       stored: job.stored + slice.services.length,
       duplicates: job.duplicates + slice.duplicates,
       offCategory: job.offCategory + slice.offCategory,
+      reshuffles: (job.reshuffles || 0) + slice.reshuffles,
     }
 
     if (slice.done) {
       if (rest.length) await setCategoryChunk(categoryID, chunkIndex++, rest)
+
+      // Trim to the busiest CENSUS_KEEP. Done here, at the end, rather than by
+      // carrying a running top-N through the crawl: that would mean rewriting a
+      // few hundred KB of job state on every slice, where this rewrites a
+      // handful of chunks exactly once.
+      const wroteChunks = chunkIndex
+      let kept = totals.stored
+      if (totals.stored > CENSUS_KEEP) {
+        const all = await listCategoryServices(categoryID)
+        const top = all
+          .sort((a, b) => serviceScore(b) - serviceScore(a))
+          .slice(0, CENSUS_KEEP)
+        chunkIndex = 0
+        for (let i = 0; i < top.length; i += CHUNK_SIZE) {
+          await setCategoryChunk(categoryID, chunkIndex++, top.slice(i, i + CHUNK_SIZE))
+        }
+        // The trimmed run uses fewer chunks than the full one; drop the rest so
+        // they do not sit there unreferenced.
+        if (wroteChunks > chunkIndex) {
+          await deleteCategoryChunks(categoryID, chunkIndex, wroteChunks - 1)
+        }
+        kept = top.length
+      }
+
       await setCategoryMeta(categoryID, {
         categoryID,
-        count: totals.stored,
+        count: kept,
+        // What the category actually holds, as opposed to what was kept.
+        seenTotal: totals.stored,
+        keep: CENSUS_KEEP,
         chunks: chunkIndex,
         pages: totals.pages,
         duplicates: totals.duplicates,
         offCategory: totals.offCategory,
+        reshuffles: totals.reshuffles,
         startedAt: job.startedAt,
         finishedAt: new Date().toISOString(),
       })
@@ -151,7 +190,7 @@ export async function POST(request) {
         ...job,
         cursor: slice.nextCursor,
         chunkIndex,
-        seen: [...seen],
+        lastIndex: slice.lastIndex,
         buffer: rest,
         ...totals,
       })

@@ -23,6 +23,7 @@
 
 import { NextResponse } from 'next/server'
 import { fetchServiceReviews } from '@/lib/vgenServiceData/fetchReviews'
+import { serviceScore } from '@/lib/vgenServiceData/fetchCategory'
 import {
   getCategoryMap,
   getCategoryMeta,
@@ -39,6 +40,15 @@ export const maxDuration = 60
 const NO_STORE = { 'Cache-Control': 'no-store' }
 
 const DEFAULT_MIN_REVIEWS = 10
+
+// Reviews are the expensive half: one request per service, and a big category
+// runs to tens of thousands. Pulling them for services the dashboard will never
+// show is pure waste, so the same shortlist is used here as in /data - gate by
+// the review floor, rank by artist review volume, keep the top N.
+//
+// Ranking uses serviceScore: the service's own completed-commission count where
+// VGen publishes it, the artist's review total otherwise. See fetchCategory.js.
+const DEFAULT_TOP_N = 1000
 const DEFAULT_LIMIT = 25 // services pulled per call
 const MAX_LIMIT = 60
 const FETCH_BATCH = 4 // concurrent feeds, to stay polite to Cloudflare
@@ -107,9 +117,16 @@ export async function POST(request) {
   const startedNow = Date.now()
   try {
     const census = await censusFor(categoryID)
-    const candidates = census.filter(
+    const gated = census.filter(
       (row) => (row.artistTotalReviews ?? 0) >= minReviews
     )
+    const topN = isFinite(Number(body.topN))
+      ? Math.max(1, Number(body.topN))
+      : DEFAULT_TOP_N
+    const candidates =
+      gated.length > topN
+        ? [...gated].sort((a, b) => serviceScore(b) - serviceScore(a)).slice(0, topN)
+        : gated
     if (!candidates.length) {
       return NextResponse.json(
         {
@@ -182,6 +199,10 @@ export async function POST(request) {
         skipped: candidates.length - stale.length,
         remaining,
         candidates: candidates.length,
+        // What the floor matched before the shortlist trimmed it, so a run that
+        // covers only part of a big category says so.
+        matched: gated.length,
+        topN,
         errors,
         elapsedMs: Date.now() - startedNow,
       },

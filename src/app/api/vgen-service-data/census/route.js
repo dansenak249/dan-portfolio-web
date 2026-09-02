@@ -69,6 +69,8 @@ export async function GET(request) {
         categoryName: entry.categoryName || '',
         crawled: !!meta,
         count: (meta && meta.count) || 0,
+        // Everything the crawl walked, before it was trimmed to the busiest.
+        seenTotal: (meta && meta.seenTotal) || (meta && meta.count) || 0,
         chunks: (meta && meta.chunks) || 0,
         pages: (meta && meta.pages) || 0,
         duplicates: (meta && meta.duplicates) || 0,

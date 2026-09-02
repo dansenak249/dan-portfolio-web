@@ -108,10 +108,21 @@
       button.primary:hover { border-color: var(--accent); }
       button.ghost { background: transparent; }
       button.tiny { padding: 4px 8px; font-size: 0.75rem; border-radius: 8px; }
-      /* Per-category fetch button. While a category is in flight the button dims,
-         stops taking clicks, and its reload glyph spins. */
+      /* Per-category fetch button. While a category is in flight its glyph
+         spins and the button stays clickable - clicking then cancels. */
       .cat-load svg { display: block; }
       .cat-load:disabled { opacity: 0.4; cursor: default; }
+      /* A running fetch stays clickable: hovering it swaps the spinner for an
+         X and turns it red, because the click cancels rather than re-runs. */
+      .cat-load .cat-x { display: none; }
+      .cat-load.is-loading:hover .cat-spin { display: none; }
+      .cat-load.is-loading:hover .cat-x { display: block; }
+      .cat-load.is-loading:hover { color: var(--bad); border-color: var(--bad); }
+      /* Emptying a category is destructive, so the trash reads as such on hover.
+         The row-remove ✕ next to it stays neutral: it drops a mapping, not data. */
+      .cat-purge:hover:not(:disabled) { color: var(--bad); }
+      .cat-purge:disabled { opacity: 0.4; cursor: default; }
+      .cat-purge svg { display: block; }
       .cat-load.is-loading svg { animation: cat-spin 0.9s linear infinite; }
       @keyframes cat-spin { to { transform: rotate(360deg); } }
       @media (prefers-reduced-motion: reduce) {
@@ -637,6 +648,7 @@
                     <th class="no-sort">Category ID</th>
                     <th class="no-sort" style="width:48px"></th>
                     <th class="no-sort" style="width:48px"></th>
+                    <th class="no-sort" style="width:48px"></th>
                   </tr>
                 </thead>
                 <tbody id="catBody"></tbody>
@@ -803,6 +815,32 @@
 
       <!-- Overwrite prompt: raised when Add/Edit targets an already-declared id.
            Shows the entry about to be overwritten. -->
+      <!-- Purge prompt: emptying a category is not undoable in place, though a
+           fetch rebuilds it. Worth a confirmation, especially for a crawl that
+           took hours. -->
+      <div id="pgModal" class="modal hidden">
+        <div class="modal-card" style="width:min(480px,100%)">
+          <div class="modal-head">
+            <h3>Clear this category&#39;s data?</h3>
+            <button id="pgClose" class="tiny ghost" title="Close">&#10005;</button>
+          </div>
+          <p class="modal-sub">
+            Deletes the crawled services and any unfinished crawl for this
+            category, freeing the space they use. The category row itself &mdash;
+            its name, colour and position &mdash; stays exactly as it is, and
+            pressing fetch rebuilds the data.
+          </p>
+          <div id="pgInfo" class="confirm-info"></div>
+          <div class="modal-foot">
+            <span class="foot-note"></span>
+            <div class="modal-actions">
+              <button id="pgCancel" class="ghost">Cancel</button>
+              <button id="pgConfirm" class="primary">Clear data</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
       <div id="owModal" class="modal hidden">
         <div class="modal-card" style="width:min(480px,100%)">
           <div class="modal-head">
@@ -878,12 +916,19 @@
         exchangeRate: '/api/vgen-service-data/exchange-rate',
         collect: '/api/vgen-service-data/categories/collect',
         discover: '/api/vgen-service-data/categories/discover',
+        purge: '/api/vgen-service-data/categories/purge',
+        census: '/api/vgen-service-data/census',
         reviews: '/api/vgen-service-data/reviews/collect',
       };
 
       // categoryIDs currently being fetched, so their row button shows a spinner
       // and stays disabled until the request settles.
       const catLoading = new Set();
+
+      // Categories asked to stop. A run is cancelled between slices, never
+      // mid-request, so whatever the server already stored stays stored and the
+      // job keeps a valid cursor to resume from.
+      const catCancel = new Set();
 
       // ---- state ----
       // Declared services now store VGen's opaque categoryID (searchCategoryID),
@@ -912,6 +957,13 @@
         '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg>';
       // Per-category "fetch now" icon. The SAME glyph doubles as the busy
       // spinner: the row adds .is-loading, which spins it via CSS.
+      // Shown in place of the spinner when you hover a running fetch, so the
+      // button reads as "stop" rather than "reload again".
+      // Empty a category's crawled data, distinct from removing the row itself.
+      const ICON_TRASH =
+        '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>';
+      const ICON_CANCEL =
+        '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>';
       const ICON_RELOAD =
         '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg>';
 
@@ -1718,6 +1770,14 @@
         }
         return json;
       }
+      // Ask a running fetch to stop. The loops below check this between
+      // slices; the in-flight request is left to finish so nothing is half-written.
+      function cancelCollect(categoryID) {
+        if (!catLoading.has(categoryID)) return;
+        catCancel.add(categoryID);
+        status('Stopping after the current batch…', 'info');
+      }
+
       async function runCollect(categoryID, label, force) {
         if (!categoryID || catLoading.has(categoryID)) return;
         catLoading.add(categoryID);
@@ -1740,12 +1800,22 @@
               'info'
             );
             guard++;
-          } while (!result.done && guard < 400);
+          } while (!result.done && guard < 400 && !catCancel.has(categoryID));
 
-          // duplicates > 0 means VGen recomputed its sort key mid-crawl, which
-          // SKIPS services as well as repeating them. Treat any duplicate as
-          // 'this run is holed, fetch it again' rather than accepting the data.
-          const holed = Number(result.duplicates) > 0;
+          if (catCancel.has(categoryID)) {
+            status(
+              'Stopped ' + label + ' at ' + result.stored + ' service(s), ' +
+                result.pages + ' page(s). Press fetch again to carry on.',
+              'ok'
+            );
+            await loadData(false);
+            return;
+          }
+
+          // A reshuffle means VGen recomputed its sort key mid-crawl, which
+          // SKIPS services as well as repeating them. Any reshuffle means the run
+          // is holed, so say so rather than presenting the data as complete.
+          const holed = Number(result.reshuffles) > 0;
 
           // Phase 2: the census carries no reviews, so the volume / repeat /
           // monthly columns stay empty until each qualifying service's feed is
@@ -1760,6 +1830,8 @@
           let rResult = null;
           let pulledTotal = 0;
           do {
+            // Same shortlist the table uses, so nothing is fetched that will
+            // never be shown.
             rResult = await postJson(API.reviews, { categoryID, minReviews });
             pulledTotal += rResult.pulled || 0;
             status(
@@ -1767,19 +1839,32 @@
                 rResult.remaining + ' to go' +
                 (rResult.skipped
                   ? ' (' + rResult.skipped + ' unchanged, skipped)'
+                  : '') +
+                (rResult.matched > rResult.candidates
+                  ? ' — top ' + rResult.candidates + ' of ' + rResult.matched + ' matching'
                   : ''),
               'info'
             );
             rGuard++;
-          } while (!rResult.done && rGuard < 600);
+          } while (!rResult.done && rGuard < 600 && !catCancel.has(categoryID));
+
+          if (catCancel.has(categoryID)) {
+            status(
+              'Stopped ' + label + ' after ' + pulledTotal + ' review pull(s). ' +
+                'Press fetch again to carry on.',
+              'ok'
+            );
+            await loadData(false);
+            return;
+          }
 
           status(
             'Fetched ' + label + ': ' + result.stored + ' service(s) in ' +
               result.pages + ' page(s); ' + pulledTotal + ' review pull(s), ' +
               (rResult.skipped || 0) + ' unchanged' +
               (holed
-                ? ' — ' + result.duplicates +
-                  ' duplicate(s): VGen reshuffled mid-crawl, run this category again.'
+                ? ' — VGen reshuffled ' + result.reshuffles +
+                  ' time(s) mid-crawl, so some services were skipped. Run this category again.'
                 : '.'),
             holed ? 'err' : 'ok'
           );
@@ -1788,6 +1873,7 @@
           status('Fetch failed for ' + label + ': ' + e.message, 'err');
         } finally {
           catLoading.delete(categoryID);
+          catCancel.delete(categoryID);
           renderCatEditor();
         }
       }
@@ -1963,6 +2049,65 @@
         status('Added ' + added + ' categor' + (added === 1 ? 'y' : 'ies') + ' — press Save to keep them.', 'ok');
       }
 
+      // ---- clear one category's crawled data -----------------------------
+      let pgTarget = null;
+
+      // Show what is about to go before it goes: a big crawl represents hours,
+      // and the count is the only cue for how much.
+      async function askPurge(index) {
+        const row = catRows[index];
+        if (!row) return;
+        const categoryID = (row.categoryID || '').trim();
+        if (!categoryID) return;
+        if (catLoading.has(categoryID)) {
+          status('That category is still fetching — cancel it first.', 'err');
+          return;
+        }
+        pgTarget = { categoryID, label: (row.categoryName || '').trim() || (row.defaultName || '').trim() || categoryID };
+
+        let detail = pgTarget.label;
+        try {
+          const res = await fetch(
+            API.census + '?categoryID=' + encodeURIComponent(categoryID),
+            { cache: 'no-store' }
+          );
+          const json = await res.json();
+          const c = json && json.categories && json.categories[0];
+          if (c) {
+            detail = pgTarget.label + ' — ' +
+              (c.crawled ? c.count + ' service(s) stored' : 'nothing crawled yet') +
+              (c.running ? ', plus an unfinished crawl at ' + c.jobStored + ' service(s)' : '');
+          }
+        } catch {
+          // Counting is a nicety; never block the action on it.
+        }
+        $('pgInfo').textContent = detail;
+        $('pgModal').classList.remove('hidden');
+      }
+
+      async function confirmPurge() {
+        if (!pgTarget) return;
+        const { categoryID, label } = pgTarget;
+        $('pgModal').classList.add('hidden');
+        try {
+          status('Clearing ' + label + '…', 'info');
+          const json = await postJson(API.purge, { categoryID });
+          const mb = (json.freedApprox || 0) / 1048576;
+          status(
+            'Cleared ' + label + ': ' + (json.removedServices || 0) + ' service(s), ' +
+              (json.removedChunks || 0) + ' chunk(s)' +
+              (json.hadJob ? ' and an unfinished crawl' : '') +
+              (mb >= 0.1 ? ' — about ' + mb.toFixed(1) + ' MB freed.' : '.'),
+            'ok'
+          );
+          await loadData(false);
+        } catch (e) {
+          status('Clear failed for ' + label + ': ' + e.message, 'err');
+        } finally {
+          pgTarget = null;
+        }
+      }
+
       // ---- category map editor (GUI, server-persisted) ----
       // ---- Photoshop-style HSV color picker (category text color) ----
       // Model: hue 0-360, saturation/value 0-1. The SV square picks s (x-axis) and
@@ -2094,7 +2239,7 @@
             const busy = catLoading.has(catId);
             const loadCls = 'tiny ghost cat-load' + (busy ? ' is-loading' : '');
             const loadTitle = busy
-              ? 'Fetching…'
+              ? 'Fetching… click to cancel'
               : catId
               ? 'Fetch this category from VGen (shift-click to restart from scratch)'
               : 'Enter a category ID first';
@@ -2111,9 +2256,14 @@
               r.categoryID
             )}" /></td>
             <td><button class="${loadCls}" data-catload="${i}"${
-              busy || !catId ? ' disabled' : ''
-            } title="${loadTitle}">${ICON_RELOAD}</button></td>
-            <td><button class="tiny ghost" data-catdel="${i}" title="Remove">✕</button></td>
+              !busy && !catId ? ' disabled' : ''
+            } title="${loadTitle}"><span class="cat-spin">${ICON_RELOAD}</span><span class="cat-x">${ICON_CANCEL}</span></button></td>
+            <td><button class="tiny ghost cat-purge" data-catpurge="${i}"${
+              catId ? '' : ' disabled'
+            } title="${
+              catId ? 'Clear this category&#39;s crawled data' : 'Enter a category ID first'
+            }">${ICON_TRASH}</button></td>
+            <td><button class="tiny ghost" data-catdel="${i}" title="Remove this row from the map">✕</button></td>
           </tr>`;
           })
           .join('');
@@ -2132,8 +2282,18 @@
           })
         );
         body.querySelectorAll('[data-catload]').forEach((b) =>
+          b.addEventListener('click', (e) => {
+            const idx = +e.currentTarget.getAttribute('data-catload');
+            const row = catRows[idx];
+            const id = row ? (row.categoryID || '').trim() : '';
+            // While a run is in flight the same button means "stop".
+            if (id && catLoading.has(id)) cancelCollect(id);
+            else collectCategory(idx, e.shiftKey);
+          })
+        );
+        body.querySelectorAll('[data-catpurge]').forEach((b) =>
           b.addEventListener('click', (e) =>
-            collectCategory(+e.currentTarget.getAttribute('data-catload'), e.shiftKey)
+            askPurge(+e.currentTarget.getAttribute('data-catpurge'))
           )
         );
         body.querySelectorAll('[data-catdel]').forEach((b) =>
@@ -2404,7 +2564,9 @@
         if (countEl) {
           countEl.textContent =
             json.source === 'census'
-              ? svcData.length + ' of ' + json.censusTotal + ' crawled'
+              ? svcData.length +
+                (json.truncated ? ' of ' + json.matchedCount + ' matching (capped)' : '') +
+                ' of ' + json.censusTotal + ' crawled'
               : svcData.length + ' declared';
         }
         if (json.refreshErrors && json.refreshErrors.length) {
@@ -2458,6 +2620,12 @@
       // openEditModal() is still reachable from a row's inline Edit button.
       $('minReviews').addEventListener('change', () => loadData(false));
       $('discoverBtn').addEventListener('click', discoverCategories);
+      $('pgConfirm').addEventListener('click', confirmPurge);
+      $('pgCancel').addEventListener('click', () => $('pgModal').classList.add('hidden'));
+      $('pgClose').addEventListener('click', () => $('pgModal').classList.add('hidden'));
+      $('pgModal').addEventListener('click', (e) => {
+        if (e.target === $('pgModal')) $('pgModal').classList.add('hidden');
+      });
       $('discConfirm').addEventListener('click', applyDiscover);
       $('discCancel').addEventListener('click', () => $('discModal').classList.add('hidden'));
       $('discClose').addEventListener('click', () => $('discModal').classList.add('hidden'));

@@ -20,9 +20,10 @@
 // to time. A crawl that spans a recompute both re-serves rows it already passed
 // AND silently skips rows that jumped above the cursor. Measured live: a clean
 // run returned 2704 services with 0 duplicates; a run that straddled a recompute
-// returned 114 duplicates and lost 136 services. So duplicates are not cosmetic —
-// they are the ONLY visible symptom of missing data, and the caller must treat
-// `duplicates > 0` as "this run is holed, crawl the category again".
+// returned 114 duplicates and lost 136 services. That loss is silent, so it has
+// to be inferred: `reshuffles` counts the times searchIndex climbed instead of
+// falling, and any value above zero means the run is holed and the category
+// should be crawled again.
 //
 // Cloudflare fronts the endpoint and 403s any request without a browser-like
 // User-Agent, so one is always sent. Transient upstream failures (502/503/504)
@@ -101,6 +102,7 @@ async function fetchPage(categoryID, cursor) {
 // per-artist profile lookup (and its vgsd:artist:* cache) unnecessary.
 export function slimService(item, categoryID) {
   const stats = item.artistReviewStats || {}
+  const life = item.lifetimeServiceStats || null
   const user = item.user || {}
   return {
     serviceID: item.serviceID,
@@ -118,9 +120,36 @@ export function slimService(item, categoryID) {
       typeof stats.totalReviews === 'number' ? stats.totalReviews : null,
     artistAvgRating:
       typeof stats.averageRating === 'number' ? stats.averageRating : null,
+    // Completed commissions for THIS service, when the artist chooses to publish
+    // them (about 15% do). It is the only per-service volume figure the listing
+    // carries, and a truer one than reviews: every commission counts, not just
+    // the ones a client bothered to review.
+    serviceCompletedComms:
+      life && typeof life.totalCompletedComms === 'number'
+        ? life.totalCompletedComms
+        : null,
     username: user.username || null,
     displayName: user.displayName || null,
   }
+}
+
+/**
+ * How busy a service is, for ranking which ones are worth pulling reviews for.
+ *
+ * Prefers the service's own completed-commission count. Only ~15% of listings
+ * publish it, so the rest fall back to the artist's review total — a decent
+ * stand-in because ~81% of services are the only one their artist offers in the
+ * category, and a poor one for the prolific minority. There is no better signal
+ * before the reviews themselves are fetched, which is the cost this ranking
+ * exists to avoid.
+ *
+ * @param {object} row a slimmed service record
+ * @returns {number}
+ */
+export function serviceScore(row) {
+  if (!row) return 0
+  if (typeof row.serviceCompletedComms === 'number') return row.serviceCompletedComms
+  return row.artistTotalReviews ?? 0
 }
 
 /**
@@ -129,9 +158,10 @@ export function slimService(item, categoryID) {
  * Bounded by `maxPages` so a single call fits a serverless time budget; the
  * caller replays `nextCursor` until `done` is true.
  *
- * `seen` is the set of serviceIDs collected SO FAR ACROSS THE WHOLE CRAWL (not
- * just this slice) — it is what makes the duplicate count meaningful, so callers
- * must carry it between slices.
+ * Reshuffles are detected WITHOUT remembering every id. The feed is strictly
+ * descending by searchIndex, so an index that jumps back UP is a recompute — one
+ * number carried between slices instead of a set that grew past a megabyte on a
+ * 30k-service category and had to be rewritten on every slice.
  *
  * A page budget alone is not enough to bound the call: a page that needs
  * retries costs its backoff too (up to ~15s), so a run of flaky pages can blow
@@ -144,18 +174,24 @@ export function slimService(item, categoryID) {
  * @param {string|null} [options.cursor] resume point; null/undefined starts over
  * @param {number} [options.maxPages] page budget for THIS call
  * @param {number} [options.maxMs] wall-clock budget for THIS call
- * @param {Set<string>} [options.seen] serviceIDs already collected
+ * @param {number|null} [options.lastIndex] searchIndex the previous slice ended on
  * @returns {Promise<{ services: object[], nextCursor: string|null, done: boolean,
  *   pages: number, fetched: number, duplicates: number, offCategory: number,
- *   stoppedOnTime: boolean }>}
+ *   reshuffles: number, lastIndex: number|null, stoppedOnTime: boolean }>}
  */
 export async function fetchCategorySlice(categoryID, options = {}) {
   const {
     cursor = null,
     maxPages = 20,
     maxMs = 30000,
-    seen = new Set(),
+    lastIndex: startIndex = null,
   } = options
+  // Bounded to this slice: enough to drop a repeat inside one run, without the
+  // unbounded growth of a whole-crawl set. Repeats ACROSS slices are dropped
+  // when the census is read back instead.
+  const seen = new Set()
+  let lastIndex = typeof startIndex === 'number' ? startIndex : null
+  let reshuffles = 0
   const startedAt = Date.now()
 
   const services = []
@@ -180,6 +216,13 @@ export async function fetchCategorySlice(categoryID, options = {}) {
 
     for (const item of items) {
       if (!item || typeof item.serviceID !== 'string') continue
+      // Strictly descending feed: an index that climbs means VGen recomputed
+      // the sort key mid-crawl, which skips rows as well as repeating them.
+      const idx = typeof item.searchIndex === 'number' ? item.searchIndex : null
+      if (idx !== null) {
+        if (lastIndex !== null && idx > lastIndex) reshuffles++
+        lastIndex = idx
+      }
       // A row from another category means the filter was not applied — count it
       // and drop it rather than quietly polluting the category's data.
       if (item.searchCategoryID && item.searchCategoryID !== categoryID) {
@@ -224,6 +267,8 @@ export async function fetchCategorySlice(categoryID, options = {}) {
     fetched,
     duplicates,
     offCategory,
+    reshuffles,
+    lastIndex,
     stoppedOnTime,
   }
 }
