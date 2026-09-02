@@ -122,6 +122,9 @@ export async function setCachedReviews(serviceID, payload, fetchedAt) {
       artistUserID: record.artistUserID,
       count: record.count,
       fetchedAt,
+      // Mirrored here so a freshness check can read the tiny meta record
+      // instead of the full review payload.
+      sourceTotalReviews: record.sourceTotalReviews,
     })
   )
 }
@@ -148,6 +151,30 @@ export async function getCachedReviewsMany(serviceIDs) {
   const out = {}
   if (!ids.length) return out
   const values = await ensureRedis().mget(...ids.map(reviewsKey))
+  ids.forEach((id, i) => {
+    const v = parseMaybe(values[i])
+    out[id] = v && typeof v === 'object' ? v : null
+  })
+  return out
+}
+
+/**
+ * Batch-read the lightweight freshness records.
+ *
+ * Deciding whether a service needs re-pulling only needs its last-fetched time
+ * and the review total it was fetched against — a couple of hundred bytes. The
+ * full cached payload carries every review, so reading those in bulk sends
+ * megabytes per batch and trips Upstash's 10 MB request ceiling on services with
+ * long review histories. This reads the meta records instead.
+ *
+ * @param {string[]} serviceIDs
+ * @returns {Promise<Object<string, null | object>>}
+ */
+export async function getMetaMany(serviceIDs) {
+  const ids = Array.isArray(serviceIDs) ? serviceIDs : []
+  const out = {}
+  if (!ids.length) return out
+  const values = await ensureRedis().mget(...ids.map(metaKey))
   ids.forEach((id, i) => {
     const v = parseMaybe(values[i])
     out[id] = v && typeof v === 'object' ? v : null

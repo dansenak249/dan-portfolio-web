@@ -54,9 +54,11 @@ const FETCH_BATCH = 4
 // never hide one that qualifies.
 const DEFAULT_MIN_REVIEWS = 10
 
-// Cached-review reads are batched: one MGET per slice rather than one giant
-// command, which a few thousand keys would otherwise blow past.
-const READ_BATCH = 200
+// Cached-review reads are batched. The analysis genuinely needs every review,
+// so these payloads cannot be avoided here - but a busy service carries hundreds
+// of them, and 200 at a time pushed a single MGET past Upstash's 10 MB request
+// ceiling. Smaller batches mean more round trips and no oversized request.
+const READ_BATCH = 25
 
 // Ceiling on how many services one response may carry. A census category can
 // hold tens of thousands of services; returning them all would mean a

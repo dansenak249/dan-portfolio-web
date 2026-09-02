@@ -28,7 +28,7 @@ import {
   getCategoryMap,
   getCategoryMeta,
   listCategoryServices,
-  getCachedReviewsMany,
+  getMetaMany,
   setCachedReviews,
 } from '@/lib/vgenServiceData/store'
 
@@ -52,7 +52,9 @@ const DEFAULT_TOP_N = 1000
 const DEFAULT_LIMIT = 25 // services pulled per call
 const MAX_LIMIT = 60
 const FETCH_BATCH = 4 // concurrent feeds, to stay polite to Cloudflare
-const READ_BATCH = 200 // cached-review reads per MGET
+// Meta records are a couple of hundred bytes each, so a large batch is still a
+// small request - unlike the full review payloads this used to read.
+const READ_BATCH = 200
 const MAX_CACHE_AGE_MS = 7 * 24 * 60 * 60 * 1000
 
 // A service with hundreds of reviews pages several times, and a Cloudflare
@@ -61,13 +63,10 @@ const MAX_CACHE_AGE_MS = 7 * 24 * 60 * 60 * 1000
 // next request simply picks up the rest.
 const BATCH_BUDGET_MS = 30000
 
-async function readCachedReviews(serviceIDs) {
+async function readCachedMeta(serviceIDs) {
   const out = {}
   for (let i = 0; i < serviceIDs.length; i += READ_BATCH) {
-    Object.assign(
-      out,
-      await getCachedReviewsMany(serviceIDs.slice(i, i + READ_BATCH))
-    )
+    Object.assign(out, await getMetaMany(serviceIDs.slice(i, i + READ_BATCH)))
   }
   return out
 }
@@ -143,7 +142,7 @@ export async function POST(request) {
       )
     }
 
-    const cached = await readCachedReviews(candidates.map((r) => r.serviceID))
+    const cached = await readCachedMeta(candidates.map((r) => r.serviceID))
     const now = Date.now()
     const stale = force
       ? candidates
