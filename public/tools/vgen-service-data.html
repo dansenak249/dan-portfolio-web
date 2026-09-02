@@ -979,6 +979,7 @@
             categoryID: (r.categoryID || '').trim(),
             categoryName: (r.categoryName || '').trim(),
             color: (r.color || '').trim(),
+            defaultName: (r.defaultName || '').trim(),
           }))
         );
       }
@@ -2205,6 +2206,8 @@
             categoryID: (r.categoryID || '').trim(),
             categoryName: (r.categoryName || '').trim(),
             color: (r.color || '').trim(),
+            // VGen's own name, kept so an empty rename can fall back to it.
+            defaultName: (r.defaultName || '').trim(),
           }))
           .filter((r) => r.categoryID);
         try {
