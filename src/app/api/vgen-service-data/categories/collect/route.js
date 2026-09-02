@@ -122,6 +122,9 @@ export async function POST(request) {
 
     const buffer = job.buffer.concat(slice.services)
     let chunkIndex = job.chunkIndex
+    // Declared out here because the response reads it, and the response sits
+    // outside the "run finished" branch that sets it.
+    let trimSkipped = null
 
     // Flush every FULL chunk now; the remainder rides along in the job until the
     // next slice fills it (or the crawl finishes and writes a short final chunk).
@@ -153,7 +156,6 @@ export async function POST(request) {
       // handful of chunks exactly once.
       const wroteChunks = chunkIndex
       let kept = totals.stored
-      let trimSkipped = null
       if (totals.stored > CENSUS_KEEP) {
         // Read by the count just written, NOT via meta: meta is only set below,
         // and a fresh crawl purged the previous one, so meta-based reads come
