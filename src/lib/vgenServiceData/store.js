@@ -321,6 +321,38 @@ export async function listCategoryServices(categoryID) {
 }
 
 /**
+ * Read chunks 0..count-1 without consulting meta.
+ *
+ * listCategoryServices() derives the chunk count from meta, which is only
+ * written once a crawl finishes — so a crawl that wants to read back what it
+ * just stored cannot use it. Doing so returned an empty list and, in the trim
+ * step, took that to mean "nothing to keep".
+ *
+ * @param {string} categoryID
+ * @param {number} count number of chunks written
+ * @returns {Promise<object[]>}
+ */
+export async function readCategoryChunks(categoryID, count) {
+  if (!count) return []
+  const keys = []
+  for (let i = 0; i < count; i++) keys.push(catChunkKey(categoryID, i))
+  const values = await ensureRedis().mget(...keys)
+  const out = []
+  const seen = new Set()
+  for (const value of values) {
+    const rows = parseMaybe(value)
+    if (!Array.isArray(rows)) continue
+    for (const row of rows) {
+      if (!row || typeof row.serviceID !== 'string') continue
+      if (seen.has(row.serviceID)) continue
+      seen.add(row.serviceID)
+      out.push(row)
+    }
+  }
+  return out
+}
+
+/**
  * Delete chunks from `fromIndex` upward. Used after a crawl trims itself down to
  * the busiest services: the earlier, larger run left chunks the shorter one no
  * longer covers, and meta.chunks alone would just orphan them.

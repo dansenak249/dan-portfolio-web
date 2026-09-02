@@ -25,7 +25,7 @@ import { NextResponse } from 'next/server'
 import { fetchCategorySlice, serviceScore } from '@/lib/vgenServiceData/fetchCategory'
 import {
   CHUNK_SIZE,
-  listCategoryServices,
+  readCategoryChunks,
   deleteCategoryChunks,
   getCategoryJob,
   setCategoryJob,
@@ -153,21 +153,33 @@ export async function POST(request) {
       // handful of chunks exactly once.
       const wroteChunks = chunkIndex
       let kept = totals.stored
+      let trimSkipped = null
       if (totals.stored > CENSUS_KEEP) {
-        const all = await listCategoryServices(categoryID)
+        // Read by the count just written, NOT via meta: meta is only set below,
+        // and a fresh crawl purged the previous one, so meta-based reads come
+        // back empty here.
+        const all = await readCategoryChunks(categoryID, wroteChunks)
         const top = all
           .sort((a, b) => serviceScore(b) - serviceScore(a))
           .slice(0, CENSUS_KEEP)
-        chunkIndex = 0
-        for (let i = 0; i < top.length; i += CHUNK_SIZE) {
-          await setCategoryChunk(categoryID, chunkIndex++, top.slice(i, i + CHUNK_SIZE))
+
+        // Never replace real data with nothing. If the read came back short of
+        // what was stored, something is wrong upstream and trimming would
+        // destroy a finished crawl - keep every chunk and say so instead.
+        if (!top.length || all.length < totals.stored) {
+          trimSkipped = 'read back ' + all.length + ' of ' + totals.stored + ' stored'
+        } else {
+          chunkIndex = 0
+          for (let i = 0; i < top.length; i += CHUNK_SIZE) {
+            await setCategoryChunk(categoryID, chunkIndex++, top.slice(i, i + CHUNK_SIZE))
+          }
+          // The trimmed run uses fewer chunks than the full one; drop the rest
+          // so they do not sit there unreferenced.
+          if (wroteChunks > chunkIndex) {
+            await deleteCategoryChunks(categoryID, chunkIndex, wroteChunks - 1)
+          }
+          kept = top.length
         }
-        // The trimmed run uses fewer chunks than the full one; drop the rest so
-        // they do not sit there unreferenced.
-        if (wroteChunks > chunkIndex) {
-          await deleteCategoryChunks(categoryID, chunkIndex, wroteChunks - 1)
-        }
-        kept = top.length
       }
 
       await setCategoryMeta(categoryID, {
@@ -176,6 +188,7 @@ export async function POST(request) {
         // What the category actually holds, as opposed to what was kept.
         seenTotal: totals.stored,
         keep: CENSUS_KEEP,
+        trimSkipped,
         chunks: chunkIndex,
         pages: totals.pages,
         duplicates: totals.duplicates,
@@ -202,6 +215,7 @@ export async function POST(request) {
         categoryID,
         done: slice.done,
         resumed: resuming,
+        trimSkipped: slice.done ? trimSkipped : undefined,
         stoppedOnTime: slice.stoppedOnTime,
         pagesThisCall: slice.pages,
         elapsedMs: Date.now() - startedNow,
