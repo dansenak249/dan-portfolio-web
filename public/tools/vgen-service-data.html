@@ -318,6 +318,13 @@
       /* Fixed table layout + explicit column widths; the single unsized column
          (Monthly flow) absorbs the leftover width. */
       #svcTable { table-layout: fixed; }
+      /* Per-category "kept / walked" in the map. Mono so the digits line up
+         down the column, and dimmed once it is only a denominator. */
+      .cat-count { font-family: var(--mono); font-size: 0.72rem; color: var(--muted); white-space: nowrap; }
+      .cat-count .of { color: var(--dim); }
+      .cat-count.none { color: var(--dim); }
+      /* The id is the primary key, so it is shown rather than edited. */
+      .cat-id { font-family: var(--mono); font-size: 0.72rem; color: var(--muted); }
       .pager {
         display: flex;
         align-items: center;
@@ -616,7 +623,6 @@
               <span class="sub">min reviews</span>
               <input type="number" id="minReviews" min="0" step="1" value="10" style="width:56px" />
             </label>
-            <span class="sub" id="svcCount"></span>
             <span class="sub">flow window</span>
             <span class="seg" id="flowSeg">
               <button data-w="all" class="active">All</button>
@@ -668,7 +674,8 @@
                     <th class="no-sort" style="width:32px">#</th>
                     <th class="no-sort" style="width:56px">Color</th>
                     <th class="no-sort">Category Name</th>
-                    <th class="no-sort">Category ID</th>
+                    <th class="no-sort" style="width:170px">Category ID</th>
+                    <th class="no-sort" style="width:118px">Services</th>
                     <th class="no-sort" style="width:48px"></th>
                     <th class="no-sort" style="width:48px"></th>
                     <th class="no-sort" style="width:48px"></th>
@@ -1971,6 +1978,7 @@
           catLoading.delete(categoryID);
           catCancel.delete(categoryID);
           renderCatEditor();
+          loadCensusStats(); // the crawl just changed what this category holds
         }
       }
 
@@ -2197,6 +2205,7 @@
             'ok'
           );
           await loadData(false);
+          loadCensusStats();
         } catch (e) {
           status('Clear failed for ' + label + ': ' + e.message, 'err');
         } finally {
@@ -2318,6 +2327,42 @@
         }
       }
 
+      // kept / walked per category, read from the census endpoint. Kept out of
+      // catRows on purpose: it is measured data about a crawl, not part of the
+      // map the user edits and saves.
+      let censusStats = {};
+
+      async function loadCensusStats() {
+        try {
+          const res = await fetch(API.census, { cache: 'no-store' });
+          const json = await res.json();
+          if (!res.ok || !json.categories) return;
+          const next = {};
+          for (const c of json.categories) next[c.categoryID] = c;
+          censusStats = next;
+          renderCatEditor();
+        } catch {
+          // Purely informational; a failure here must not disturb the editor.
+        }
+      }
+
+      // "1.000 / 2.721" once crawled, the running total while a crawl is in
+      // flight, and a dash when the category has never been fetched.
+      function censusCell(categoryID) {
+        const c = categoryID ? censusStats[categoryID] : null;
+        if (!c) return '<span class="cat-count none">&mdash;</span>';
+        if (c.running) {
+          return '<span class="cat-count" title="Crawl in progress">' +
+            (c.jobStored || 0).toLocaleString() + '<span class="of"> so far</span></span>';
+        }
+        if (!c.crawled) return '<span class="cat-count none">&mdash;</span>';
+        const kept = (c.count || 0).toLocaleString();
+        const seen = (c.seenTotal || c.count || 0).toLocaleString();
+        return '<span class="cat-count" title="Keeping the busiest ' + kept +
+          ' of ' + seen + ' services walked">' + kept +
+          '<span class="of"> / ' + seen + '</span></span>';
+      }
+
       function renderCatEditor() {
         $('catCount').textContent =
           catRows.length + ' categor' + (catRows.length === 1 ? 'y' : 'ies');
@@ -2348,9 +2393,12 @@
             <td><input data-ci="${i}" data-cf="categoryName" placeholder="${esc((r.defaultName || '').trim() || 'e.g. 2D Animation')}" value="${esc(
               r.categoryName
             )}" /></td>
-            <td><input class="id-input" data-ci="${i}" data-cf="categoryID" placeholder="rechY6..." value="${esc(
-              r.categoryID
-            )}" /></td>
+            <td>${
+              catId
+                ? '<span class="cat-id" title="' + esc(catId) + '">' + esc(catId) + '</span>'
+                : '<input class="id-input" data-ci="' + i + '" data-cf="categoryID" placeholder="rechY6..." value="" />'
+            }</td>
+            <td>${censusCell(catId)}</td>
             <td><button class="${loadCls}" data-catload="${i}"${
               !busy && !catId ? ' disabled' : ''
             } title="${loadTitle}"><span class="cat-spin">${ICON_RELOAD}</span><span class="cat-x">${ICON_CANCEL}</span></button></td>
@@ -2657,21 +2705,6 @@
           : 'never';
         populateServiceFilter();
         renderServices();
-        const countEl = $('svcCount');
-        if (countEl) {
-          // "1000 / 2709" and "1000 / 200000" are the same row count but very
-          // different samples, so the denominator is what the crawl actually saw.
-          const seen = json.censusSeenTotal || json.censusTotal || 0;
-          countEl.textContent =
-            json.source === 'census'
-              ? svcData.length + ' / ' + seen.toLocaleString()
-              : svcData.length + ' declared';
-          countEl.title =
-            json.source === 'census'
-              ? 'Showing ' + svcData.length + ' of ' + seen.toLocaleString() +
-                ' services walked by the crawls. Only the busiest are kept.'
-              : '';
-        }
         if (json.refreshErrors && json.refreshErrors.length) {
           status(
             json.refreshErrors.length +
@@ -2908,6 +2941,7 @@
           await loadCategories(); // build the map first so decl dropdowns populate
           await loadServices();
           await loadData(false); // page-load read = cached, no VGen hit
+          loadCensusStats(); // per-category counts for the map
           resumeRunningJobs(); // continue any crawl a reload interrupted
         } catch (e) {
           status('Init failed: ' + e.message, 'err');
