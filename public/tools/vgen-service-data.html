@@ -2659,12 +2659,18 @@
         renderServices();
         const countEl = $('svcCount');
         if (countEl) {
+          // "1000 / 2709" and "1000 / 200000" are the same row count but very
+          // different samples, so the denominator is what the crawl actually saw.
+          const seen = json.censusSeenTotal || json.censusTotal || 0;
           countEl.textContent =
             json.source === 'census'
-              ? svcData.length +
-                (json.truncated ? ' of ' + json.matchedCount + ' matching (capped)' : '') +
-                ' of ' + json.censusTotal + ' crawled'
+              ? svcData.length + ' / ' + seen.toLocaleString()
               : svcData.length + ' declared';
+          countEl.title =
+            json.source === 'census'
+              ? 'Showing ' + svcData.length + ' of ' + seen.toLocaleString() +
+                ' services walked by the crawls. Only the busiest are kept.'
+              : '';
         }
         if (json.refreshErrors && json.refreshErrors.length) {
           status(

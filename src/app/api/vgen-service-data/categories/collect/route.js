@@ -25,7 +25,7 @@ import { NextResponse } from 'next/server'
 import { fetchCategorySlice, serviceScore } from '@/lib/vgenServiceData/fetchCategory'
 import {
   CHUNK_SIZE,
-  readCategoryChunks,
+  iterateCategoryChunks,
   deleteCategoryChunks,
   getCategoryJob,
   setCategoryJob,
@@ -157,19 +157,47 @@ export async function POST(request) {
       const wroteChunks = chunkIndex
       let kept = totals.stored
       if (totals.stored > CENSUS_KEEP) {
+        // Streamed, not loaded whole: a category can run to hundreds of
+        // thousands of services, and reading every chunk into one array would
+        // put tens of megabytes inside a single invocation. Only the running
+        // best CENSUS_KEEP are held.
+        //
         // Read by the count just written, NOT via meta: meta is only set below,
         // and a fresh crawl purged the previous one, so meta-based reads come
         // back empty here.
-        const all = await readCategoryChunks(categoryID, wroteChunks)
-        const top = all
-          .sort((a, b) => serviceScore(b) - serviceScore(a))
-          .slice(0, CENSUS_KEEP)
+        let top = []
+        let readBack = 0
+        const seenIDs = new Set()
+        for await (const rows of iterateCategoryChunks(categoryID, wroteChunks)) {
+          for (const row of rows) {
+            if (seenIDs.has(row.serviceID)) continue
+            seenIDs.add(row.serviceID)
+            readBack++
+            top.push(row)
+          }
+          // Re-trim once the working set has grown enough to be worth sorting,
+          // so this stays O(CENSUS_KEEP) in memory rather than O(category).
+          if (top.length > CENSUS_KEEP * 3) {
+            top.sort((a, b) => serviceScore(b) - serviceScore(a))
+            top = top.slice(0, CENSUS_KEEP)
+          }
+        }
+        top.sort((a, b) => serviceScore(b) - serviceScore(a))
+        top = top.slice(0, CENSUS_KEEP)
 
-        // Never replace real data with nothing. If the read came back short of
-        // what was stored, something is wrong upstream and trimming would
-        // destroy a finished crawl - keep every chunk and say so instead.
-        if (!top.length || all.length < totals.stored) {
-          trimSkipped = 'read back ' + all.length + ' of ' + totals.stored + ' stored'
+        // Never replace real data with nothing: the first version of this step
+        // read back an empty list and took that as "nothing worth keeping",
+        // deleting a finished crawl.
+        //
+        // The test is deliberately NOT readBack === stored. `stored` counts what
+        // each slice added, and duplicates are only suppressed within a slice —
+        // so a crawl that spanned a VGen reshuffle legitimately reads back fewer
+        // unique services than it counted. Requiring an exact match would refuse
+        // to trim every long crawl. What actually matters is having enough to
+        // fill the quota; short of that, keep everything and say why.
+        if (readBack < CENSUS_KEEP) {
+          trimSkipped =
+            'read back ' + readBack + ', fewer than the ' + CENSUS_KEEP + ' to keep'
         } else {
           chunkIndex = 0
           for (let i = 0; i < top.length; i += CHUNK_SIZE) {

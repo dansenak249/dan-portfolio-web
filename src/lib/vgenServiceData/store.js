@@ -333,23 +333,50 @@ export async function listCategoryServices(categoryID) {
  * @returns {Promise<object[]>}
  */
 export async function readCategoryChunks(categoryID, count) {
-  if (!count) return []
-  const keys = []
-  for (let i = 0; i < count; i++) keys.push(catChunkKey(categoryID, i))
-  const values = await ensureRedis().mget(...keys)
   const out = []
   const seen = new Set()
-  for (const value of values) {
-    const rows = parseMaybe(value)
-    if (!Array.isArray(rows)) continue
+  for await (const rows of iterateCategoryChunks(categoryID, count)) {
     for (const row of rows) {
-      if (!row || typeof row.serviceID !== 'string') continue
       if (seen.has(row.serviceID)) continue
       seen.add(row.serviceID)
       out.push(row)
     }
   }
   return out
+}
+
+// How many chunks to pull per round trip while streaming. Twenty chunks is a few
+// megabytes: enough to be efficient, small enough that a category in the
+// hundreds of thousands never lands in memory all at once.
+const CHUNK_READ_BATCH = 20
+
+/**
+ * Yield stored services a batch of chunks at a time.
+ *
+ * readCategoryChunks() loads everything at once, which is fine for a few
+ * thousand services and impossible for a few hundred thousand — a single MGET of
+ * every chunk would be tens of megabytes inside one serverless invocation. The
+ * trim step streams instead, so its cost is bounded by the batch rather than by
+ * how large the category turned out to be.
+ *
+ * @param {string} categoryID
+ * @param {number} count number of chunks written
+ */
+export async function* iterateCategoryChunks(categoryID, count) {
+  if (!count) return
+  const r = ensureRedis()
+  for (let start = 0; start < count; start += CHUNK_READ_BATCH) {
+    const keys = []
+    for (let i = start; i < Math.min(start + CHUNK_READ_BATCH, count); i++) {
+      keys.push(catChunkKey(categoryID, i))
+    }
+    const values = await r.mget(...keys)
+    for (const value of values) {
+      const rows = parseMaybe(value)
+      if (!Array.isArray(rows)) continue
+      yield rows.filter((row) => row && typeof row.serviceID === 'string')
+    }
+  }
 }
 
 /**

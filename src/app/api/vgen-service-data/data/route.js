@@ -79,14 +79,20 @@ const MAX_REFRESH_PER_CALL = 40
 async function listCensusServices() {
   const map = await getCategoryMap()
   const rows = []
+  // What the crawls actually walked, before each was trimmed to its busiest.
+  // Without it "1000 services" reads the same whether the category holds 2,700
+  // or 200,000 - and those mean very different things about how representative
+  // the sample is.
+  let seenTotal = 0
   for (const entry of map) {
     const categoryID = (entry.categoryID || '').trim()
     if (!categoryID) continue
     const meta = await getCategoryMeta(categoryID)
     if (!meta || !meta.chunks) continue // never crawled: nothing to read
+    seenTotal += meta.seenTotal || meta.count || 0
     rows.push(...(await listCategoryServices(categoryID)))
   }
-  return rows
+  return { rows, seenTotal }
 }
 
 // Read cached reviews for many services without building one oversized command.
@@ -203,7 +209,7 @@ export async function GET(request) {
     // Prefer the census produced by the category crawl. While nothing has been
     // crawled yet, fall back to the legacy declared list so the dashboard is
     // never blanked mid-migration.
-    const census = await listCensusServices()
+    const { rows: census, seenTotal: censusSeenTotal } = await listCensusServices()
     const usingCensus = census.length > 0
     const censusByID = {}
     for (const row of census) censusByID[row.serviceID] = row
@@ -350,6 +356,8 @@ export async function GET(request) {
         source: usingCensus ? 'census' : 'legacy',
         minReviews,
         censusTotal: census.length,
+        // Everything the crawls walked, as opposed to what was kept.
+        censusSeenTotal,
         matchedCount: gated.length,
         truncated,
         refreshedCount,
