@@ -51,10 +51,16 @@ function sanitizeCategories(input) {
     const categoryName =
       typeof raw.categoryName === 'string' ? raw.categoryName.trim() : ''
     const color = sanitizeColor(raw.color)
+    // VGen's own name for the category, captured at discovery. It is never
+    // shown in place of `categoryName`; it is the PLACEHOLDER behind an empty
+    // one, so clearing a rename falls back to the original instead of leaving a
+    // blank row.
+    const defaultName =
+      typeof raw.defaultName === 'string' ? raw.defaultName.trim() : ''
     if (!categoryID) continue
     if (seen.has(categoryID)) continue
     seen.add(categoryID)
-    out.push({ categoryID, categoryName, color })
+    out.push({ categoryID, categoryName, color, defaultName })
     if (out.length >= MAX_CATEGORIES) break
   }
   return out
