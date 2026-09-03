@@ -1,5 +1,13 @@
-name: VGen Trending Collector
+name: VGen Collectors
 
+# Two independent jobs share this file because they share a trigger and a
+# secret, not because they are related:
+#   collect - the trending snapshot (unchanged; see the note below)
+#   rotate  - the service-data category refresh
+# They run in parallel and in separate concurrency lanes, so neither can delay
+# the other.
+#
+# ---- collect ----------------------------------------------------------------
 # BACKUP trigger only. The PRIMARY trigger is an external pinger (cron-job.org)
 # that POSTs to /api/vgen-trending/collect directly, because GitHub's scheduled
 # cron proved unreliable for this repo (it dropped ~94% of slots on 2026-06-15,
@@ -17,16 +25,22 @@ on:
     # any duplicate snapshot.
     - cron: "37 * * * *"
   # Manual "Run workflow" button in the Actions tab, for testing.
-  workflow_dispatch: {}
-
-# If a previous run is still going, don't pile up a second one.
-concurrency:
-  group: vgen-collect
-  cancel-in-progress: false
+  workflow_dispatch:
+    inputs:
+      rotate_ticks:
+        description: "How many rotation ticks to run (service-data refresh)"
+        required: false
+        default: "8"
 
 jobs:
   collect:
     runs-on: ubuntu-latest
+    # Concurrency is per-job, not workflow-wide: a rotation run can last minutes,
+    # and a shared lane would queue the next trending snapshot behind it.
+    # If a previous run is still going, don't pile up a second one.
+    concurrency:
+      group: vgen-collect
+      cancel-in-progress: false
     steps:
       - name: Trigger collection
         env:
@@ -65,3 +79,84 @@ jobs:
           done
           echo "All ${max} attempts failed."
           exit 1
+
+  # ---- rotate ----------------------------------------------------------------
+  # Walks the categories ticked "Auto" in the dashboard's category map, one
+  # bounded slice per POST: crawl the listing, then pull reviews, then move on.
+  #
+  # Nothing here tracks progress. /rotate keeps its own position in Redis and
+  # advances it only when a phase reports done, so a dropped schedule slot, an
+  # overlapping run or a cancelled job costs at most one repeated slice. That is
+  # what makes GitHub's unreliable cron acceptable HERE, unlike for the trending
+  # snapshot above: a missed tick makes the refresh slower, never wrong.
+  rotate:
+    runs-on: ubuntu-latest
+    concurrency:
+      group: vgen-rotate
+      cancel-in-progress: false
+    steps:
+      - name: Tick the service-data rotation
+        env:
+          SITE_URL: ${{ secrets.VGEN_SITE_URL }}
+          COLLECT_SECRET: ${{ secrets.VGEN_COLLECT_SECRET }}
+          MAX_TICKS: ${{ github.event.inputs.rotate_ticks || '8' }}
+          # Wall-clock stop, so a run of slow ticks ends on its own terms rather
+          # than at the runner's 6-hour limit.
+          BUDGET_SECONDS: "540"
+        run: |
+          set -uo pipefail
+          BASE="${SITE_URL%/}"
+          URL="${BASE}/api/vgen-service-data/rotate"
+          started=$(date +%s)
+          ok=0
+          failed=0
+
+          for i in $(seq 1 "${MAX_TICKS}"); do
+            elapsed=$(( $(date +%s) - started ))
+            if [ "${elapsed}" -ge "${BUDGET_SECONDS}" ]; then
+              echo "Budget spent after $((i - 1)) tick(s); stopping."
+              break
+            fi
+            echo "--- tick ${i}/${MAX_TICKS} (t+${elapsed}s)"
+
+            body=$(curl --silent --show-error --max-time 90 \
+              -X POST "${URL}" \
+              -H "Authorization: Bearer ${COLLECT_SECRET}" \
+              -H "Content-Type: application/json" \
+              -d '{}') || body=""
+
+            if [ -z "${body}" ]; then
+              echo "  no response from ${URL}"
+              failed=$((failed + 1)); sleep 20; continue
+            fi
+            # A dead function answers with an HTML error page, not JSON.
+            if ! echo "${body}" | jq -e . >/dev/null 2>&1; then
+              echo "  non-JSON response: $(echo "${body}" | head -c 200)"
+              failed=$((failed + 1)); sleep 20; continue
+            fi
+            # Nothing is ticked for auto refresh. That is a valid state, not a
+            # failure, and no amount of retrying will change it.
+            if [ "$(echo "${body}" | jq -r '.idle // false')" = "true" ]; then
+              echo "  no categories are ticked for Auto in the category map; nothing to do"
+              exit 0
+            fi
+            if [ "$(echo "${body}" | jq -r '.ok // false')" != "true" ]; then
+              echo "  tick failed: $(echo "${body}" | jq -r '.error // .')"
+              failed=$((failed + 1)); sleep 20; continue
+            fi
+
+            ok=$((ok + 1))
+            echo "  ran $(echo "${body}" | jq -r '.ranPhase') for $(echo "${body}" | jq -r '.ranCategory')"
+            echo "  next: $(echo "${body}" | jq -r '.next.label') / $(echo "${body}" | jq -r '.next.phase') (cycles $(echo "${body}" | jq -r '.cycles'))"
+            sleep 3
+          done
+
+          echo ""
+          echo "${ok} tick(s) succeeded, ${failed} failed."
+          # The position is left untouched on a failed tick, so the next one
+          # simply retries the same slice. A few bad ticks are not worth a red
+          # run; a run where nothing at all got through is.
+          if [ "${ok}" -eq 0 ]; then
+            echo "No tick succeeded."
+            exit 1
+          fi

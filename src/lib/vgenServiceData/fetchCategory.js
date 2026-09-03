@@ -130,6 +130,17 @@ export function slimService(item, categoryID) {
         : null,
     username: user.username || null,
     displayName: user.displayName || null,
+    // The artist's own search keywords - the only SEO surface a listing has
+    // besides its title. Measured across 1260 live listings: VGen caps this at
+    // FIVE tags, 65% of listings use all five, 3% carry none. Free-text strings
+    // of ~11 bytes, so the array costs ~59 B per service: about +14% on this
+    // record, and ~0.1% of one service's review history.
+    //
+    // Stored verbatim. Normalising the case or the wording here would destroy
+    // the exact thing an SEO study is trying to look at.
+    tags: Array.isArray(item.tags)
+      ? item.tags.filter((t) => typeof t === 'string' && t.trim())
+      : [],
   }
 }
 

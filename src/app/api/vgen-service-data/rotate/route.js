@@ -125,14 +125,26 @@ export async function POST(request) {
 
     const prev = await getRotation()
     // Resolve the position by ID, not by index: the map can be reordered or a
-    // category untickedticked between calls, and an index would then point at
+    // category unticked between calls, and an index would then point at
     // something else entirely.
     let index = prev ? list.findIndex((c) => c.categoryID === prev.categoryID) : -1
     let phase = prev && index !== -1 ? prev.phase : 'census'
+    // The category we were on can also be GONE - unticked or deleted while a
+    // tick was not running. Resuming from the top would then re-crawl everything
+    // ahead of it, so instead pick up after whichever category last FINISHED,
+    // which is the place in the order that deletion cannot move.
+    if (index === -1 && prev && prev.lastDoneCategoryID) {
+      const after = list.findIndex((c) => c.categoryID === prev.lastDoneCategoryID)
+      if (after !== -1) index = (after + 1) % list.length
+    }
     if (index === -1) index = 0
     let cycles = (prev && prev.cycles) || 0
+    let lastDoneCategoryID = (prev && prev.lastDoneCategoryID) || null
 
     const current = list[index]
+    // Captured before the phase advances below: without this, a tick that ran
+    // the reviews phase reports itself as having run the census.
+    const ranPhase = phase
     let advanced = false
     let detail = null
 
@@ -148,6 +160,7 @@ export async function POST(request) {
       })
       if (detail.done) {
         // This category is finished; hand over to the next one.
+        lastDoneCategoryID = current.categoryID
         index = (index + 1) % list.length
         phase = 'census'
         advanced = true
@@ -161,11 +174,10 @@ export async function POST(request) {
       label: next.label,
       phase,
       cycles,
+      lastDoneCategoryID,
       startedAt: (prev && prev.startedAt) || new Date().toISOString(),
       updatedAt: new Date().toISOString(),
-      lastNote:
-        'Ran ' + (advanced ? 'reviews' : phase === 'reviews' ? 'census' : 'census') +
-        ' for ' + current.label,
+      lastNote: 'Ran ' + ranPhase + ' for ' + current.label,
     }
     await setRotation(state)
 
@@ -173,7 +185,7 @@ export async function POST(request) {
       {
         ok: true,
         ranCategory: current.label,
-        ranPhase: advanced || phase === 'reviews' ? 'census' : phase,
+        ranPhase,
         done: !!detail.done,
         advanced,
         cycles,

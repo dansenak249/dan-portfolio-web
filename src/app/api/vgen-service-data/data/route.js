@@ -320,7 +320,7 @@ export async function GET(request) {
     }
 
     // Carry over what the census knows and the review analysis cannot: price,
-    // currency and the listing title.
+    // currency, the listing title and its search tags.
     for (const sm of serviceMetrics) {
       const row = censusByID[sm.serviceID]
       if (!row) continue
@@ -329,6 +329,10 @@ export async function GET(request) {
       sm.serviceName = row.serviceName || ''
       // Completed commissions for this service, where VGen publishes them.
       sm.completedComms = row.serviceCompletedComms ?? null
+      // Always an array. Services crawled before tags were kept have none
+      // stored, and reporting that as an empty list rather than a missing field
+      // keeps every consumer on one shape.
+      sm.tags = Array.isArray(row.tags) ? row.tags : []
     }
 
     const artists = aggregateByArtist(serviceMetrics, reviewsByService)
