@@ -1774,6 +1774,23 @@
         const key = (id || '').trim();
         return key && categoryColorLookup[key] ? categoryColorLookup[key] : '';
       }
+      // Human label for a category, for status lines and dialogs. Falls
+      // through categoryName -> VGen's own name -> the raw id.
+      //
+      // The middle step is the point. Discover leaves categoryName empty and
+      // shows VGen's name as a placeholder, so a label that read only
+      // categoryName fell straight past it to the id - which is why a finished
+      // crawl announced itself as "Fetched rechY6VVD1EyfZbHe" rather than by
+      // name. One definition, because three copies of this had already drifted.
+      function categoryLabel(categoryID) {
+        const key = (categoryID || '').trim();
+        const row = catRows.find((r) => (r.categoryID || '').trim() === key);
+        if (!row) return key;
+        return (
+          (row.categoryName || '').trim() || (row.defaultName || '').trim() || key
+        );
+      }
+
       function serviceTypeColor(s) {
         return resolveCategoryColor(categoryIdForService(s));
       }
@@ -2151,8 +2168,7 @@
         const row = catRows[index];
         if (!row) return;
         const categoryID = (row.categoryID || '').trim();
-        const label = (row.categoryName || '').trim() || categoryID;
-        return runCollect(categoryID, label, !!force);
+        return runCollect(categoryID, categoryLabel(categoryID), !!force);
       }
 
       // On load, pick up any crawl a previous page-view left half-finished, so a
@@ -2172,13 +2188,9 @@
           if (!res.ok || !json.jobs) return;
           for (const categoryID of Object.keys(json.jobs)) {
             if (!json.jobs[categoryID]) continue;
-            const row = catRows.find(
-              (r) => (r.categoryID || '').trim() === categoryID
-            );
-            const label = (row && (row.categoryName || '').trim()) || categoryID;
             // Deliberately NOT awaited: each resumed category runs its own loop
             // so one slow crawl does not hold up the others or the first paint.
-            runCollect(categoryID, label, false);
+            runCollect(categoryID, categoryLabel(categoryID), false);
           }
         } catch {}
       }
@@ -2330,7 +2342,7 @@
           status('That category is still fetching — cancel it first.', 'err');
           return;
         }
-        pgTarget = { categoryID, label: (row.categoryName || '').trim() || (row.defaultName || '').trim() || categoryID };
+        pgTarget = { categoryID, label: categoryLabel(categoryID) };
 
         let detail = pgTarget.label;
         try {
