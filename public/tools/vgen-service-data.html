@@ -350,7 +350,11 @@
       .pager button:disabled { opacity: 0.35; cursor: default; }
       .pager .gap { color: var(--dim); padding: 0 2px; }
       .pager .range { color: var(--muted); font-size: 0.75rem; margin-left: 8px; }
-      .col-name { width: 280px; }
+      /* Titles run long and the sub-line carries artist + category, so this
+         column gets the lion's share of the table. A percentage rather than a
+         fixed width: the sparkline column absorbs whatever is left, and it
+         degrades gracefully rather than clipping harder on a narrow window. */
+      .col-name { width: 42%; min-width: 340px; }
       .type-name { font-weight: 600; }
       /* Category tag trails the artist name. It repeats on every row of a
          filtered view, so it stays thin and grey rather than competing. */
@@ -364,7 +368,9 @@
         text-overflow: ellipsis;
         white-space: nowrap;
       }
-      .col-spacer { width: 74px; }
+      /* Just a gutter now. It used to be wide enough to read as wasted space
+         while the name beside it was still being clipped. */
+      .col-spacer { width: 24px; }
       .col-n { width: 72px; }
       /* Base price needs more room than a plain count column: the header word is
          wider, and amounts can run to "¥32000" / "$1,234.56". */
@@ -474,6 +480,81 @@
         max-width: 260px;
       }
       .hdr-select:focus { outline: none; border-color: var(--accent); }
+
+      /* Service filter dropdown.
+         A native <select> renders each option as one run of text, so a count can
+         only ever trail its name at whatever offset that name happens to end -
+         there is no way to give the numbers a column. This is the same control
+         built from a button and a list, so the names sit left and the counts
+         line up right, the way a table of contents reads. */
+      .filter-drop { position: relative; display: inline-block; }
+      .filter-drop > .hdr-select {
+        display: inline-flex;
+        align-items: center;
+        gap: 10px;
+        width: 260px;
+        text-align: left;
+      }
+      .fd-label { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .fd-count {
+        flex: none;
+        font-family: var(--mono);
+        font-size: 0.72rem;
+        font-weight: 500;
+        color: var(--muted);
+        font-variant-numeric: tabular-nums;
+      }
+      .fd-caret { flex: none; color: var(--dim); font-size: 0.6rem; }
+      .filter-menu {
+        position: absolute;
+        z-index: 40;
+        top: calc(100% + 6px);
+        left: 0;
+        /* Free to be wider than the button it hangs off: the closed control is
+           narrow by design, but the open list has the whole page to spread into,
+           and long category names are the norm here. */
+        min-width: 100%;
+        width: max-content;
+        max-width: 420px;
+        max-height: 340px;
+        overflow-y: auto;
+        background: var(--panel-2);
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        padding: 5px;
+        box-shadow: 0 14px 34px rgba(0, 0, 0, 0.5);
+      }
+      .filter-menu[hidden] { display: none; }
+      .filter-opt {
+        display: flex;
+        align-items: baseline;
+        gap: 18px;
+        width: 100%;
+        background: none;
+        border: 0;
+        border-radius: 7px;
+        padding: 7px 9px;
+        cursor: pointer;
+        color: var(--text);
+        font-family: var(--sans);
+        font-size: 0.8rem;
+        font-weight: 500;
+        text-align: left;
+      }
+      .filter-opt:hover { background: rgba(110, 231, 255, 0.07); }
+      .filter-opt:focus-visible { outline: none; background: rgba(110, 231, 255, 0.07); }
+      .filter-opt[aria-selected='true'] { color: var(--accent); }
+      .filter-opt .fo-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      /* flex:none against a flexible name is what puts every count on the menu's
+         right edge instead of trailing its own name. */
+      .filter-opt .fo-count {
+        flex: none;
+        font-family: var(--mono);
+        font-size: 0.72rem;
+        color: var(--dim);
+        font-variant-numeric: tabular-nums;
+      }
+      .filter-opt[aria-selected='true'] .fo-count { color: var(--accent); }
       .status {
         font-family: var(--mono);
         font-size: 0.78rem;
@@ -619,9 +700,14 @@
         <div class="panel-head">
           <h2><span class="dot"></span>Service</h2>
           <div class="flow-tools">
-            <select id="svcFilter" class="hdr-select" title="Filter which service to show">
-              <option value="all">All services</option>
-            </select>
+            <div class="filter-drop" id="svcFilterWrap">
+              <button type="button" id="svcFilterBtn" class="hdr-select" aria-haspopup="listbox" aria-expanded="false" title="Filter which service to show">
+                <span class="fd-label" id="svcFilterLabel">All services</span>
+                <span class="fd-count" id="svcFilterCount">0</span>
+                <span class="fd-caret">&#9660;</span>
+              </button>
+              <div class="filter-menu" id="svcFilterMenu" role="listbox" hidden></div>
+            </div>
             <label class="flow-check" title="Only compute services whose artist has at least this many reviews. The census still stores every service.">
               <span class="sub">min reviews</span>
               <input type="number" id="minReviews" min="0" step="1" value="10" style="width:56px" />
@@ -981,6 +1067,7 @@
       let svcMissing = []; // serviceIDs with no cached reviews yet (from last load)
       let svcSort = { key: 'total', dir: -1 };
       let svcFilter = 'all'; // 'all' | 'TYPE::<name>' (which group to show)
+      let svcFilterOpts = []; // [{ value, name, count }] behind the filter menu
       // The table pages rather than running to the bottom: a censused category
       // returns up to a thousand rows, and rendering them all builds a very tall
       // DOM for a view that only ever shows a screenful.
@@ -1532,8 +1619,8 @@
       //   3. then the Unclassified catch-all (services with no categoryID) last.
       // Selection is preserved, falling back to "all" if its group is gone.
       function populateServiceFilter() {
-        const sel = $('svcFilter');
-        if (!sel) return;
+        const menu = $('svcFilterMenu');
+        if (!menu) return;
         annotateTypes();
         const typeCounts = new Map();
         let unclassified = 0;
@@ -1559,27 +1646,25 @@
             mappedNames.push(name);
           }
         }
-        const opts = ['<option value="all">All services</option>'];
+        const opts = [{ value: 'all', name: 'All services', count: svcData.length }];
         for (const name of mappedNames) {
-          opts.push(
-            `<option value="TYPE::${esc(name)}">${esc(name)} (${
-              typeCounts.get(name) || 0
-            })</option>`
-          );
+          opts.push({
+            value: 'TYPE::' + name,
+            name,
+            count: typeCounts.get(name) || 0,
+          });
         }
         // Unmapped groups (types not present as a named category) -> alphabetical.
         const leftovers = [...typeCounts.keys()]
           .filter((t) => !mappedSet.has(t))
           .sort((a, b) => a.localeCompare(b));
         for (const t of leftovers) {
-          opts.push(
-            `<option value="TYPE::${esc(t)}">${esc(t)} (${typeCounts.get(t)})</option>`
-          );
+          opts.push({ value: 'TYPE::' + t, name: t, count: typeCounts.get(t) });
         }
         if (unclassified) {
-          opts.push(`<option value="TYPE::">Unclassified (${unclassified})</option>`);
+          opts.push({ value: 'TYPE::', name: 'Unclassified', count: unclassified });
         }
-        sel.innerHTML = opts.join('');
+
         const key = svcFilter.startsWith('TYPE::') ? svcFilter.slice(6) : '';
         const valid =
           svcFilter === 'all' ||
@@ -1588,7 +1673,45 @@
               ? unclassified > 0
               : mappedSet.has(key) || typeCounts.has(key)));
         if (!valid) svcFilter = 'all';
-        sel.value = svcFilter;
+
+        svcFilterOpts = opts;
+        menu.innerHTML = opts
+          .map(
+            (o) =>
+              `<button type="button" class="filter-opt" role="option" data-v="${esc(
+                o.value
+              )}" aria-selected="${o.value === svcFilter}"><span class="fo-name" title="${esc(
+                o.name
+              )}">${esc(o.name)}</span><span class="fo-count">${num(
+                o.count
+              )}</span></button>`
+          )
+          .join('');
+        syncFilterButton();
+      }
+
+      // Mirror the current selection onto the closed control. The name is
+      // ellipsized and the count is not, so a long category name never pushes
+      // its own number out of sight.
+      function syncFilterButton() {
+        const cur =
+          svcFilterOpts.find((o) => o.value === svcFilter) || svcFilterOpts[0];
+        if (!cur) return;
+        const label = $('svcFilterLabel');
+        label.textContent = cur.name;
+        label.title = cur.name;
+        $('svcFilterCount').textContent = num(cur.count);
+      }
+
+      function openFilterMenu() {
+        $('svcFilterMenu').hidden = false;
+        $('svcFilterBtn').setAttribute('aria-expanded', 'true');
+      }
+      function closeFilterMenu() {
+        const menu = $('svcFilterMenu');
+        if (!menu || menu.hidden) return;
+        menu.hidden = true;
+        $('svcFilterBtn').setAttribute('aria-expanded', 'false');
       }
 
       function updateSortIndicators(tableId, sort) {
@@ -2835,6 +2958,15 @@
       // The global "+ Add" and "↻ Refresh" buttons are gone: services now arrive
       // from the per-category fetch button in the Category map, not one at a time.
       // openEditModal() is still reachable from a row's inline Edit button.
+      // A menu that outlives the click that opened it is a menu you cannot
+      // dismiss, so close on anything outside it.
+      document.addEventListener('click', (e) => {
+        if (!e.target.closest('#svcFilterWrap')) closeFilterMenu();
+      });
+      document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') closeFilterMenu();
+      });
+
       $('minReviews').addEventListener('change', () => loadData(false));
       $('discoverBtn').addEventListener('click', discoverCategories);
       $('pgConfirm').addEventListener('click', confirmPurge);
@@ -2939,11 +3071,26 @@
       });
 
       // Service filter: pick which service to show; persisted so a refresh keeps it.
-      $('svcFilter').addEventListener('change', (e) => {
-        svcFilter = e.target.value;
+      $('svcFilterBtn').addEventListener('click', (e) => {
+        e.stopPropagation();
+        if ($('svcFilterMenu').hidden) openFilterMenu();
+        else closeFilterMenu();
+      });
+      $('svcFilterMenu').addEventListener('click', (e) => {
+        const opt = e.target.closest('.filter-opt');
+        if (!opt) return;
+        svcFilter = opt.getAttribute('data-v');
+        closeFilterMenu();
         svcPage = 1; // a different group is a different list
         // No re-fetch: everything is already loaded, so choosing a group is just
-        // a re-render.
+        // a re-render. Only the selected state and the button caption change, so
+        // the menu is not rebuilt - the counts it shows are still correct.
+        $('svcFilterMenu')
+          .querySelectorAll('.filter-opt')
+          .forEach((el) =>
+            el.setAttribute('aria-selected', el.getAttribute('data-v') === svcFilter)
+          );
+        syncFilterButton();
         saveUiConfig();
         renderServices();
       });
