@@ -199,6 +199,22 @@ export async function GET(request) {
       )
     : null
 
+  // Narrow to specific categories BEFORE the cap. Without this the cap is
+  // global: a category holding 200,000 services contributes the busiest listings
+  // on the marketplace and fills most of the 1000 slots, leaving a small
+  // category a handful of rows — and filtering client-side afterwards can only
+  // ever show that handful. Filtering here means the cap applies WITHIN the
+  // selection, so each category can be looked at on its own terms.
+  const catParam = searchParams.get('categoryIDs')
+  const onlyCategories = catParam
+    ? new Set(
+        catParam
+          .split(',')
+          .map((v) => v.trim())
+          .filter(Boolean)
+      )
+    : null
+
   // Review floor for what gets COMPUTED. The census still stores every service;
   // this only decides what the dashboard works on. `minReviews=0` shows all.
   const minParam = searchParams.get('minReviews')
@@ -216,8 +232,13 @@ export async function GET(request) {
     const censusByID = {}
     for (const row of census) censusByID[row.serviceID] = row
 
+    const scoped =
+      usingCensus && onlyCategories
+        ? census.filter((row) => onlyCategories.has(row.categoryID))
+        : census
+
     const gated = usingCensus
-      ? census.filter((row) => (row.artistTotalReviews ?? 0) >= minReviews)
+      ? scoped.filter((row) => (row.artistTotalReviews ?? 0) >= minReviews)
       : await getServices()
 
     // Keep the busiest listings when trimming: an arbitrary slice would drop
@@ -357,7 +378,10 @@ export async function GET(request) {
         // instead of silently looking empty when the floor is set too high.
         source: usingCensus ? 'census' : 'legacy',
         minReviews,
-        censusTotal: census.length,
+        censusTotal: usingCensus ? scoped.length : census.length,
+        // Every crawled service across all categories, so the denominator does
+        // not change when a single category is selected.
+        censusAllCategories: census.length,
         // Everything the crawls walked, as opposed to what was kept.
         censusSeenTotal,
         matchedCount: gated.length,

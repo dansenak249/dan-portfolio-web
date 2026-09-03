@@ -1409,6 +1409,22 @@
         );
       }
 
+      // categoryIDs behind the current filter selection, or [] for "All".
+      function selectedCategoryIDs() {
+        if (svcFilter === 'all' || !svcFilter.startsWith('TYPE::')) return [];
+        const wanted = svcFilter.slice(6);
+        return catRows
+          .filter((r) => {
+            const id = (r.categoryID || '').trim();
+            if (!id) return false;
+            const name =
+              (r.categoryName || '').trim() || (r.defaultName || '').trim();
+            // An unnamed category shows as its raw id in the dropdown.
+            return (name || id) === wanted;
+          })
+          .map((r) => (r.categoryID || '').trim());
+      }
+
       function renderServices() {
         // Resolve every row's display type first so sort/group/render agree.
         annotateTypes();
@@ -2726,6 +2742,12 @@
           // computes, not just what the table hides.
           const minEl = $('minReviews');
           if (minEl && minEl.value !== '') params.set('minReviews', minEl.value);
+          // The dropdown groups by display NAME, and several ids can share one,
+          // so send every id that resolves to the selected name. Narrowing on the
+          // server is what makes the row cap apply within the category instead of
+          // across all of them.
+          const ids = selectedCategoryIDs();
+          if (ids.length) params.set('categoryIDs', ids.join(','));
           if (refresh) {
             params.set('refresh', '1');
             // Narrow the live pull to specific services when given (e.g. only the
@@ -2861,6 +2883,10 @@
       $('svcFilter').addEventListener('change', (e) => {
         svcFilter = e.target.value;
         svcPage = 1; // a different group is a different list
+        // Re-read: the row cap is applied server-side within the selection, so
+        // narrowing has to go back to the server to surface the rows the global
+        // cap had been hiding.
+        loadData(false);
         saveUiConfig();
         renderServices();
       });
