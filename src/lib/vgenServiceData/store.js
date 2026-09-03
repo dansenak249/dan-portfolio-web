@@ -458,6 +458,37 @@ export async function setExchangeRates(payload) {
 }
 
 // ---------------------------------------------------------------------------
+// Rotation state
+// ---------------------------------------------------------------------------
+// Where the automatic refresh has got to: which category it is working on and
+// whether it is still crawling the listing or pulling reviews.
+//
+// Deliberately just a cursor into the work, not a schedule. Each tick reads it,
+// does ONE bounded slice, and writes it back — so a missed tick, an overlapping
+// tick, or a deploy mid-run costs at most a repeated slice. Nothing has to
+// detect that a category "finished"; the state says what is left to do.
+const ROTATION_KEY = `${NS}:rotation`
+
+/**
+ * @returns {Promise<null | { categoryID: string|null, phase: string, startedAt: string,
+ *   updatedAt: string, cycles: number, lastNote: string|null }>}
+ */
+export async function getRotation() {
+  const stored = parseMaybe(await ensureRedis().get(ROTATION_KEY))
+  return stored && typeof stored === 'object' ? stored : null
+}
+
+/** @param {object} state */
+export async function setRotation(state) {
+  await ensureRedis().set(ROTATION_KEY, JSON.stringify(state))
+}
+
+/** Stop the rotation entirely. */
+export async function clearRotation() {
+  await ensureRedis().del(ROTATION_KEY)
+}
+
+// ---------------------------------------------------------------------------
 // Legacy cleanup
 // ---------------------------------------------------------------------------
 // Keys written by the OLD flow (declare services one by one, then pull each

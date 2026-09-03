@@ -57,10 +57,13 @@ function sanitizeCategories(input) {
     // blank row.
     const defaultName =
       typeof raw.defaultName === 'string' ? raw.defaultName.trim() : ''
+    // Whether the automatic rotation refreshes this category. Off by default:
+    // a category joins the rotation only when it is ticked.
+    const auto = raw.auto === true || raw.auto === 'true' || raw.auto === 1
     if (!categoryID) continue
     if (seen.has(categoryID)) continue
     seen.add(categoryID)
-    out.push({ categoryID, categoryName, color, defaultName })
+    out.push({ categoryID, categoryName, color, defaultName, auto })
     if (out.length >= MAX_CATEGORIES) break
   }
   return out

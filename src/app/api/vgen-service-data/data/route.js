@@ -60,13 +60,17 @@ const DEFAULT_MIN_REVIEWS = 10
 // ceiling. Smaller batches mean more round trips and no oversized request.
 const READ_BATCH = 25
 
-// Ceiling on how many services one response may carry. A census category can
-// hold tens of thousands of services; returning them all would mean a
-// multi-megabyte payload built in a serverless function and parsed in the
-// browser on every page load. Past this, the highest-review services are kept
-// and the response says it was truncated, so the shortfall is visible instead of
-// looking like missing data. Raise the review floor to see further down.
-const MAX_SERVICES_RETURNED = 1000
+// The real limit on how much data exists is applied at CRAWL time: each
+// category keeps only its busiest CENSUS_KEEP services. This is NOT a second cap
+// on top of that — five crawled categories should show all five thousand rows,
+// not a thousand of them.
+//
+// It stays as a safety ceiling only. Every row carries its monthly series, so a
+// response runs roughly 2 KB per service; without any bound, crawling a hundred
+// categories would build a several-hundred-megabyte payload inside a serverless
+// function. At this ceiling the response tops out around 40 MB, and `truncated`
+// says so rather than letting rows vanish silently.
+const MAX_SERVICES_RETURNED = 20000
 
 // Ceiling on how many services one unqualified ?refresh=1 will pull reviews for.
 // A full census is far past what a single request can fetch, so the refresh
