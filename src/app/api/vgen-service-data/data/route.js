@@ -203,12 +203,10 @@ export async function GET(request) {
       )
     : null
 
-  // Narrow to specific categories BEFORE the cap. Without this the cap is
-  // global: a category holding 200,000 services contributes the busiest listings
-  // on the marketplace and fills most of the 1000 slots, leaving a small
-  // category a handful of rows — and filtering client-side afterwards can only
-  // ever show that handful. Filtering here means the cap applies WITHIN the
-  // selection, so each category can be looked at on its own terms.
+  // Optional narrowing, for callers that want one category's worth of data.
+  // The dashboard does NOT use it: it loads every category and filters in the
+  // browser, because a response describing only one category is also a response
+  // that cannot tell the dashboard which other categories exist.
   const catParam = searchParams.get('categoryIDs')
   const onlyCategories = catParam
     ? new Set(

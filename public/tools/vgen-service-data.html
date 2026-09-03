@@ -1333,13 +1333,28 @@
         });
       }
 
-      // Resolve a service's DISPLAY type from its DECLARED categoryID via the
-      // category map, live -> a rename reflects instantly with no data reload.
-      // Unmapped id shows the raw id; no id -> '' (Unclassified). Annotated onto
-      // each svcData row as `_type` so sort + group filtering use the readable name.
-      function typeNameForService(s) {
+      // Which category a service belongs to, in order of authority:
+      //   1. a declared entry, because that categoryID is the one you chose here;
+      //   2. the row's own categoryID - census rows carry the category they were
+      //      crawled under, and they are the overwhelming majority;
+      //   3. serviceType, kept for the oldest rows that predate both.
+      //
+      // Step 2 is not optional: census rows are not in declLookup, so without it
+      // every crawled service resolved to '' and the whole table grouped as
+      // Unclassified - which made the group filter look broken.
+      function categoryIdForService(s) {
         const row = declLookup[s.serviceID];
-        const cid = row ? (row.categoryID || '').trim() : (s.serviceType || '').trim();
+        const declared = row ? (row.categoryID || '').trim() : '';
+        if (declared) return declared;
+        return (s.categoryID || '').trim() || (s.serviceType || '').trim();
+      }
+
+      // Resolve a service's DISPLAY type from its categoryID via the category map,
+      // live -> a rename reflects instantly with no data reload. Unmapped id shows
+      // the raw id; no id -> '' (Unclassified). Annotated onto each svcData row as
+      // `_type` so sort + group filtering use the readable name.
+      function typeNameForService(s) {
+        const cid = categoryIdForService(s);
         if (!cid) return '';
         return resolveCategoryName(cid) || cid;
       }
@@ -1427,22 +1442,6 @@
             if (table) table.scrollIntoView({ block: 'nearest' });
           })
         );
-      }
-
-      // categoryIDs behind the current filter selection, or [] for "All".
-      function selectedCategoryIDs() {
-        if (svcFilter === 'all' || !svcFilter.startsWith('TYPE::')) return [];
-        const wanted = svcFilter.slice(6);
-        return catRows
-          .filter((r) => {
-            const id = (r.categoryID || '').trim();
-            if (!id) return false;
-            const name =
-              (r.categoryName || '').trim() || (r.defaultName || '').trim();
-            // An unnamed category shows as its raw id in the dropdown.
-            return (name || id) === wanted;
-          })
-          .map((r) => (r.categoryID || '').trim());
       }
 
       function renderServices() {
@@ -1544,10 +1543,17 @@
           else unclassified++;
         }
         // Named categories in category-map row order (dedupe, keep first order).
+        //
+        // The fallback to defaultName matters: Discover leaves categoryName empty
+        // and shows VGen's name as a placeholder, so reading categoryName alone
+        // left most categories out of this list entirely — they then appeared
+        // only if the loaded rows happened to include them, and vanished from the
+        // dropdown as soon as they did not.
         const mappedNames = [];
         const mappedSet = new Set();
         for (const r of catRows) {
-          const name = (r.categoryName || '').trim();
+          const name =
+            (r.categoryName || '').trim() || (r.defaultName || '').trim();
           if (name && !mappedSet.has(name)) {
             mappedSet.add(name);
             mappedNames.push(name);
@@ -1646,9 +1652,7 @@
         return key && categoryColorLookup[key] ? categoryColorLookup[key] : '';
       }
       function serviceTypeColor(s) {
-        const row = declLookup[s.serviceID];
-        const cid = row ? (row.categoryID || '').trim() : (s.serviceType || '').trim();
-        return resolveCategoryColor(cid);
+        return resolveCategoryColor(categoryIdForService(s));
       }
       // Read-only summary of one declared entry, shown in the confirm / overwrite
       // modals so an action always states exactly which listing it affects. Joins
@@ -2796,12 +2800,11 @@
           // computes, not just what the table hides.
           const minEl = $('minReviews');
           if (minEl && minEl.value !== '') params.set('minReviews', minEl.value);
-          // The dropdown groups by display NAME, and several ids can share one,
-          // so send every id that resolves to the selected name. Narrowing on the
-          // server is what makes the row cap apply within the category instead of
-          // across all of them.
-          const ids = selectedCategoryIDs();
-          if (ids.length) params.set('categoryIDs', ids.join(','));
+          // Deliberately NOT narrowed by category. The row cap that once made
+          // server-side narrowing necessary is gone, and asking the server for one
+          // category meant the response only ever described that category — which
+          // then became the only option the filter could offer. Load the lot; the
+          // dropdown is a view over it.
           if (refresh) {
             params.set('refresh', '1');
             // Narrow the live pull to specific services when given (e.g. only the
@@ -2939,10 +2942,8 @@
       $('svcFilter').addEventListener('change', (e) => {
         svcFilter = e.target.value;
         svcPage = 1; // a different group is a different list
-        // Re-read: the row cap is applied server-side within the selection, so
-        // narrowing has to go back to the server to surface the rows the global
-        // cap had been hiding.
-        loadData(false);
+        // No re-fetch: everything is already loaded, so choosing a group is just
+        // a re-render.
         saveUiConfig();
         renderServices();
       });
