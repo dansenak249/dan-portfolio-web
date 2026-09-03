@@ -17,6 +17,23 @@
 // visible symptom, so it is returned on every slice and summed into the meta —
 // `duplicates > 0` means the census is holed and the category should be re-run.
 //
+// WHY A RUNNING TOP-N: the census only ever keeps the busiest CENSUS_KEEP, so
+// there is no reason to store the long tail on the way past. Each slice merges
+// its page of services into a running best-N and throws the rest away, which
+// makes every slice cost the same no matter how large the category is.
+//
+// The previous design wrote every service to Redis and trimmed at the very end.
+// That end step was O(category): it re-read every chunk, held one Set of every
+// serviceID seen (a 218k-service category put ~40 MB in a single invocation),
+// and deleted the hundreds of chunks it had just written - all inside the SAME
+// invocation as the final crawl slice, sharing one 60s budget. It worked, but
+// only because the last slice of a finished crawl is usually short. A timeout
+// there left the job untouched, so the next call re-crawled the tail, re-ran the
+// same doomed trim, and the rotation could never advance past that category.
+//
+// The trade: raising CENSUS_KEEP later means re-crawling, because the tail is
+// discarded as we go rather than stored and sorted afterwards.
+//
 // AUTH: intentionally open for now, mirroring the sibling service-data routes.
 // This is a personal, noindex research tool; auth arrives with a unified /tools
 // login.
@@ -25,11 +42,12 @@ import { NextResponse } from 'next/server'
 import { fetchCategorySlice, serviceScore } from '@/lib/vgenServiceData/fetchCategory'
 import {
   CHUNK_SIZE,
-  iterateCategoryChunks,
-  deleteCategoryChunks,
   getCategoryJob,
   setCategoryJob,
   clearCategoryJob,
+  getCategoryTop,
+  setCategoryTop,
+  clearCategoryTop,
   setCategoryChunk,
   setCategoryMeta,
   purgeCategory,
@@ -54,12 +72,43 @@ const MAX_PAGES_PER_CALL = 25
 // valid cursor behind, so the client simply continues.
 const SLICE_BUDGET_MS = 30000
 
-// How many services survive a finished crawl. Every page still has to be walked
-// — VGen offers no way to sort or filter server-side, so the busiest services
-// can only be found by looking at all of them — but there is no reason to KEEP
-// the long tail, which the dashboard never shows and the review pull never
-// touches. Raising this later means crawling the category again.
+// How many services survive a crawl. Every page still has to be walked — VGen
+// offers no way to sort or filter server-side, so the busiest services can only
+// be found by looking at all of them — but there is no reason to KEEP the long
+// tail, which the dashboard never shows and the review pull never touches.
+// Raising this later means crawling the category again.
 const CENSUS_KEEP = 1000
+
+/**
+ * Merge a slice into the running best-N. Deduped by serviceID with the newer
+ * copy winning, since a service re-served after a VGen reshuffle carries fresher
+ * numbers than the one already held.
+ * @param {object[]} top current best, already sorted
+ * @param {object[]} incoming this slice's services
+ * @returns {object[]} the new best, sorted, at most CENSUS_KEEP long
+ */
+function mergeTop(top, incoming) {
+  const byID = new Map()
+  for (const row of top) byID.set(row.serviceID, row)
+  for (const row of incoming) byID.set(row.serviceID, row)
+  const merged = [...byID.values()]
+  merged.sort((a, b) => serviceScore(b) - serviceScore(a))
+  return merged.slice(0, CENSUS_KEEP)
+}
+
+/**
+ * Could this slice change the best-N at all? Once the quota is full, a slice
+ * whose every service scores at or below the current worst cannot displace
+ * anything — so the stored top is neither read nor rewritten for it. Quality
+ * concentrates at the front of VGen's feed, so most slices of a long crawl take
+ * this branch and cost one small job write.
+ */
+function couldChangeTop(rows, topCount, topMin) {
+  if (topCount < CENSUS_KEEP) return true
+  if (typeof topMin !== 'number') return true
+  for (const row of rows) if (serviceScore(row) > topMin) return true
+  return false
+}
 
 // VGen category ids are opaque Airtable-style ids ("rechY6VVD1EyfZbHe").
 const CATEGORY_ID = /^rec[A-Za-z0-9]{10,20}$/
@@ -90,7 +139,11 @@ export async function POST(request) {
     // `reset` (or having nothing to resume) starts from zero, and a fresh start
     // purges first so a shrunk category cannot leave orphaned chunks behind.
     const existing = await getCategoryJob(categoryID)
-    const forceReset = !!(body && body.reset)
+    // A job written by the previous design carries `buffer` / `chunkIndex` and
+    // no running top, so there is nothing to resume it into. Start such a job
+    // over rather than reading half of it and silently losing the rest.
+    const legacyJob = !!(existing && (existing.buffer || existing.chunkIndex !== undefined))
+    const forceReset = !!(body && body.reset) || legacyJob
     const resuming = !forceReset && !!existing
     if (!resuming) await purgeCategory(categoryID)
 
@@ -103,11 +156,15 @@ export async function POST(request) {
           stored: 0,
           duplicates: 0,
           offCategory: 0,
-          chunkIndex: 0,
           // One number, not every id seen: see fetchCategorySlice.
           lastIndex: null,
           reshuffles: 0,
-          buffer: [],
+          // Summary of the running top-N, so a slice can tell whether it needs
+          // to load the thing at all. The rows themselves live under their own
+          // key; keeping them here would mean rewriting half a megabyte of job
+          // state on every slice.
+          topCount: 0,
+          topMin: null,
           startedAt: new Date().toISOString(),
         }
 
@@ -120,24 +177,19 @@ export async function POST(request) {
       lastIndex: job.lastIndex ?? null,
     })
 
-    const buffer = job.buffer.concat(slice.services)
-    let chunkIndex = job.chunkIndex
-    // Declared out here because the response reads it, and the response sits
-    // outside the "run finished" branch that sets it.
-    let trimSkipped = null
-
-    // Flush every FULL chunk now; the remainder rides along in the job until the
-    // next slice fills it (or the crawl finishes and writes a short final chunk).
-    let offset = 0
-    while (buffer.length - offset >= CHUNK_SIZE) {
-      await setCategoryChunk(
-        categoryID,
-        chunkIndex++,
-        buffer.slice(offset, offset + CHUNK_SIZE)
-      )
-      offset += CHUNK_SIZE
+    // Merge this slice into the running best, but only when it can actually
+    // change it. Skipping costs one comparison per service and saves reading and
+    // rewriting the whole top.
+    let topCount = job.topCount || 0
+    let topMin = job.topMin ?? null
+    let top = null // loaded lazily; null means "not read this call"
+    const merging = couldChangeTop(slice.services, topCount, topMin)
+    if (merging) {
+      top = mergeTop(await getCategoryTop(categoryID), slice.services)
+      await setCategoryTop(categoryID, top)
+      topCount = top.length
+      topMin = top.length ? serviceScore(top[top.length - 1]) : null
     }
-    const rest = buffer.slice(offset)
 
     const totals = {
       pages: job.pages + slice.pages,
@@ -148,77 +200,30 @@ export async function POST(request) {
     }
 
     if (slice.done) {
-      if (rest.length) await setCategoryChunk(categoryID, chunkIndex++, rest)
+      // Nothing to trim: the answer has been maintained all along. Just write it
+      // out as chunks, in the same shape every reader already expects.
+      if (top === null) top = await getCategoryTop(categoryID)
 
-      // Trim to the busiest CENSUS_KEEP. Done here, at the end, rather than by
-      // carrying a running top-N through the crawl: that would mean rewriting a
-      // few hundred KB of job state on every slice, where this rewrites a
-      // handful of chunks exactly once.
-      const wroteChunks = chunkIndex
-      let kept = totals.stored
-      if (totals.stored > CENSUS_KEEP) {
-        // Streamed, not loaded whole: a category can run to hundreds of
-        // thousands of services, and reading every chunk into one array would
-        // put tens of megabytes inside a single invocation. Only the running
-        // best CENSUS_KEEP are held.
-        //
-        // Read by the count just written, NOT via meta: meta is only set below,
-        // and a fresh crawl purged the previous one, so meta-based reads come
-        // back empty here.
-        let top = []
-        let readBack = 0
-        const seenIDs = new Set()
-        for await (const rows of iterateCategoryChunks(categoryID, wroteChunks)) {
-          for (const row of rows) {
-            if (seenIDs.has(row.serviceID)) continue
-            seenIDs.add(row.serviceID)
-            readBack++
-            top.push(row)
-          }
-          // Re-trim once the working set has grown enough to be worth sorting,
-          // so this stays O(CENSUS_KEEP) in memory rather than O(category).
-          if (top.length > CENSUS_KEEP * 3) {
-            top.sort((a, b) => serviceScore(b) - serviceScore(a))
-            top = top.slice(0, CENSUS_KEEP)
-          }
-        }
-        top.sort((a, b) => serviceScore(b) - serviceScore(a))
-        top = top.slice(0, CENSUS_KEEP)
+      // Never publish an empty census over a crawl that walked real services.
+      // The old trim had this guard for the same reason and it earned its keep.
+      if (!top.length && totals.stored > 0) {
+        throw new Error(
+          'refusing to finish: walked ' + totals.stored + ' services but the ' +
+            'running top is empty'
+        )
+      }
 
-        // Never replace real data with nothing: the first version of this step
-        // read back an empty list and took that as "nothing worth keeping",
-        // deleting a finished crawl.
-        //
-        // The test is deliberately NOT readBack === stored. `stored` counts what
-        // each slice added, and duplicates are only suppressed within a slice —
-        // so a crawl that spanned a VGen reshuffle legitimately reads back fewer
-        // unique services than it counted. Requiring an exact match would refuse
-        // to trim every long crawl. What actually matters is having enough to
-        // fill the quota; short of that, keep everything and say why.
-        if (readBack < CENSUS_KEEP) {
-          trimSkipped =
-            'read back ' + readBack + ', fewer than the ' + CENSUS_KEEP + ' to keep'
-        } else {
-          chunkIndex = 0
-          for (let i = 0; i < top.length; i += CHUNK_SIZE) {
-            await setCategoryChunk(categoryID, chunkIndex++, top.slice(i, i + CHUNK_SIZE))
-          }
-          // The trimmed run uses fewer chunks than the full one; drop the rest
-          // so they do not sit there unreferenced.
-          if (wroteChunks > chunkIndex) {
-            await deleteCategoryChunks(categoryID, chunkIndex, wroteChunks - 1)
-          }
-          kept = top.length
-        }
+      let chunkIndex = 0
+      for (let i = 0; i < top.length; i += CHUNK_SIZE) {
+        await setCategoryChunk(categoryID, chunkIndex++, top.slice(i, i + CHUNK_SIZE))
       }
 
       await setCategoryMeta(categoryID, {
         categoryID,
-        count: kept,
+        count: top.length,
         // What the category actually holds, as opposed to what was kept.
         seenTotal: totals.stored,
         keep: CENSUS_KEEP,
-        trimSkipped,
         chunks: chunkIndex,
         pages: totals.pages,
         duplicates: totals.duplicates,
@@ -228,13 +233,15 @@ export async function POST(request) {
         finishedAt: new Date().toISOString(),
       })
       await clearCategoryJob(categoryID)
+      // The rows now live in chunks; a second copy would just go stale.
+      await clearCategoryTop(categoryID)
     } else {
       await setCategoryJob(categoryID, {
         ...job,
         cursor: slice.nextCursor,
-        chunkIndex,
         lastIndex: slice.lastIndex,
-        buffer: rest,
+        topCount,
+        topMin,
         ...totals,
       })
     }
@@ -245,7 +252,11 @@ export async function POST(request) {
         categoryID,
         done: slice.done,
         resumed: resuming,
-        trimSkipped: slice.done ? trimSkipped : undefined,
+        // Whether this slice had to touch the stored top at all - the cheap
+        // path is the common one on a long crawl, and it is worth being able
+        // to see that from outside.
+        merged: merging,
+        kept: topCount,
         stoppedOnTime: slice.stoppedOnTime,
         pagesThisCall: slice.pages,
         elapsedMs: Date.now() - startedNow,

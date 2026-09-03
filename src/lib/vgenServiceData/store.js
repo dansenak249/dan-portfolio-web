@@ -267,6 +267,11 @@ const CHUNK_SIZE = 300
 const catMetaKey = (categoryID) => `${NS}:cat:${categoryID}:meta`
 const catChunkKey = (categoryID, i) => `${NS}:cat:${categoryID}:chunk:${i}`
 const catJobKey = (categoryID) => `${NS}:cat:${categoryID}:job`
+// The best CENSUS_KEEP services found so far, carried through a running crawl.
+// Kept OUT of the job record on purpose: the job is read and written on every
+// slice, while this is only touched when a slice actually beats the current
+// worst score - which, after the first few slices, it usually does not.
+const catTopKey = (categoryID) => `${NS}:cat:${categoryID}:top`
 
 /**
  * In-progress crawl state, or null when no crawl is running.
@@ -376,6 +381,9 @@ export async function readCategoryChunks(categoryID, count) {
 // megabytes: enough to be efficient, small enough that a category in the
 // hundreds of thousands never lands in memory all at once.
 const CHUNK_READ_BATCH = 20
+// Keys per DEL command. Same reasoning as CHUNK_READ_BATCH: bounded so one
+// command cannot grow past what the server will accept.
+const DELETE_BATCH = 20
 
 /**
  * Yield stored services a batch of chunks at a time.
@@ -407,6 +415,34 @@ export async function* iterateCategoryChunks(categoryID, count) {
 }
 
 /**
+ * The running top-N of an in-flight crawl, or [] if there is none.
+ * @param {string} categoryID
+ * @returns {Promise<object[]>}
+ */
+export async function getCategoryTop(categoryID) {
+  const stored = parseMaybe(await ensureRedis().get(catTopKey(categoryID)))
+  return Array.isArray(stored) ? stored : []
+}
+
+/**
+ * Replace the running top-N.
+ * @param {string} categoryID
+ * @param {object[]} rows
+ */
+export async function setCategoryTop(categoryID, rows) {
+  await ensureRedis().set(catTopKey(categoryID), JSON.stringify(rows))
+}
+
+/**
+ * Drop the running top-N. Called once a crawl finishes and its result has been
+ * written to chunks, so a finished category does not keep a second copy.
+ * @param {string} categoryID
+ */
+export async function clearCategoryTop(categoryID) {
+  await ensureRedis().del(catTopKey(categoryID))
+}
+
+/**
  * Delete chunks from `fromIndex` upward. Used after a crawl trims itself down to
  * the busiest services: the earlier, larger run left chunks the shorter one no
  * longer covers, and meta.chunks alone would just orphan them.
@@ -416,8 +452,13 @@ export async function* iterateCategoryChunks(categoryID, count) {
  */
 export async function deleteCategoryChunks(categoryID, fromIndex, throughIndex) {
   const r = ensureRedis()
-  for (let i = fromIndex; i <= throughIndex; i++) {
-    await r.del(catChunkKey(categoryID, i))
+  // Batched: one round trip per DELETE_BATCH keys rather than per key. A
+  // category that once held hundreds of chunks made this the slowest step in
+  // the whole crawl, at one Upstash round trip apiece.
+  const keys = []
+  for (let i = fromIndex; i <= throughIndex; i++) keys.push(catChunkKey(categoryID, i))
+  for (let i = 0; i < keys.length; i += DELETE_BATCH) {
+    await r.del(...keys.slice(i, i + DELETE_BATCH))
   }
 }
 
@@ -430,9 +471,10 @@ export async function purgeCategory(categoryID) {
   const r = ensureRedis()
   const meta = await getCategoryMeta(categoryID)
   const chunks = (meta && meta.chunks) || 0
-  for (let i = 0; i < chunks; i++) await r.del(catChunkKey(categoryID, i))
+  if (chunks) await deleteCategoryChunks(categoryID, 0, chunks - 1)
   await r.del(catMetaKey(categoryID))
   await r.del(catJobKey(categoryID))
+  await r.del(catTopKey(categoryID))
 }
 
 export { CHUNK_SIZE }

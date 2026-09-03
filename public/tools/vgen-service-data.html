@@ -375,7 +375,11 @@
       /* Base price needs more room than a plain count column: the header word is
          wider, and amounts can run to "¥32000" / "$1,234.56". */
       .col-price { width: 96px; }
-      .col-star { width: 48px; }
+      /* Wider than the star it replaced: this holds "$12,345", not "4.9". */
+      .col-rev { width: 104px; }
+      /* Earning nothing this month is a fact worth seeing, not an absence, so a
+         zero is dimmed rather than shown as the em dash used for "unknown". */
+      .rev-zero { color: var(--dim); }
       /* drag-to-reorder handle in the declaration editor */
       .drag-handle {
         cursor: grab;
@@ -735,7 +739,7 @@
                 <th class="num col-n" data-k="total">Total</th>
                 <th class="num col-n" data-k="repeatClients">Repeat</th>
                 <th class="num col-n" data-k="last30">Month</th>
-                <th class="num col-star" data-k="avgRating">★</th>
+                <th class="num col-rev" data-k="_revMonth" title="Price x orders in the last 30 days. An estimate of what this listing earned this month.">Rev/mo</th>
                 <th class="no-sort">Monthly flow</th>
               </tr>
             </thead>
@@ -1449,7 +1453,31 @@
         for (const s of svcData) {
           s._type = typeNameForService(s);
           s._priceUSD = priceUSD(s.basePrice, s.currency);
+          s._revMonth = revMonth(s);
         }
+      }
+
+      // What this listing took in over the last 30 days: its price times the
+      // orders it completed in that window.
+      //
+      // It is an ESTIMATE and reads high or low for real reasons. Price is the
+      // BASE price, so add-ons and tiers above it are missed; and `last30`
+      // counts reviews, not orders, so listings whose clients do not review are
+      // undercounted. Treat it as a ranking signal, not as revenue.
+      //
+      // null (not zero) when either half is unknown: a listing whose reviews
+      // have never been pulled has not earned nothing, it has not been measured.
+      function revMonth(s) {
+        const price = s._priceUSD ?? priceUSD(s.basePrice, s.currency);
+        if (price == null || typeof s.last30 !== 'number') return null;
+        return price * s.last30;
+      }
+
+      function revCell(s) {
+        const v = s._revMonth;
+        if (v == null) return '<span class="muted">—</span>';
+        if (v === 0) return '<span class="rev-zero">$0</span>';
+        return '$' + Math.round(v).toLocaleString('en-US');
       }
 
       // Turn a service title into a URL-safe slug for the vgen.co service link.
@@ -1600,7 +1628,7 @@
               <td class="num">${num(s.total)}</td>
               <td class="num">${num(s.repeatClients)}</td>
               <td class="num">${num(s.last30)}</td>
-              <td class="num">${s.avgRating == null ? '—' : trunc1(s.avgRating)}</td>
+              <td class="num">${revCell(s)}</td>
               <td>${sparkline(serviceFlow(s, axis), monthTotals, monthMax)}</td>
             </tr>`;
           })
