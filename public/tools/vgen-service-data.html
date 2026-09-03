@@ -1118,6 +1118,21 @@
           if (dots) dots.textContent = seq[i++ % 3];
         }, 400);
       }
+      // Several things can be loading at once — init, a filter change, the
+      // reload that follows a fetch — and each brackets its work with
+      // begin/endLoading. Counting rather than toggling means the last one to
+      // finish clears the overlay, instead of the first one hiding it while the
+      // table is still waiting on a request.
+      let loadingDepth = 0;
+      function beginLoading() {
+        loadingDepth++;
+        if (loadingDepth === 1) showOverlay();
+      }
+      function endLoading() {
+        loadingDepth = Math.max(0, loadingDepth - 1);
+        if (loadingDepth === 0) hideOverlay();
+      }
+
       function hideOverlay() {
         const o = $('loadingOverlay');
         if (o) o.classList.add('hidden');
@@ -2772,6 +2787,9 @@
       // longer driven by a global button: the per-category fetch and Sync types
       // are what call it now, so there is no button state to toggle here.
       async function loadData(refresh, ids) {
+        // The table used to sit on stale rows for the seconds this takes, which
+        // reads as missing data rather than as loading.
+        beginLoading();
         try {
           const params = new URLSearchParams();
           // The floor travels with every read: it decides what the server
@@ -2805,6 +2823,8 @@
           applyData(json);
         } catch (e) {
           status((refresh ? 'Refresh' : 'Load') + ' failed: ' + e.message, 'err');
+        } finally {
+          endLoading();
         }
       }
 
@@ -2991,7 +3011,7 @@
 
       // ---- boot ----
       (async function init() {
-        showOverlay();
+        beginLoading();
         loadUiConfig(); // restore saved filter / flow window / sort first
         // Reflect the restored flow window in the segmented control.
         $('flowSeg')
@@ -3008,7 +3028,7 @@
         } catch (e) {
           status('Init failed: ' + e.message, 'err');
         } finally {
-          hideOverlay(); // only reveal data after the first load settles
+          endLoading(); // the table's own load is counted too, so this waits for it
         }
       })();
     </script>
