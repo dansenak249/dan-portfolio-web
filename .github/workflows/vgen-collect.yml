@@ -20,10 +20,16 @@ name: VGen Collectors
 
 on:
   schedule:
-    # Best-effort hourly backup at an off-peak minute. Real cadence comes from
-    # the cron-job.org pinger; if GitHub happens to fire, the throttle prevents
-    # any duplicate snapshot.
-    - cron: "37 * * * *"
+    # THREE entries an hour, not one. GitHub drops scheduled slots at random on
+    # this repo - measured 2 runs in the 8 hours to 2026-09-04T07:53Z against an
+    # hourly schedule - so the fix is more chances rather than a better minute.
+    # Both jobs tolerate redundant triggers by design: the snapshot self-
+    # throttles to one per 45 min, and a rotation tick is idempotent. Three is
+    # deliberate restraint: the vgen-rotate concurrency group makes a run queue
+    # behind the one before it, and a 40-tick run lasts ~13 min.
+    - cron: "7 * * * *"
+    - cron: "27 * * * *"
+    - cron: "47 * * * *"
   # Manual "Run workflow" button in the Actions tab, for testing.
   workflow_dispatch:
     inputs:
