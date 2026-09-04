@@ -117,6 +117,15 @@
       .cat-load .cat-x { display: none; }
       .cat-load.is-loading:hover .cat-spin { display: none; }
       .cat-load.is-loading:hover .cat-x { display: block; }
+      /* A crawl being run by the SERVER, not by this tab. It spins, because
+         work really is happening, but it must not offer the cancel-on-hover of
+         a local fetch: there is nothing here that can stop it. */
+      .cat-load.is-remote:hover .cat-spin { display: block; }
+      .cat-load.is-remote:hover .cat-x { display: none; }
+      .cat-load.is-remote:hover { color: inherit; border-color: var(--line); }
+      /* Disabled, but working - not the flat grey of a button with nothing
+         behind it. */
+      .cat-load.is-remote:disabled { opacity: 0.75; }
       .cat-load.is-loading:hover { color: var(--bad); border-color: var(--bad); }
       /* Emptying a category is destructive, so the trash reads as such on hover.
          The row-remove ✕ next to it stays neutral: it drops a mapping, not data. */
@@ -2263,6 +2272,30 @@
         return 'another fetch';
       }
 
+      // The category some OTHER driver is fetching right now, or ''. The lease
+      // record carries it because every slice renews the lease with its own
+      // categoryID, which is what lets this tab point at the right row without
+      // polling anything extra.
+      function remoteBusyCategory() {
+        const l = fetchLease.lock;
+        if (!l || !l.categoryID) return '';
+        if (l.holder === FETCH_HOLDER) return '';
+        return l.categoryID;
+      }
+
+      let lastCensusPoll = 0;
+      // While something else is fetching, the map's per-category counts are the
+      // only live progress on the page. Keep them moving - but far more slowly
+      // than the lease poll, since the census read is the bigger request and a
+      // large category can be crawling for days.
+      function pollCensusIfRemote() {
+        if (!remoteBusyCategory()) return;
+        const now = Date.now();
+        if (now - lastCensusPoll < 15000) return;
+        lastCensusPoll = now;
+        loadCensusStats();
+      }
+
       async function refreshLease() {
         try {
           const res = await fetch(API.fetchLock, { cache: 'no-store' });
@@ -2280,6 +2313,7 @@
           fetchLease = { checked: false, locked: true, mine: false, lock: null };
         }
         renderCatEditor();
+        pollCensusIfRemote();
         scheduleLeasePoll();
         return fetchLease;
       }
@@ -2754,13 +2788,24 @@
             // when the row has no id yet (nothing to fetch).
             const catId = (r.categoryID || '').trim();
             const busy = catLoading.has(catId);
+            // Being crawled right now, but by the rotation on the server rather
+            // than by this tab. Without this the row looked identical to every
+            // other locked row, so there was no way to see WHAT was being
+            // fetched - only that something was.
+            const remote = !busy && !!catId && remoteBusyCategory() === catId;
             // Blocked by someone else's fetch, or by not yet knowing. A row
             // that is itself running stays clickable, because that click
             // cancels it.
             const blocked = !busy && leaseBlocked();
-            const loadCls = 'tiny ghost cat-load' + (busy ? ' is-loading' : '');
+            const loadCls =
+              'tiny ghost cat-load' +
+              (busy || remote ? ' is-loading' : '') +
+              (remote ? ' is-remote' : '');
+            const who = leaseHolderLabel();
             const loadTitle = busy
               ? 'Fetching… click to cancel'
+              : remote
+              ? who.charAt(0).toUpperCase() + who.slice(1) + ' is crawling this category'
               : blocked
               ? 'Locked: ' + leaseHolderLabel() + ' — only one fetch runs at a time'
               : catId
