@@ -2284,14 +2284,24 @@
       }
 
       let lastCensusPoll = 0;
-      // While something else is fetching, the map's per-category counts are the
-      // only live progress on the page. Keep them moving - but far more slowly
-      // than the lease poll, since the census read is the bigger request and a
-      // large category can be crawling for days.
+      // Is any category mid-crawl, whether or not work is happening right now?
+      function anyCrawlOpen() {
+        for (const k of Object.keys(censusStats)) {
+          if (censusStats[k] && censusStats[k].running) return true;
+        }
+        return false;
+      }
+
+      // The map's per-category counts are the only live progress on the page,
+      // so keep them moving - at two speeds. Fast while a slice is actually
+      // running, because that is when the number changes; slow while a crawl is
+      // merely open between rotation ticks, because a large category can sit
+      // there for days and this should not become a background request loop.
       function pollCensusIfRemote() {
-        if (!remoteBusyCategory()) return;
+        const active = !!remoteBusyCategory();
+        if (!active && !anyCrawlOpen()) return;
         const now = Date.now();
-        if (now - lastCensusPoll < 15000) return;
+        if (now - lastCensusPoll < (active ? 15000 : 60000)) return;
         lastCensusPoll = now;
         loadCensusStats();
       }
@@ -2322,8 +2332,12 @@
       // for that to end.
       function scheduleLeasePoll() {
         if (leasePollTimer) { clearTimeout(leasePollTimer); leasePollTimer = null; }
-        if (!leaseBlocked()) return;
-        leasePollTimer = setTimeout(refreshLease, 6000);
+        // Blocked: poll briskly, the buttons are waiting on this. Otherwise poll
+        // slowly but DO keep polling while a crawl is open, because that is the
+        // only thing that notices the next rotation tick starting.
+        const blocked = leaseBlocked();
+        if (!blocked && !anyCrawlOpen()) return;
+        leasePollTimer = setTimeout(refreshLease, blocked ? 6000 : 20000);
       }
 
       // Ask the rotation to stand down, then wait for the lease to come free.
@@ -2749,9 +2763,19 @@
         if (!c) return '<span class="cat-count none">&mdash;</span>';
         if (c.running) {
           const so = c.jobStored || 0;
+          // A half-finished crawl looks identical whether something is working
+          // on it this second or it is between rotation ticks - and a count
+          // that has not moved for ten minutes reads as "stuck" rather than as
+          // "waiting its turn". The lease is what separates the two.
+          const active = remoteBusyCategory() === categoryID || catLoading.has(categoryID);
           return '<span class="cat-count' + (auto && so >= 10000 ? ' huge' : '') +
-            '" title="Crawl in progress">' + so.toLocaleString() +
-            '<span class="of"> so far</span></span>';
+            '" title="' +
+            (active
+              ? 'Crawling now — ' + so.toLocaleString() + ' services so far'
+              : so.toLocaleString() + ' services crawled so far. Nothing is ' +
+                'running this second; the rotation carries on at its next tick.') +
+            '">' + so.toLocaleString() +
+            '<span class="of"> ' + (active ? 'so far' : 'paused') + '</span></span>';
         }
         if (!c.crawled) return '<span class="cat-count none">&mdash;</span>';
         const seenNum = c.seenTotal || c.count || 0;
