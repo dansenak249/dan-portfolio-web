@@ -324,8 +324,14 @@
       .cat-count .of { color: var(--dim); }
       .cat-count.none { color: var(--dim); }
       /* A category in five figures takes hours to walk and would monopolise the
-         rotation, so the size is called out rather than just reported. */
+         rotation, so the size is called out rather than just reported.
+         Used while a crawl is running, where the cell holds one number. */
       .cat-count.huge { color: var(--bad); }
+      /* Once crawled the cell reads "1,000 / 218,812", and it is the SECOND
+         number that is the warning: the first is a constant the census always
+         keeps. Higher specificity than the .of rule above, which would
+         otherwise dim it back down. */
+      .cat-count .of.huge { color: var(--bad); }
       /* The id is the primary key, so it is shown rather than edited. */
       .cat-id { font-family: var(--mono); font-size: 0.72rem; color: var(--muted); }
       .pager {
@@ -2570,13 +2576,17 @@
         // Past this a full crawl runs to hours, which only matters while the
         // category is in the rotation.
         const huge = auto && seenNum >= 10000;
-        return '<span class="cat-count' + (huge ? ' huge' : '') +
+        // The warning goes on the WALKED total, not on the kept count. The kept
+        // count is always CENSUS_KEEP, so colouring it says nothing; the number
+        // that makes this category expensive is the one behind the slash.
+        return '<span class="cat-count' +
           '" title="Keeping the busiest ' + kept + ' of ' + seen +
           ' services walked' +
           (huge
             ? ' — a full crawl takes hours, and it is in the auto rotation'
             : '') +
-          '">' + kept + '<span class="of"> / ' + seen + '</span></span>';
+          '">' + kept + '<span class="of' + (huge ? ' huge' : '') +
+          '"> / ' + seen + '</span></span>';
       }
 
       function renderCatEditor() {
