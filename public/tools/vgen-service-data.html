@@ -389,11 +389,13 @@
       .col-permo { width: 88px; }
       /* The Auto column had its header left-aligned by the global th rule and
          its checkbox centred by an inline style, so the two never lined up.
-         One class now owns both ends of the column. */
-      .col-auto { width: 46px; text-align: right; }
-      /* Zero the browser's default checkbox margin, or the tick lands a few
-         pixels short of where the header text sits and the column reads as
-         misaligned even though both ends say "right". */
+         One class now owns both ends of the column, and it aligns LEFT like
+         every other column in this table - the header was the odd one out, not
+         the checkbox. */
+      .col-auto { width: 46px; text-align: left; }
+      /* Zero the browser's default checkbox margin, or the tick starts a few
+         pixels in from where the header text does and the column reads as
+         misaligned even though both ends say "left". */
       .col-auto input[type='checkbox'] { margin: 0; vertical-align: middle; }
       /* FIXED layout, and it matters here.
          Under the default auto layout a column is sized from its CONTENT, so a

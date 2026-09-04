@@ -16,6 +16,13 @@
 // The work is delegated to the existing collect and review endpoints rather than
 // reimplemented, so the rotation cannot drift from what the buttons do.
 //
+// ONE ROTATION, BOTH MARKETPLACES. Commission and Shop share a single
+// bandwidth budget and a single fetch lease, so they share the rotation too:
+// one combined list, walked one category at a time, rather than two rotations
+// competing for the same lease. A Shop category needs only its census — a
+// product carries its own sales count and its own review stats — so it
+// finishes in one phase where a commission category needs two.
+//
 // AUTH: `Authorization: Bearer <VGEN_COLLECT_SECRET>` on POST, matching the
 // trending collector this sits alongside. GET is open: it only reports position.
 
@@ -23,6 +30,7 @@ import { timingSafeEqual } from 'node:crypto'
 import { NextResponse } from 'next/server'
 import {
   getCategoryMap,
+  getShopCategoryMap,
   getRotation,
   setRotation,
   acquireFetchLock,
@@ -53,14 +61,34 @@ function isAuthorized(request) {
 }
 
 // Categories the operator has opted into, in map order.
+// Categories the operator has opted into, across both marketplaces, in map
+// order: Commission first, then Shop.
+//
+// The position key is market + id, NOT the id alone. VGen's two taxonomies
+// share 36 category ids outright, so keying on the id would let the rotation
+// mistake a Shop category for its Commission namesake and jump between the two.
 async function autoCategories() {
-  const map = await getCategoryMap()
-  return map
-    .filter((c) => c.auto && (c.categoryID || '').trim())
-    .map((c) => ({
-      categoryID: c.categoryID.trim(),
-      label: (c.categoryName || '').trim() || (c.defaultName || '').trim() || c.categoryID,
-    }))
+  const [commission, shop] = await Promise.all([
+    getCategoryMap(),
+    getShopCategoryMap(),
+  ])
+  const pick = (map, market) =>
+    map
+      .filter((c) => c.auto && (c.categoryID || '').trim())
+      .map((c) => {
+        const categoryID = c.categoryID.trim()
+        const name =
+          (c.categoryName || '').trim() || (c.defaultName || '').trim() || categoryID
+        return {
+          market,
+          categoryID,
+          key: market + ':' + categoryID,
+          // Marked in the label so a status line says which table it means when
+          // the same category name exists on both sides.
+          label: market === 'shop' ? name + ' (shop)' : name,
+        }
+      })
+  return [...pick(commission, 'commission'), ...pick(shop, 'shop')]
 }
 
 async function callSlice(request, path, body) {
@@ -84,6 +112,46 @@ async function callSlice(request, path, body) {
     )
   }
   return json || {}
+}
+
+/**
+ * Where the next tick should start, given the stored state and the current
+ * list. Pure, so the rules can be tested without a crawl or a Redis.
+ *
+ * Two subtleties live here:
+ *   - a state written before Shop joined carries no `key`, and every one of
+ *     those entries was a commission entry, so it is read as such rather than
+ *     silently restarting the cycle;
+ *   - the category we were on may be GONE, unticked or deleted between ticks.
+ *     Restarting from the top would re-crawl everything ahead of it, so the
+ *     fallback is the position after whichever category last FINISHED - the one
+ *     place in the order that a deletion cannot move.
+ *
+ * @param {{key: string, market: string}[]} list
+ * @param {object|null} prev
+ * @returns {{ index: number, phase: string, lastDoneKey: string|null }}
+ */
+export function resolvePosition(list, prev) {
+  const prevKey = prev
+    ? prev.key || (prev.categoryID && 'commission:' + prev.categoryID) || null
+    : null
+  const lastDoneKey = prev
+    ? prev.lastDoneKey ||
+      (prev.lastDoneCategoryID && 'commission:' + prev.lastDoneCategoryID) ||
+      null
+    : null
+
+  let index = prevKey ? list.findIndex((c) => c.key === prevKey) : -1
+  let phase = prev && index !== -1 ? prev.phase || 'census' : 'census'
+  if (index === -1 && lastDoneKey) {
+    const after = list.findIndex((c) => c.key === lastDoneKey)
+    if (after !== -1) index = (after + 1) % list.length
+  }
+  if (index === -1) index = 0
+  // Shop has no reviews phase; a stored one would send a product category to
+  // the commission review endpoint.
+  if (list[index] && list[index].market === 'shop') phase = 'census'
+  return { index, phase, lastDoneKey }
 }
 
 export async function GET() {
@@ -143,61 +211,73 @@ export async function POST(request) {
     }
 
     const prev = await getRotation()
-    // Resolve the position by ID, not by index: the map can be reordered or a
+    // Resolve the position by KEY, not by index: the map can be reordered or a
     // category unticked between calls, and an index would then point at
     // something else entirely.
-    let index = prev ? list.findIndex((c) => c.categoryID === prev.categoryID) : -1
-    let phase = prev && index !== -1 ? prev.phase : 'census'
-    // The category we were on can also be GONE - unticked or deleted while a
-    // tick was not running. Resuming from the top would then re-crawl everything
-    // ahead of it, so instead pick up after whichever category last FINISHED,
-    // which is the place in the order that deletion cannot move.
-    if (index === -1 && prev && prev.lastDoneCategoryID) {
-      const after = list.findIndex((c) => c.categoryID === prev.lastDoneCategoryID)
-      if (after !== -1) index = (after + 1) % list.length
-    }
-    if (index === -1) index = 0
+    //
+    // A state written before Shop joined the rotation carries no `key`. Those
+    // were all commission entries, so read them as such rather than starting
+    // the whole cycle over.
+    const start = resolvePosition(list, prev)
+    let index = start.index
+    let phase = start.phase
     let cycles = (prev && prev.cycles) || 0
-    let lastDoneCategoryID = (prev && prev.lastDoneCategoryID) || null
+    let lastDoneKey = start.lastDoneKey
 
     const current = list[index]
+    const isShop = current.market === 'shop'
+
     // Captured before the phase advances below: without this, a tick that ran
     // the reviews phase reports itself as having run the census.
     const ranPhase = phase
     let advanced = false
     let detail = null
 
+    const finish = () => {
+      lastDoneKey = current.key
+      index = (index + 1) % list.length
+      phase = 'census'
+      advanced = true
+      if (index === 0) cycles++
+    }
+
     if (phase === 'census') {
-      detail = await callSlice(request, '/api/vgen-service-data/categories/collect', {
-        categoryID: current.categoryID,
-        // Renews the lease this tick already holds rather than fighting it.
-        holder: ROTATION_HOLDER,
-        lockKind: 'rotation',
-      })
-      if (detail.done) phase = 'reviews'
+      detail = await callSlice(
+        request,
+        isShop
+          ? '/api/vgen-shop-data/categories/collect'
+          : '/api/vgen-service-data/categories/collect',
+        {
+          categoryID: current.categoryID,
+          // Renews the lease this tick already holds rather than fighting it.
+          holder: ROTATION_HOLDER,
+          lockKind: 'rotation',
+        }
+      )
+      if (detail.done) {
+        // Shop is done here: the crawl already carries sales and ratings, so
+        // there is no second pass to make.
+        if (isShop) finish()
+        else phase = 'reviews'
+      }
     } else {
       detail = await callSlice(request, '/api/vgen-service-data/reviews/collect', {
         categoryID: current.categoryID,
         holder: ROTATION_HOLDER,
         lockKind: 'rotation',
       })
-      if (detail.done) {
-        // This category is finished; hand over to the next one.
-        lastDoneCategoryID = current.categoryID
-        index = (index + 1) % list.length
-        phase = 'census'
-        advanced = true
-        if (index === 0) cycles++
-      }
+      if (detail.done) finish()
     }
 
     const next = list[index]
     const state = {
+      key: next.key,
+      market: next.market,
       categoryID: next.categoryID,
       label: next.label,
       phase,
       cycles,
-      lastDoneCategoryID,
+      lastDoneKey,
       startedAt: (prev && prev.startedAt) || new Date().toISOString(),
       updatedAt: new Date().toISOString(),
       lastNote: 'Ran ' + ranPhase + ' for ' + current.label,
@@ -212,7 +292,13 @@ export async function POST(request) {
         done: !!detail.done,
         advanced,
         cycles,
-        next: { categoryID: next.categoryID, label: next.label, phase },
+        ranMarket: current.market,
+        next: {
+          categoryID: next.categoryID,
+          market: next.market,
+          label: next.label,
+          phase,
+        },
         detail,
       },
       { headers: NO_STORE }
