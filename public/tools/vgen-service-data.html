@@ -393,10 +393,22 @@
          every other column in this table - the header was the odd one out, not
          the checkbox. */
       .col-auto { width: 46px; text-align: left; }
-      /* Zero the browser's default checkbox margin, or the tick starts a few
-         pixels in from where the header text does and the column reads as
-         misaligned even though both ends say "left". */
-      .col-auto input[type='checkbox'] { margin: 0; vertical-align: middle; }
+      /* The real reason this column looked centred, and it was never
+         text-align: `.decl-table input` sets width:100% and min-width:120px for
+         the NAME and ID text boxes, and a checkbox is an input too. The tick was
+         sitting inside a 120px-wide control that started correctly at the left
+         padding edge but drew its glyph in the middle of itself - so the column
+         measured as aligned while looking centred, and forced itself 144px wide
+         into the bargain. Give the checkbox its intrinsic size back.
+         The zeroed margin is the browser default, which would otherwise offset
+         it a few pixels from where the header text starts. */
+      .col-auto input[type='checkbox'] {
+        width: auto;
+        min-width: 0;
+        padding: 0;
+        margin: 0;
+        vertical-align: middle;
+      }
       /* FIXED layout, and it matters here.
          Under the default auto layout a column is sized from its CONTENT, so a
          single very long product name - "Customizable Vtuber Model/Hachimi
