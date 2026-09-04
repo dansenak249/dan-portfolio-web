@@ -30,7 +30,7 @@ on:
       rotate_ticks:
         description: "How many rotation ticks to run (service-data refresh)"
         required: false
-        default: "8"
+        default: "40"
 
 jobs:
   collect:
@@ -99,10 +99,14 @@ jobs:
         env:
           SITE_URL: ${{ secrets.VGEN_SITE_URL }}
           COLLECT_SECRET: ${{ secrets.VGEN_COLLECT_SECRET }}
-          MAX_TICKS: ${{ github.event.inputs.rotate_ticks || '8' }}
-          # Wall-clock stop, so a run of slow ticks ends on its own terms rather
-          # than at the runner's 6-hour limit.
-          BUDGET_SECONDS: "540"
+          MAX_TICKS: ${{ github.event.inputs.rotate_ticks || '40' }}
+          # Measured at ~17-24s per tick, so 40 ticks is roughly 11-16 minutes
+          # and this ceiling rarely binds. It exists so a run of unusually slow
+          # ticks ends on its own terms rather than at the runner's 6-hour limit.
+          # Public repo, so runner minutes are free; the reason not to go higher
+          # is that the vgen-rotate concurrency group makes the next run queue
+          # behind this one.
+          BUDGET_SECONDS: "2400"
         run: |
           set -uo pipefail
           BASE="${SITE_URL%/}"
