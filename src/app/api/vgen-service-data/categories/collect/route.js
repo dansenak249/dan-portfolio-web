@@ -148,23 +148,26 @@ export async function POST(request) {
   const holder = String((body && body.holder) || '').trim() ||
     'direct:' + Math.random().toString(36).slice(2)
   const lockKind = (body && body.lockKind) || 'direct'
-  const lease = await acquireFetchLock(holder, lockKind, { categoryID })
-  if (!lease.ok) {
-    return NextResponse.json(
-      {
-        ok: false,
-        busy: true,
-        error: 'Another fetch holds the lease: ' + (lease.reason || 'busy'),
-        heldBy: lease.lock
-          ? { kind: lease.lock.kind, categoryID: lease.lock.categoryID, label: lease.lock.label }
-          : null,
-      },
-      { status: 409, headers: NO_STORE }
-    )
-  }
-
   const startedNow = Date.now()
   try {
+  // Inside the try: taking the lease talks to Redis, and an unreachable Redis
+  // must come back as JSON the caller can read, not as a bare 500.
+    const lease = await acquireFetchLock(holder, lockKind, { categoryID })
+    if (!lease.ok) {
+      return NextResponse.json(
+        {
+          ok: false,
+          busy: true,
+          error: 'Another fetch holds the lease: ' + (lease.reason || 'busy'),
+          heldBy: lease.lock
+            ? { kind: lease.lock.kind, categoryID: lease.lock.categoryID, label: lease.lock.label }
+            : null,
+        },
+        { status: 409, headers: NO_STORE }
+      )
+    }
+
+
     // Resume takes priority: a half-finished job holds a valid cursor, so
     // continuing it is always cheaper than re-crawling. Only an explicit
     // `reset` (or having nothing to resume) starts from zero.

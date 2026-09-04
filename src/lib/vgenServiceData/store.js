@@ -287,6 +287,20 @@ export async function setArtistName(userID, name) {
 // A few hundred per chunk keeps both in bounds.
 const CHUNK_SIZE = 300
 
+/**
+ * Namespace a category key for the SHOP census.
+ *
+ * Shop and Commission share the chunk / meta / job / top machinery below, and
+ * 36 of their category ids are literally the same string, so the two censuses
+ * would overwrite each other without this. Prefixing the key rather than
+ * threading a scope argument through a dozen functions keeps one implementation
+ * of the storage and makes the collision impossible by construction.
+ *
+ * @param {string} categoryID
+ * @returns {string} the key to pass to the category store functions
+ */
+export const shopKey = (categoryID) => 'shop:' + categoryID
+
 const catMetaKey = (categoryID) => `${NS}:cat:${categoryID}:meta`
 const catChunkKey = (categoryID, i) => `${NS}:cat:${categoryID}:chunk:${i}`
 const catJobKey = (categoryID) => `${NS}:cat:${categoryID}:job`

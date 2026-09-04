@@ -31,6 +31,7 @@
 // services.
 
 const SEARCH_URL = 'https://api.vgen.co/commission/services/search'
+const SHOP_SEARCH_URL = 'https://api.vgen.co/shop/products/search'
 
 const PAGE_SIZE = 20 // fixed by the API
 const PAGE_GAP_MS = 300 // politeness pause between pages
@@ -45,6 +46,41 @@ const BROWSER_UA =
 const TRANSIENT = new Set([408, 429, 500, 502, 503, 504])
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
+
+// VGen runs two marketplaces with the same paging scheme and the same
+// reshuffle hazard, but different endpoints, filter keys and record shapes.
+// They are described here rather than crawled by two copies of the loop: the
+// part worth getting right - the strictly-descending searchIndex check that
+// catches a mid-crawl reshuffle - is subtle enough that a second copy of it
+// would be a second thing to keep correct.
+//
+// Both share the same trap: the plural `searchCategoryIDs` array is honoured
+// while a singular key is silently ignored, and an EMPTY array filters to
+// nothing rather than to everything.
+export const COMMISSION_SOURCE = {
+  label: 'commission',
+  url: SEARCH_URL,
+  body: (categoryID, cursor) => searchBody(categoryID, cursor),
+  items: (data) => (Array.isArray(data && data.services) ? data.services : []),
+  idOf: (item) => item.serviceID,
+  slim: (item, categoryID) => slimService(item, categoryID),
+}
+
+export const SHOP_SOURCE = {
+  label: 'shop',
+  url: SHOP_SEARCH_URL,
+  body: (categoryID, cursor) => ({
+    cursor: cursor ?? null,
+    // `product`, not `service`: the commission shape is accepted and ignored,
+    // which returns an unfiltered feed that looks like a working crawl.
+    filters: { product: { searchCategoryIDs: [categoryID], searchCategoryVariantKeys: [] } },
+    sortType: 'relevance',
+    textQuery: '',
+  }),
+  items: (data) => (Array.isArray(data && data.products) ? data.products : []),
+  idOf: (item) => item.productID,
+  slim: (item, categoryID) => slimProduct(item, categoryID),
+}
 
 function searchBody(categoryID, cursor) {
   return {
@@ -65,18 +101,18 @@ function searchBody(categoryID, cursor) {
   }
 }
 
-async function fetchPage(categoryID, cursor) {
+async function fetchPage(source, categoryID, cursor) {
   let lastError = null
   for (let attempt = 1; attempt <= MAX_TRIES; attempt++) {
     try {
-      const res = await fetch(SEARCH_URL, {
+      const res = await fetch(source.url, {
         method: 'POST',
         headers: {
           accept: 'application/json',
           'content-type': 'application/json',
           'user-agent': BROWSER_UA,
         },
-        body: JSON.stringify(searchBody(categoryID, cursor)),
+        body: JSON.stringify(source.body(categoryID, cursor)),
         cache: 'no-store',
         signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
       })
@@ -145,6 +181,68 @@ export function slimService(item, categoryID) {
 }
 
 /**
+ * Keep only the fields the Shop survey uses.
+ *
+ * Shop is a far better-instrumented marketplace than Commission: `salesCount`
+ * is a REAL per-product order count present on every listing, where the
+ * commission side publishes `completedComms` on about 15% of services; and
+ * `shopReviewStats` is per-PRODUCT despite its name, where the commission
+ * equivalent is artist-wide. Tags run to 20 here against a cap of 5 there.
+ *
+ * `linkedServiceID` is kept because it ties a product back to a commission
+ * service - 74% of products carry one - which is the only join between the two
+ * halves of the tool.
+ */
+export function slimProduct(item, categoryID) {
+  const stats = item.shopReviewStats || {}
+  const user = item.user || {}
+  return {
+    productID: item.productID,
+    userID: item.userID,
+    productName: item.productName || '',
+    categoryID: item.searchCategoryID || categoryID,
+    basePrice: typeof item.basePrice === 'number' ? item.basePrice : null,
+    currency: item.currency || '',
+    pricingType: item.pricingType || '',
+    created: item.created || null,
+    modified: item.modified || null,
+    // The real thing: orders for THIS product, on every listing.
+    salesCount: typeof item.salesCount === 'number' ? item.salesCount : null,
+    paidSalesCount: typeof item.paidSalesCount === 'number' ? item.paidSalesCount : null,
+    freeSalesCount: typeof item.freeSalesCount === 'number' ? item.freeSalesCount : null,
+    // Whether the seller shows that number publicly. The count is returned
+    // either way; this says whether quoting it is fair game.
+    isNumberOfSalesPublic: !!item.isNumberOfSalesPublic,
+    reviewCount: typeof stats.totalReviews === 'number' ? stats.totalReviews : null,
+    avgRating: typeof stats.averageRating === 'number' ? stats.averageRating : null,
+    stars: [
+      stats.total1StarReviews ?? 0,
+      stats.total2StarReviews ?? 0,
+      stats.total3StarReviews ?? 0,
+      stats.total4StarReviews ?? 0,
+      stats.total5StarReviews ?? 0,
+    ],
+    tags: Array.isArray(item.tags)
+      ? item.tags.filter((t) => typeof t === 'string' && t.trim())
+      : [],
+    linkedServiceID: item.linkedServiceID || null,
+    username: user.username || null,
+    displayName: user.displayName || null,
+  }
+}
+
+/**
+ * How much a product has sold, for ranking which ones the census keeps.
+ * Unlike the commission side there is no guessing: every listing carries its
+ * own order count, so this never has to fall back to an artist-wide figure.
+ */
+export function productScore(row) {
+  if (!row) return 0
+  if (typeof row.salesCount === 'number') return row.salesCount
+  return row.reviewCount ?? 0
+}
+
+/**
  * How busy a service is, for ranking which ones are worth pulling reviews for.
  *
  * Prefers the service's own completed-commission count. Only ~15% of listings
@@ -196,6 +294,9 @@ export async function fetchCategorySlice(categoryID, options = {}) {
     maxPages = 20,
     maxMs = 30000,
     lastIndex: startIndex = null,
+    // Which marketplace. Defaults to commission so every existing caller keeps
+    // its exact behaviour.
+    source = COMMISSION_SOURCE,
   } = options
   // Bounded to this slice: enough to drop a repeat inside one run, without the
   // unbounded growth of a whole-crawl set. Repeats ACROSS slices are dropped
@@ -219,14 +320,15 @@ export async function fetchCategorySlice(categoryID, options = {}) {
       stoppedOnTime = true
       break
     }
-    const data = await fetchPage(categoryID, nextCursor)
+    const data = await fetchPage(source, categoryID, nextCursor)
     pages++
 
-    const items = Array.isArray(data && data.services) ? data.services : []
+    const items = source.items(data)
     fetched += items.length
 
     for (const item of items) {
-      if (!item || typeof item.serviceID !== 'string') continue
+      const itemID = item && source.idOf(item)
+      if (typeof itemID !== 'string') continue
       // Strictly descending feed: an index that climbs means VGen recomputed
       // the sort key mid-crawl, which skips rows as well as repeating them.
       const idx = typeof item.searchIndex === 'number' ? item.searchIndex : null
@@ -240,12 +342,12 @@ export async function fetchCategorySlice(categoryID, options = {}) {
         offCategory++
         continue
       }
-      if (seen.has(item.serviceID)) {
+      if (seen.has(itemID)) {
         duplicates++
         continue
       }
-      seen.add(item.serviceID)
-      services.push(slimService(item, categoryID))
+      seen.add(itemID)
+      services.push(source.slim(item, categoryID))
     }
 
     // No nextCursor (the field is absent on the last page, not null) means the

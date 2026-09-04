@@ -932,6 +932,9 @@
                       <th class="no-sort">Category Name</th>
                       <th class="no-sort" style="width:170px">Category ID</th>
                       <th class="no-sort" style="width:46px" title="Include this category in the automatic rotation">Auto</th>
+                      <th class="no-sort" style="width:118px">Products</th>
+                      <th class="no-sort" style="width:48px"></th>
+                      <th class="no-sort" style="width:48px"></th>
                       <th class="no-sort" style="width:48px"></th>
                     </tr>
                   </thead>
@@ -955,10 +958,12 @@
                 a name blank parks the row with VGen&#39;s own name as its placeholder.
               </p>
               <p class="foot-note" id="shopCrawlNote">
-                <b>Per-row fetch is not wired yet.</b> Crawling Shop shares one
-                bandwidth budget and one fetch lock with Commission, so it plugs
-                into the same rotation rather than running alongside it — that
-                comes with the product crawl.
+                Fetch walks every product in the category and keeps the busiest
+                1,000 by sales. Unlike Commission there is no second pass for
+                reviews: a product carries its own sales count and its own
+                rating. Shop and Commission share ONE fetch lock and one
+                bandwidth budget, so only one crawl runs at a time across both
+                tabs — and starting one here stands the rotation down.
               </p>
             </div>
           </details>
@@ -1208,6 +1213,9 @@
         fetchLock: '/api/vgen-service-data/fetch-lock',
         shopCategories: '/api/vgen-shop-data/categories',
         shopDiscover: '/api/vgen-shop-data/categories/discover',
+        shopCollect: '/api/vgen-shop-data/categories/collect',
+        shopPurge: '/api/vgen-shop-data/categories/purge',
+        shopCensus: '/api/vgen-shop-data/census',
         reviews: '/api/vgen-service-data/reviews/collect',
       };
 
@@ -2957,8 +2965,13 @@
       // because a huge category monopolises the rotation for hours. One sitting
       // outside the rotation is simply large, and colouring it red would be an
       // alarm about nothing.
-      function censusCell(categoryID, auto) {
-        const c = categoryID ? censusStats[categoryID] : null;
+      // Serves both maps: `opts.stats` is whichever census this row belongs
+      // to, `opts.loading` whichever in-flight set. Defaults keep every
+      // existing commission call site working unchanged.
+      function censusCell(categoryID, auto, opts) {
+        const stats = (opts && opts.stats) || censusStats;
+        const loading = (opts && opts.loading) || catLoading;
+        const c = categoryID ? stats[categoryID] : null;
         if (!c) return '<span class="cat-count none">&mdash;</span>';
         if (c.running) {
           const so = c.jobStored || 0;
@@ -2966,7 +2979,7 @@
           // on it this second or it is between rotation ticks - and a count
           // that has not moved for ten minutes reads as "stuck" rather than as
           // "waiting its turn". The lease is what separates the two.
-          const active = remoteBusyCategory() === categoryID || catLoading.has(categoryID);
+          const active = remoteBusyCategory() === categoryID || loading.has(categoryID);
           return '<span class="cat-count' + (auto && so >= 10000 ? ' huge' : '') +
             '" title="' +
             (active
@@ -3005,6 +3018,137 @@
       let shopCatRows = [];
       let shopCatBaseline = '[]';
 
+      // ---- Shop crawl driver ---------------------------------------------
+      // The Shop twin of runCollect, and deliberately shorter: a product row
+      // carries its own sales count and its own review stats, so there is no
+      // second phase to run. One pass and the category is done.
+      //
+      // It takes the SAME fetch lease as the commission crawl, because the two
+      // marketplaces share one bandwidth budget: starting a Shop crawl stands
+      // the rotation down and blocks a Commission fetch, exactly as it should.
+      const shopCatLoading = new Set();
+      const shopCatCancel = new Set();
+      let shopCensusStats = {};
+
+      async function loadShopCensusStats() {
+        try {
+          const res = await fetch(API.shopCensus, { cache: 'no-store' });
+          const json = await res.json();
+          if (!res.ok || !json.categories) return;
+          const next = {};
+          for (const c of json.categories) next[c.categoryID] = c;
+          shopCensusStats = next;
+          renderShopCatEditor();
+        } catch {
+          // Purely informational; never disturb the editor over it.
+        }
+      }
+
+      function cancelShopCollect(categoryID) {
+        if (!shopCatLoading.has(categoryID)) return;
+        shopCatCancel.add(categoryID);
+        status('Stopping after this slice…', 'info');
+      }
+
+      async function runShopCollect(categoryID, label, force) {
+        if (!categoryID || shopCatLoading.has(categoryID)) return;
+        shopCatLoading.add(categoryID);
+        renderShopCatEditor();
+        try {
+          if (!(await claimLease(categoryID, label))) {
+            status(
+              'Could not get the fetch lock — ' + leaseHolderLabel() +
+                ' is still holding it. Try again in a moment.',
+              'err'
+            );
+            return;
+          }
+          let guard = 0;
+          let result = null;
+          status('Fetching ' + label + '…', 'info');
+          do {
+            result = await postJson(API.shopCollect, {
+              categoryID,
+              reset: force && guard === 0 ? 1 : 0,
+              holder: FETCH_HOLDER,
+              lockKind: 'manual',
+            });
+            status(
+              'Fetching ' + label + '… ' + result.stored + ' product(s), ' +
+                result.pages + ' page(s)' +
+                (result.resumed && guard === 0 ? ' (resumed)' : ''),
+              'info'
+            );
+            guard++;
+          } while (!result.done && guard < 400 && !shopCatCancel.has(categoryID));
+
+          if (shopCatCancel.has(categoryID)) {
+            status(
+              'Stopped ' + label + ' at ' + result.stored + ' product(s), ' +
+                result.pages + ' page(s). Press fetch again to carry on.',
+              'ok'
+            );
+            return;
+          }
+
+          // A reshuffle means VGen recomputed its sort key mid-crawl, which
+          // SKIPS products as well as repeating them. Say so rather than
+          // presenting a holed run as complete.
+          const holed = Number(result.reshuffles) > 0;
+          status(
+            'Fetched ' + label + ': ' + result.stored + ' product(s) in ' +
+              result.pages + ' page(s), keeping the busiest ' + result.kept +
+              (holed
+                ? ' — VGen reshuffled ' + result.reshuffles +
+                  ' time(s) mid-crawl, so some products were skipped. Run this category again.'
+                : '.'),
+            holed ? 'err' : 'ok'
+          );
+        } catch (e) {
+          status('Fetch failed for ' + label + ': ' + e.message, 'err');
+        } finally {
+          shopCatLoading.delete(categoryID);
+          shopCatCancel.delete(categoryID);
+          await releaseLease();
+          renderShopCatEditor();
+          loadShopCensusStats();
+        }
+      }
+
+      function shopCategoryLabel(categoryID) {
+        const key = (categoryID || '').trim();
+        const row = shopCatRows.find((r) => (r.categoryID || '').trim() === key);
+        if (!row) return key;
+        return (
+          (row.categoryName || '').trim() || (row.defaultName || '').trim() || key
+        );
+      }
+
+      async function purgeShopCategory(categoryID) {
+        const label = shopCategoryLabel(categoryID);
+        const c = shopCensusStats[categoryID];
+        const held = c && c.crawled ? c.count + ' product(s)' : 'nothing crawled yet';
+        // A crawl of a large category is hours of work; say what is about to go.
+        if (!window.confirm('Clear ' + label + '?\n\nStored: ' + held +
+          '\n\nThis only clears the Shop copy. Commission data for the same ' +
+          'category id is untouched.')) return;
+        try {
+          status('Clearing ' + label + '…', 'info');
+          const json = await postJson(API.shopPurge, { categoryID });
+          const mb = (json.freedApprox || 0) / 1048576;
+          status(
+            'Cleared ' + label + ': ' + (json.removedProducts || 0) + ' product(s), ' +
+              (json.removedChunks || 0) + ' chunk(s)' +
+              (json.hadJob ? ' and an unfinished crawl' : '') +
+              (mb >= 0.1 ? ' — about ' + mb.toFixed(1) + ' MB freed.' : '.'),
+            'ok'
+          );
+          loadShopCensusStats();
+        } catch (e) {
+          status('Clear failed for ' + label + ': ' + e.message, 'err');
+        }
+      }
+
       function updateShopCatButtons() {
         const dirty = catSnapshot(shopCatRows) !== shopCatBaseline;
         $('shopSaveCatBtn').disabled = !dirty;
@@ -3021,6 +3165,23 @@
             const swatchStyle = color ? `background:${esc(color)}` : 'background:transparent';
             const swatchCls = color ? 'cat-swatch' : 'cat-swatch is-empty';
             const catId = (r.categoryID || '').trim();
+            const busy = shopCatLoading.has(catId);
+            const remote = !busy && !!catId && remoteBusyCategory() === catId;
+            const blocked = !busy && leaseBlocked();
+            const loadCls =
+              'tiny ghost cat-load' +
+              (busy || remote ? ' is-loading' : '') +
+              (remote ? ' is-remote' : '');
+            const who = leaseHolderLabel();
+            const loadTitle = busy
+              ? 'Fetching… click to cancel'
+              : remote
+              ? who.charAt(0).toUpperCase() + who.slice(1) + ' is crawling this category'
+              : blocked
+              ? 'Locked: ' + who + ' — only one fetch runs at a time'
+              : catId
+              ? 'Fetch this category from VGen (shift-click to restart from scratch)'
+              : 'Enter a category ID first';
             return `<tr data-shoprow="${i}">
               <td class="muted">${i + 1}</td>
               <td><button type="button" class="${swatchCls}" data-shopcolor="${i}" style="${swatchStyle}" title="${
@@ -3039,6 +3200,19 @@
               }${catId ? '' : ' disabled'} title="${
                 catId ? 'Refresh this category automatically' : 'Enter a category ID first'
               }" /></td>
+              <td>${censusCell(catId, !!r.auto, { stats: shopCensusStats, loading: shopCatLoading })}</td>
+              <td><button class="${loadCls}" data-shopload="${i}"${
+                (!busy && !catId) || blocked ? ' disabled' : ''
+              } title="${loadTitle}"><span class="cat-spin">${ICON_RELOAD}</span><span class="cat-x">${ICON_CANCEL}</span></button></td>
+              <td><button class="tiny ghost cat-purge" data-shoppurge="${i}"${
+                !catId || leaseBlocked() ? ' disabled' : ''
+              } title="${
+                !catId
+                  ? 'Enter a category ID first'
+                  : leaseBlocked()
+                  ? 'Locked: ' + leaseHolderLabel() + ' is fetching'
+                  : 'Clear this category&#39;s crawled products'
+              }">${ICON_TRASH}</button></td>
               <td><button class="tiny ghost" data-shopdel="${i}" title="Remove this row from the map">&#10005;</button></td>
             </tr>`;
           })
@@ -3055,6 +3229,23 @@
           el.addEventListener('change', (e) => {
             shopCatRows[Number(e.target.getAttribute('data-shopauto'))].auto = e.target.checked;
             updateShopCatButtons();
+          });
+        });
+        body.querySelectorAll('[data-shopload]').forEach((el) => {
+          el.addEventListener('click', (e) => {
+            const i = Number(e.currentTarget.getAttribute('data-shopload'));
+            const id = (shopCatRows[i].categoryID || '').trim();
+            if (!id) return;
+            // A running row stays clickable, and that click cancels it.
+            if (shopCatLoading.has(id)) return cancelShopCollect(id);
+            runShopCollect(id, shopCategoryLabel(id), e.shiftKey);
+          });
+        });
+        body.querySelectorAll('[data-shoppurge]').forEach((el) => {
+          el.addEventListener('click', (e) => {
+            const i = Number(e.currentTarget.getAttribute('data-shoppurge'));
+            const id = (shopCatRows[i].categoryID || '').trim();
+            if (id) purgeShopCategory(id);
           });
         });
         body.querySelectorAll('[data-shopdel]').forEach((el) => {
@@ -3791,6 +3982,7 @@
           await loadData(false); // page-load read = cached, no VGen hit
           loadCensusStats(); // per-category counts for the map
         loadShopCategories(); // the Shop tab's own map
+        loadShopCensusStats(); // and its per-category counts
           resumeRunningJobs(); // continue any crawl a reload interrupted
         } catch (e) {
           status('Init failed: ' + e.message, 'err');
