@@ -881,34 +881,39 @@
              a Service, in Shop it is a Product. Columns are provisional until
              the Shop API is in hand - they are the Commission set, which is the
              stated starting point, not a guess dressed up as a decision. -->
+        <!-- Columns differ from Commission because Shop measures different
+             things. A product publishes its real order count and its own star
+             rating, so nothing has to stand in for them; but the crawl carries
+             no per-review dates, so there is no monthly series to draw and no
+             repeat-client figure to compute. Sales/mo is the honest substitute
+             for a sparkline: lifetime sales over months listed. -->
         <section class="panel">
           <div class="panel-head">
             <h2><span class="dot"></span>Product</h2>
+            <div class="flow-tools">
+              <span class="sub">kept / walked</span>
+              <span class="count-badge" id="prodCount">0</span>
+            </div>
           </div>
           <div class="table-scroll">
             <table id="prodTable">
               <thead>
                 <tr>
-                  <th class="col-name no-sort">Product</th>
+                  <th class="col-name" data-k="productName">Product</th>
                   <th class="no-sort col-spacer"></th>
-                  <th class="num col-price no-sort">Price</th>
-                  <th class="num col-n no-sort">Total</th>
-                  <th class="num col-n no-sort">Repeat</th>
-                  <th class="num col-n no-sort">Month</th>
-                  <th class="num col-rev no-sort">Rev/mo</th>
-                  <th class="no-sort">Monthly flow</th>
+                  <th class="num col-price" data-k="_priceUSD">Price</th>
+                  <th class="num col-n" data-k="salesCount" title="Orders VGen reports for this product. A * means the seller does not show the number publicly.">Sales</th>
+                  <th class="num col-rev" data-k="_revenue" title="Base price x lifetime sales. An estimate: tiers and add-ons above the base price are not counted.">Revenue</th>
+                  <th class="num col-n" data-k="_salesPerMonth" title="Lifetime sales divided by months listed.">Sales/mo</th>
+                  <th class="num col-n" data-k="reviewCount">Reviews</th>
+                  <th class="num col-star" data-k="avgRating">&#9733;</th>
                 </tr>
               </thead>
               <tbody id="prodBody"></tbody>
             </table>
           </div>
-          <div class="pending" id="prodPending">
-            <b>Not connected yet.</b> The table above is the shape this will take —
-            the same columns as Commission, since a Shop product is the same kind
-            of row as a Service. Nothing is fetched or stored for Shop until the
-            API is wired: no endpoint is guessed at, and no placeholder data is
-            shown here.
-          </div>
+          <div id="prodEmpty" class="empty">No products yet. Add a category in the map below, then press its fetch button.</div>
+          <div id="prodPager" class="pager"></div>
         </section>
 
         <!-- Shop category map. Same job and same row shape as the Commission
@@ -1216,6 +1221,7 @@
         shopCollect: '/api/vgen-shop-data/categories/collect',
         shopPurge: '/api/vgen-shop-data/categories/purge',
         shopCensus: '/api/vgen-shop-data/census',
+        shopData: '/api/vgen-shop-data/data',
         reviews: '/api/vgen-service-data/reviews/collect',
       };
 
@@ -3045,6 +3051,165 @@
           '"> / ' + seen + '</span></span>';
       }
 
+      // ---- Product table --------------------------------------------------
+      // The Shop counterpart of the service table. It shows different columns
+      // because Shop measures different things: a product publishes its real
+      // order count and its own star rating, so there is no stand-in metric to
+      // compute — but it publishes no per-review dates in the crawl, so there
+      // is no monthly series to draw either. Showing the columns that exist and
+      // leaving out the ones that do not beats faking a sparkline.
+      let prodData = [];
+      let prodPage = 1;
+      let prodSort = { key: '_revenue', dir: -1 };
+      const PROD_PAGE_SIZE = 10;
+
+      // Months a product has been listed, floored at one so a listing published
+      // yesterday does not report a year's worth of sales per month.
+      function monthsListed(created) {
+        const t = Date.parse(created || '');
+        if (!isFinite(t)) return null;
+        const months = (Date.now() - t) / (1000 * 60 * 60 * 24 * 30.44);
+        return Math.max(1, months);
+      }
+
+      function annotateProducts() {
+        for (const p of prodData) {
+          p._priceUSD = priceUSD(p.basePrice, p.currency);
+          const sales = typeof p.salesCount === 'number' ? p.salesCount : null;
+          // Lifetime take: what this listing has earned since it went up.
+          // An ESTIMATE — base price only, so tiers and add-ons are missed.
+          p._revenue = p._priceUSD == null || sales == null ? null : p._priceUSD * sales;
+          const m = monthsListed(p.created);
+          p._salesPerMonth = sales == null || m == null ? null : sales / m;
+          p._category = resolveShopCategoryName(p.categoryID);
+        }
+      }
+
+      function resolveShopCategoryName(categoryID) {
+        const key = (categoryID || '').trim();
+        const row = shopCatRows.find((r) => (r.categoryID || '').trim() === key);
+        if (!row) return key;
+        return (row.categoryName || '').trim() || (row.defaultName || '').trim() || key;
+      }
+
+      function prodTitle(p) {
+        return (p.productName || '').trim();
+      }
+
+      function renderProducts() {
+        annotateProducts();
+        const body = $('prodBody');
+        const empty = $('prodEmpty');
+        if (!prodData.length) {
+          body.innerHTML = '';
+          $('prodPager').innerHTML = '';
+          empty.style.display = '';
+          empty.textContent =
+            'No products yet. Add a category in the map below, then press its fetch button.';
+          return;
+        }
+        empty.style.display = 'none';
+
+        const rows = sortRows(prodData, prodSort);
+        const pageCount = Math.max(1, Math.ceil(rows.length / PROD_PAGE_SIZE));
+        if (prodPage > pageCount) prodPage = pageCount;
+        if (prodPage < 1) prodPage = 1;
+        const start = (prodPage - 1) * PROD_PAGE_SIZE;
+        const pageRows = rows.slice(start, start + PROD_PAGE_SIZE);
+
+        body.innerHTML = pageRows
+          .map((p) => {
+            const who = p.displayName || p.username || shortId(p.userID);
+            const handle = (p.username || '').trim();
+            const whoHtml = handle
+              ? `<a class="artist-link" href="https://vgen.co/${encodeURIComponent(handle)}/product/${
+                  slugifyName(prodTitle(p)) || 'p'
+                }/${encodeURIComponent(p.productID)}" target="_blank" rel="noopener noreferrer" title="Open this product on vgen.co">${esc(who)}</a>`
+              : esc(who);
+            const color = resolveCategoryColor(p.categoryID);
+            const titleStyle = color ? ` style="color:${esc(color)}"` : '';
+            // A seller can hide the number publicly; the API returns it either
+            // way, so say when the figure is not one they chose to show.
+            const salesCell =
+              typeof p.salesCount !== 'number'
+                ? '<span class="muted">&mdash;</span>'
+                : num(p.salesCount) + (p.isNumberOfSalesPublic ? '' : '<span class="of">*</span>');
+            return `<tr>
+              <td class="type-cell"><span class="type-name" title="${esc(prodTitle(p))}"${titleStyle}>${esc(
+              prodTitle(p) || '—'
+            )}</span><div class="sub-name" title="${esc(p.productID)}">${whoHtml}${
+              p._category ? ' <span class="type-tag">&middot; ' + esc(p._category) + '</span>' : ''
+            }</div></td>
+              <td class="col-spacer"></td>
+              <td class="num">${price(p.basePrice, p.currency)}</td>
+              <td class="num">${salesCell}</td>
+              <td class="num">${moneyCell(p._revenue)}</td>
+              <td class="num">${
+                p._salesPerMonth == null ? '<span class="muted">—</span>' : trunc1(p._salesPerMonth)
+              }</td>
+              <td class="num">${p.reviewCount == null ? '<span class="muted">—</span>' : num(p.reviewCount)}</td>
+              <td class="num">${p.avgRating == null ? '<span class="muted">—</span>' : trunc1(p.avgRating)}</td>
+            </tr>`;
+          })
+          .join('');
+
+        renderProdPager(rows.length, pageCount, start, pageRows.length);
+        updateSortIndicators('prodTable', prodSort);
+      }
+
+      function moneyCell(v) {
+        if (v == null) return '<span class="muted">&mdash;</span>';
+        if (v === 0) return '<span class="rev-zero">$0</span>';
+        return '$' + Math.round(v).toLocaleString('en-US');
+      }
+
+      function renderProdPager(total, pageCount, start, shown) {
+        const el = $('prodPager');
+        if (!el) return;
+        if (!total) { el.innerHTML = ''; return; }
+        const nums = [];
+        for (let p = 1; p <= pageCount; p++) {
+          if (p === 1 || p === pageCount || Math.abs(p - prodPage) <= 2) nums.push(p);
+        }
+        let html =
+          '<button data-pp="prev"' + (prodPage === 1 ? ' disabled' : '') + ' title="Previous page">&lsaquo;</button>';
+        let prev = 0;
+        for (const p of nums) {
+          if (prev && p - prev > 1) html += '<span class="gap">…</span>';
+          html += '<button data-pp="' + p + '"' + (p === prodPage ? ' class="current"' : '') + '>' + p + '</button>';
+          prev = p;
+        }
+        html +=
+          '<button data-pp="next"' + (prodPage === pageCount ? ' disabled' : '') + ' title="Next page">&rsaquo;</button>';
+        html +=
+          '<span class="range">' + (start + 1) + '–' + (start + shown) + ' of ' + num(total) + '</span>';
+        el.innerHTML = html;
+        el.querySelectorAll('[data-pp]').forEach((b) => {
+          b.addEventListener('click', () => {
+            const v = b.getAttribute('data-pp');
+            if (v === 'prev') prodPage = Math.max(1, prodPage - 1);
+            else if (v === 'next') prodPage = Math.min(pageCount, prodPage + 1);
+            else prodPage = Number(v);
+            renderProducts();
+          });
+        });
+      }
+
+      async function loadShopData() {
+        try {
+          const res = await fetch(API.shopData, { cache: 'no-store' });
+          const json = await res.json();
+          if (!res.ok) throw new Error(json.error || 'HTTP ' + res.status);
+          prodData = Array.isArray(json.products) ? json.products : [];
+          $('prodCount').textContent =
+            num(json.productCount) +
+            (json.censusSeenTotal ? ' / ' + num(json.censusSeenTotal) : '');
+          renderProducts();
+        } catch (e) {
+          status('Shop products failed to load: ' + e.message, 'err');
+        }
+      }
+
       // ---- Shop category map ---------------------------------------------
       // A SEPARATE table from the Commission map, because VGen keeps separate
       // taxonomies: 15 catalogues / 153 categories here against 12 / 160 there,
@@ -3154,6 +3319,7 @@
           renderShopCatEditor();
           renderCatEditor();
           loadShopCensusStats();
+          loadShopData(); // the crawl just changed what this table shows
         }
       }
 
@@ -3186,6 +3352,7 @@
             'ok'
           );
           loadShopCensusStats();
+          loadShopData();
         } catch (e) {
           status('Clear failed for ' + label + ': ' + e.message, 'err');
         }
@@ -3800,6 +3967,18 @@
         if (e.key === 'Escape') closeFilterMenu();
       });
 
+      $('prodTable')
+        .querySelectorAll('thead th[data-k]')
+        .forEach((th) => {
+          th.addEventListener('click', () => {
+            const key = th.getAttribute('data-k');
+            if (prodSort.key === key) prodSort.dir *= -1;
+            else prodSort = { key, dir: -1 };
+            prodPage = 1; // re-sorted: page numbers no longer mean the same rows
+            renderProducts();
+          });
+        });
+
       $('shopDiscoverBtn').addEventListener('click', () => discoverCategories('shop'));
       $('shopSaveCatBtn').addEventListener('click', saveShopCategories);
       $('shopRevertCatBtn').addEventListener('click', () => {
@@ -4025,6 +4204,7 @@
           loadCensusStats(); // per-category counts for the map
         loadShopCategories(); // the Shop tab's own map
         loadShopCensusStats(); // and its per-category counts
+        loadShopData(); // and the products themselves
           resumeRunningJobs(); // continue any crawl a reload interrupted
         } catch (e) {
           status('Init failed: ' + e.message, 'err');
