@@ -2134,16 +2134,14 @@
           // batches and we loop. Services whose artist review total has not
           // moved are skipped server-side, which is what keeps a repeat run
           // cheap: only genuinely changed listings are refetched and rewritten.
-          const minEl = $('minReviews');
-          const minReviews =
-            minEl && minEl.value !== '' ? Number(minEl.value) : 10;
           let rGuard = 0;
           let rResult = null;
           let pulledTotal = 0;
           do {
-            // Same shortlist the table uses, so nothing is fetched that will
-            // never be shown.
-            rResult = await postJson(API.reviews, { categoryID, minReviews });
+            // No minReviews: that box filters the TABLE, and letting it decide
+            // what gets fetched is what used to make lowering it surface
+            // nothing. The server pulls the busiest topN of the category.
+            rResult = await postJson(API.reviews, { categoryID });
             pulledTotal += rResult.pulled || 0;
             status(
               'Reviews for ' + label + '… ' + pulledTotal + ' pulled, ' +

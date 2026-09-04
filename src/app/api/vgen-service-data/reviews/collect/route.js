@@ -1,7 +1,18 @@
 // Review pull for censused services (read from VGen + write to store)
 // ---------------------------------------------------------------------
-// POST { categoryID?, minReviews?, limit?, force? }
+// POST { categoryID?, topN?, limit?, force? }
 //   -> { done, pulled, skipped, remaining, candidates, errors, elapsedMs }
+//
+// DELIBERATELY NO minReviews. That number is a VIEW filter — how few reviews a
+// service may have and still be worth showing in the table — and it has no
+// business deciding what gets stored. When it lived here, the answer to "show
+// me services with 5+ reviews" depended on the threshold whoever last pressed
+// fetch happened to be using, because services under that threshold had never
+// been pulled at all. Lowering the filter surfaced nothing, which reads as a
+// broken filter rather than as missing data.
+//
+// The cost control that DOES belong here is topN: pull the busiest N services
+// of the category, ranked by serviceScore, whatever their review counts are.
 //
 // The census gives every service and its price, but the review-derived metrics
 // (volume, repeat clients, monthly flow) need each service's own public review
@@ -39,7 +50,6 @@ export const maxDuration = 60
 
 const NO_STORE = { 'Cache-Control': 'no-store' }
 
-const DEFAULT_MIN_REVIEWS = 10
 
 // Reviews are the expensive half: one request per service, and a big category
 // runs to tens of thousands. Pulling them for services the dashboard will never
@@ -104,9 +114,6 @@ export async function POST(request) {
   }
 
   const categoryID = String(body.categoryID || '').trim() || null
-  const minReviews = isFinite(Number(body.minReviews))
-    ? Math.max(0, Number(body.minReviews))
-    : DEFAULT_MIN_REVIEWS
   const limit = Math.min(
     MAX_LIMIT,
     Math.max(1, Number(body.limit) || DEFAULT_LIMIT)
@@ -116,16 +123,16 @@ export async function POST(request) {
   const startedNow = Date.now()
   try {
     const census = await censusFor(categoryID)
-    const gated = census.filter(
-      (row) => (row.artistTotalReviews ?? 0) >= minReviews
-    )
     const topN = isFinite(Number(body.topN))
       ? Math.max(1, Number(body.topN))
       : DEFAULT_TOP_N
+    // Busiest first, then take N. No review floor: a quiet service still gets
+    // its feed pulled, so the table's filter can be moved to any value and find
+    // real data behind it.
     const candidates =
-      gated.length > topN
-        ? [...gated].sort((a, b) => serviceScore(b) - serviceScore(a)).slice(0, topN)
-        : gated
+      census.length > topN
+        ? [...census].sort((a, b) => serviceScore(b) - serviceScore(a)).slice(0, topN)
+        : census
     if (!candidates.length) {
       return NextResponse.json(
         {
@@ -198,9 +205,9 @@ export async function POST(request) {
         skipped: candidates.length - stale.length,
         remaining,
         candidates: candidates.length,
-        // What the floor matched before the shortlist trimmed it, so a run that
-        // covers only part of a big category says so.
-        matched: gated.length,
+        // The category's full census, so a run that covers only part of a big
+        // one says so rather than looking complete.
+        matched: census.length,
         topN,
         errors,
         elapsedMs: Date.now() - startedNow,

@@ -33,7 +33,6 @@ export const revalidate = 0
 export const maxDuration = 60
 
 const NO_STORE = { 'Cache-Control': 'no-store' }
-const DEFAULT_MIN_REVIEWS = 10
 
 function isAuthorized(request) {
   const secret = process.env.VGEN_COLLECT_SECRET
@@ -110,9 +109,6 @@ export async function POST(request) {
   } catch {
     // No body: run with defaults.
   }
-  const minReviews = isFinite(Number(body.minReviews))
-    ? Math.max(0, Number(body.minReviews))
-    : DEFAULT_MIN_REVIEWS
 
   try {
     const list = await autoCategories()
@@ -156,7 +152,6 @@ export async function POST(request) {
     } else {
       detail = await callSlice(request, '/api/vgen-service-data/reviews/collect', {
         categoryID: current.categoryID,
-        minReviews,
       })
       if (detail.done) {
         // This category is finished; hand over to the next one.
