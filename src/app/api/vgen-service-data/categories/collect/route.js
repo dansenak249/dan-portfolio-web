@@ -17,6 +17,13 @@
 // visible symptom, so it is returned on every slice and summed into the meta —
 // `duplicates > 0` means the census is holed and the category should be re-run.
 //
+// A CRAWL NEVER BLANKS WHAT IS ALREADY THERE. Starting one clears the progress
+// (the cursor and the running top) but leaves the stored census completely
+// alone, so the table keeps showing the previous result for the whole run and
+// the new rows only replace it once the crawl finishes. An earlier version
+// purged first, which meant a category vanished from the dashboard for as long
+// as its crawl took - hours, for a large one.
+//
 // WHY A RUNNING TOP-N: the census only ever keeps the busiest CENSUS_KEEP, so
 // there is no reason to store the long tail on the way past. Each slice merges
 // its page of services into a running best-N and throws the rest away, which
@@ -54,8 +61,9 @@ import {
   setCategoryTop,
   clearCategoryTop,
   setCategoryChunk,
+  getCategoryMeta,
   setCategoryMeta,
-  purgeCategory,
+  deleteCategoryChunks,
 } from '@/lib/vgenServiceData/store'
 
 export const runtime = 'nodejs'
@@ -162,8 +170,7 @@ export async function POST(request) {
   try {
     // Resume takes priority: a half-finished job holds a valid cursor, so
     // continuing it is always cheaper than re-crawling. Only an explicit
-    // `reset` (or having nothing to resume) starts from zero, and a fresh start
-    // purges first so a shrunk category cannot leave orphaned chunks behind.
+    // `reset` (or having nothing to resume) starts from zero.
     const existing = await getCategoryJob(categoryID)
     // A job written by the previous design carries `buffer` / `chunkIndex` and
     // no running top, so there is nothing to resume it into. Start such a job
@@ -171,7 +178,14 @@ export async function POST(request) {
     const legacyJob = !!(existing && (existing.buffer || existing.chunkIndex !== undefined))
     const forceReset = !!(body && body.reset) || legacyJob
     const resuming = !forceReset && !!existing
-    if (!resuming) await purgeCategory(categoryID)
+    if (!resuming) {
+      // Progress only. The chunks and meta of the LAST finished crawl stay put
+      // and keep serving the dashboard until this run has something to replace
+      // them with. Clearing the running top matters: without it a new crawl
+      // would inherit the previous run's best and never fall below it.
+      await clearCategoryJob(categoryID)
+      await clearCategoryTop(categoryID)
+    }
 
     const job = resuming
       ? existing
@@ -239,6 +253,11 @@ export async function POST(request) {
         )
       }
 
+      // How many chunks the previous result used, read BEFORE overwriting any
+      // of them, so a shorter run can drop the ones it no longer covers.
+      const prevMeta = await getCategoryMeta(categoryID)
+      const prevChunks = (prevMeta && prevMeta.chunks) || 0
+
       let chunkIndex = 0
       for (let i = 0; i < top.length; i += CHUNK_SIZE) {
         await setCategoryChunk(categoryID, chunkIndex++, top.slice(i, i + CHUNK_SIZE))
@@ -258,6 +277,13 @@ export async function POST(request) {
         startedAt: job.startedAt,
         finishedAt: new Date().toISOString(),
       })
+      // Only now, with meta pointing at the new run, are the leftovers of the
+      // old one unreachable. Deleting them before this would have shown a
+      // reader a chunk count it could not fill.
+      if (prevChunks > chunkIndex) {
+        await deleteCategoryChunks(categoryID, chunkIndex, prevChunks - 1)
+      }
+
       await clearCategoryJob(categoryID)
       // The rows now live in chunks; a second copy would just go stale.
       await clearCategoryTop(categoryID)
