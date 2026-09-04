@@ -147,11 +147,8 @@ export async function POST(request) {
 
   const holder = String((body && body.holder) || '').trim() ||
     'direct:' + Math.random().toString(36).slice(2)
-  const lease = await acquireFetchLock(
-    holder,
-    (body && body.lockKind) || 'direct',
-    { categoryID }
-  )
+  const lockKind = (body && body.lockKind) || 'direct'
+  const lease = await acquireFetchLock(holder, lockKind, { categoryID })
   if (!lease.ok) {
     return NextResponse.json(
       {
@@ -196,6 +193,12 @@ export async function POST(request) {
           stored: 0,
           duplicates: 0,
           offCategory: 0,
+          // Which driver is working this crawl. The rotation leaves a job
+          // behind between ticks exactly like a browser that was closed
+          // mid-crawl, and without this the dashboard cannot tell the two
+          // apart - so every page load adopted the rotation's work in
+          // progress and finished it in the tab.
+          driver: lockKind,
           // One number, not every id seen: see fetchCategorySlice.
           lastIndex: null,
           reshuffles: 0,
@@ -290,6 +293,9 @@ export async function POST(request) {
     } else {
       await setCategoryJob(categoryID, {
         ...job,
+        // Whoever is driving it NOW, not whoever started it: a crawl the
+        // browser abandoned and the rotation picked up belongs to the rotation.
+        driver: lockKind,
         cursor: slice.nextCursor,
         lastIndex: slice.lastIndex,
         topCount,
@@ -354,6 +360,9 @@ export async function GET(request) {
       jobs[categoryID] = job
         ? {
             categoryID,
+            // The dashboard resumes only what a BROWSER left behind; see the
+            // note on the job record.
+            driver: job.driver || 'manual',
             pages: job.pages || 0,
             stored: job.stored || 0,
             duplicates: job.duplicates || 0,

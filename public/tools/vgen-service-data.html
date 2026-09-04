@@ -2335,9 +2335,14 @@
         return runCollect(categoryID, categoryLabel(categoryID), !!force);
       }
 
-      // On load, pick up any crawl a previous page-view left half-finished, so a
+      // On load, pick up any crawl a previous PAGE-VIEW left half-finished, so a
       // mid-crawl reload costs a few seconds instead of the whole run. Failures
       // are swallowed: this is a convenience, never a reason to block startup.
+      //
+      // The rotation also leaves a job between its ticks, and that one is not
+      // abandoned - it is work in progress that the server owns. Adopting it
+      // meant every refresh silently started crawling in the tab, which is
+      // why the driver is checked rather than merely the job's existence.
       async function resumeRunningJobs() {
         const ids = catRows
           .map((r) => (r.categoryID || '').trim())
@@ -2354,7 +2359,9 @@
           // starting several would leave the rest spinning in claimLease
           // waiting for the first. The others are picked up on a later load,
           // or by the rotation.
-          const pending = Object.keys(json.jobs).filter((id) => json.jobs[id]);
+          const pending = Object.keys(json.jobs).filter(
+            (id) => json.jobs[id] && json.jobs[id].driver !== 'rotation'
+          );
           if (pending.length) {
             const first = pending[0];
             // Deliberately NOT awaited: the crawl runs alongside the first paint.
