@@ -84,6 +84,11 @@ export async function GET(request) {
         startedAt: (meta && meta.startedAt) || null,
         finishedAt: (meta && meta.finishedAt) || null,
         running: !!job,
+        // Who left the half-finished crawl. The dashboard needs it to tell
+        // "the rotation will carry on by itself" apart from "nothing will
+        // touch this again until you press fetch" - both look identical
+        // otherwise, and calling both of them paused was misleading.
+        driver: (job && job.driver) || null,
         jobStored: (job && job.stored) || 0,
       })
     }

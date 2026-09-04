@@ -80,6 +80,11 @@ export async function GET(request) {
         // A job left behind means a crawl was interrupted, not that one is
         // actively running: nothing server-side drives it forward on its own.
         running: !!job,
+        // Who left the half-finished crawl. The dashboard needs it to tell
+        // "the rotation will carry on by itself" apart from "nothing will
+        // touch this again until you press fetch" - both look identical
+        // otherwise, and calling both of them paused was misleading.
+        driver: (job && job.driver) || null,
         jobPages: (job && job.pages) || 0,
         jobStored: (job && job.stored) || 0,
       }

@@ -2975,19 +2975,29 @@
         if (!c) return '<span class="cat-count none">&mdash;</span>';
         if (c.running) {
           const so = c.jobStored || 0;
-          // A half-finished crawl looks identical whether something is working
-          // on it this second or it is between rotation ticks - and a count
-          // that has not moved for ten minutes reads as "stuck" rather than as
-          // "waiting its turn". The lease is what separates the two.
+          // Three states, not two. A rotation tick lasts about 25 seconds and
+          // the next one is a quarter of an hour away, so a crawl the rotation
+          // owns is NOT running almost all of the time - and saying "paused"
+          // for that read as though something had stopped it. It has not: it
+          // is between ticks and will carry on by itself.
+          //
+          // A crawl a browser tab walked away from is genuinely stopped, and
+          // deserves a different word, because nothing will resume it until
+          // someone presses fetch.
           const active = remoteBusyCategory() === categoryID || loading.has(categoryID);
+          const byRotation = c.driver === 'rotation';
+          const word = active ? 'so far' : byRotation ? 'waiting' : 'stopped';
+          const why = active
+            ? 'Crawling now — ' + so.toLocaleString() + ' so far'
+            : byRotation
+            ? so.toLocaleString() + ' crawled so far. Between rotation ticks — ' +
+              'nothing is running this second, and the rotation carries on by ' +
+              'itself at its next tick.'
+            : so.toLocaleString() + ' crawled so far, then the crawl stopped. ' +
+              'Nothing will resume it until you press fetch on this row.';
           return '<span class="cat-count' + (auto && so >= 10000 ? ' huge' : '') +
-            '" title="' +
-            (active
-              ? 'Crawling now — ' + so.toLocaleString() + ' services so far'
-              : so.toLocaleString() + ' services crawled so far. Nothing is ' +
-                'running this second; the rotation carries on at its next tick.') +
-            '">' + so.toLocaleString() +
-            '<span class="of"> ' + (active ? 'so far' : 'paused') + '</span></span>';
+            '" title="' + why + '">' + so.toLocaleString() +
+            '<span class="of"> ' + word + '</span></span>';
         }
         if (!c.crawled) return '<span class="cat-count none">&mdash;</span>';
         const seenNum = c.seenTotal || c.count || 0;
