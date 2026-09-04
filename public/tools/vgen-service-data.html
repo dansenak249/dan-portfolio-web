@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="robots" content="noindex, nofollow" />
-    <title>VGen Service Data</title>
+    <title>VGen Data Tracker</title>
     <style>
       :root {
         --bg: #0b0d10;
@@ -605,6 +605,56 @@
       .seg button { border: none; border-radius: 0; background: transparent; padding: 7px 12px; }
       .seg button.active { background: var(--panel-2); color: var(--accent); }
 
+      /* Top-level tabs, one per VGen marketplace section. Bigger and flatter
+         than .seg, which is an in-panel control - these switch the whole page. */
+      .tabs {
+        display: flex;
+        gap: 4px;
+        border-bottom: 1px solid var(--line);
+        margin-bottom: 20px;
+      }
+      .tabs button {
+        border: none;
+        border-radius: 0;
+        background: transparent;
+        color: var(--muted);
+        font-size: 0.9rem;
+        font-weight: 600;
+        padding: 10px 16px;
+        border-bottom: 2px solid transparent;
+        margin-bottom: -1px;
+      }
+      .tabs button:hover { color: var(--text); }
+      .tabs button.active { color: var(--accent); border-bottom-color: var(--accent); }
+      .tabs .tab-note {
+        margin-left: auto;
+        align-self: center;
+        color: var(--dim);
+        font-family: var(--mono);
+        font-size: 0.72rem;
+        padding-right: 4px;
+      }
+      /* NOT the .hidden class: that one is opacity-only, for modals that must
+         keep their box. A tab panel has to leave the layout entirely. */
+      .tab-panel[hidden] { display: none; }
+
+      /* A panel whose data source does not exist yet. Says so plainly rather
+         than showing an empty table that looks broken. */
+      .pending {
+        border: 1px dashed var(--line);
+        border-radius: 10px;
+        padding: 22px 20px;
+        color: var(--muted);
+        font-size: 0.85rem;
+        line-height: 1.6;
+      }
+      .pending b { color: var(--text); font-weight: 650; }
+      .pending code {
+        font-family: var(--mono);
+        font-size: 0.78rem;
+        color: var(--accent-2);
+      }
+
       /* Full-viewport loading overlay (mirrors the site's LoadingScreen brand). */
       #loadingOverlay {
         position: fixed; inset: 0; z-index: 100;
@@ -698,11 +748,11 @@
       <header class="top">
         <div class="title-block">
           <div class="kicker">VGen · Tools</div>
-          <h1>Service Data</h1>
+          <h1>VGen Data Tracker</h1>
           <p>
-            Where are VGen clients flowing? Public service reviews stand in for
-            completed commissions — track which services and artists capture
-            steady, repeat monthly business.
+            Where is money moving on VGen? Public reviews stand in for completed
+            orders — track which listings and creators hold steady, repeat
+            monthly business, across commission services and shop products.
           </p>
         </div>
         <div class="top-actions">
@@ -712,8 +762,16 @@
         </div>
       </header>
 
+      <!-- One tab per VGen marketplace section, named as VGen names them. -->
+      <div class="tabs" role="tablist">
+        <button type="button" id="tabBtnCommission" class="active" role="tab" aria-selected="true" aria-controls="tabCommission">Commission</button>
+        <button type="button" id="tabBtnShop" role="tab" aria-selected="false" aria-controls="tabShop">Shop</button>
+        <span class="tab-note" id="tabNote"></span>
+      </div>
+
       <div id="status" class="status"></div>
 
+      <div class="tab-panel" id="tabCommission" role="tabpanel" aria-labelledby="tabBtnCommission">
       <!-- Per-service -->
       <section class="panel">
         <div class="panel-head">
@@ -816,6 +874,96 @@
           </div>
         </details>
       </section>
+      </div><!-- /tabCommission -->
+
+      <div class="tab-panel" id="tabShop" role="tabpanel" aria-labelledby="tabBtnShop" hidden>
+        <!-- Per-product. Mirrors the Commission table: in Commission the unit is
+             a Service, in Shop it is a Product. Columns are provisional until
+             the Shop API is in hand - they are the Commission set, which is the
+             stated starting point, not a guess dressed up as a decision. -->
+        <section class="panel">
+          <div class="panel-head">
+            <h2><span class="dot"></span>Product</h2>
+          </div>
+          <div class="table-scroll">
+            <table id="prodTable">
+              <thead>
+                <tr>
+                  <th class="col-name no-sort">Product</th>
+                  <th class="no-sort col-spacer"></th>
+                  <th class="num col-price no-sort">Price</th>
+                  <th class="num col-n no-sort">Total</th>
+                  <th class="num col-n no-sort">Repeat</th>
+                  <th class="num col-n no-sort">Month</th>
+                  <th class="num col-rev no-sort">Rev/mo</th>
+                  <th class="no-sort">Monthly flow</th>
+                </tr>
+              </thead>
+              <tbody id="prodBody"></tbody>
+            </table>
+          </div>
+          <div class="pending" id="prodPending">
+            <b>Not connected yet.</b> The table above is the shape this will take —
+            the same columns as Commission, since a Shop product is the same kind
+            of row as a Service. Nothing is fetched or stored for Shop until the
+            API is wired: no endpoint is guessed at, and no placeholder data is
+            shown here.
+          </div>
+        </section>
+
+        <!-- Shop category map. Same job and same row shape as the Commission
+             one, but a separate table, because VGen ships a separate Shop
+             taxonomy: 15 catalogues and 153 categories against Commission's 12
+             and 160, overlapping in 36 ids and diverging in the rest. -->
+        <section class="panel">
+          <details class="decl" id="shopCatWrap" open>
+            <summary>
+              <span class="chev">&#9654;</span>
+              Shop category map
+              <span class="count-badge" id="shopCatCount">0 categories</span>
+            </summary>
+            <div style="margin-top:16px">
+              <div class="table-scroll">
+                <table class="decl-table">
+                  <thead>
+                    <tr>
+                      <th class="no-sort" style="width:32px">#</th>
+                      <th class="no-sort" style="width:56px">Color</th>
+                      <th class="no-sort">Category Name</th>
+                      <th class="no-sort" style="width:170px">Category ID</th>
+                      <th class="no-sort" style="width:46px" title="Include this category in the automatic rotation">Auto</th>
+                      <th class="no-sort" style="width:48px"></th>
+                    </tr>
+                  </thead>
+                  <tbody id="shopCatBody"></tbody>
+                </table>
+              </div>
+              <div class="decl-foot">
+                <div class="left">
+                  <button id="shopAddCatBtn" class="ghost">+ Add category</button>
+                  <button id="shopDiscoverBtn" class="ghost" title="Read VGen&#39;s SHOP category list and show what is missing here">&#9906; Discover</button>
+                </div>
+                <div class="right">
+                  <button id="shopRevertCatBtn" class="icon-btn" title="Revert unsaved changes" disabled>&#8634;</button>
+                  <button id="shopSaveCatBtn" class="primary" disabled>Save</button>
+                </div>
+              </div>
+              <p class="foot-note">
+                Discover reads VGen&#39;s Shop taxonomy — a different table from the
+                Commission one, so a category that exists here may not exist there.
+                Adding only APPENDS; your names, colours and ordering stand. Leaving
+                a name blank parks the row with VGen&#39;s own name as its placeholder.
+              </p>
+              <p class="foot-note" id="shopCrawlNote">
+                <b>Per-row fetch is not wired yet.</b> Crawling Shop shares one
+                bandwidth budget and one fetch lock with Commission, so it plugs
+                into the same rotation rather than running alongside it — that
+                comes with the product crawl.
+              </p>
+            </div>
+          </details>
+        </section>
+      </div><!-- /tabShop -->
 
       <!-- Import preview modal: review a harvested list before adding to the editor -->
       <!-- Discovered categories: what VGen's taxonomy holds that the stored map
@@ -1058,6 +1206,8 @@
         purge: '/api/vgen-service-data/categories/purge',
         census: '/api/vgen-service-data/census',
         fetchLock: '/api/vgen-service-data/fetch-lock',
+        shopCategories: '/api/vgen-shop-data/categories',
+        shopDiscover: '/api/vgen-shop-data/categories/discover',
         reviews: '/api/vgen-service-data/reviews/collect',
       };
 
@@ -1086,6 +1236,9 @@
       let svcByID = {}; // { serviceID: analyzed metrics } for joins in modals
       let svcMissing = []; // serviceIDs with no cached reviews yet (from last load)
       let svcSort = { key: 'total', dir: -1 };
+      // Which marketplace section is on screen. Persisted, so a reload keeps
+      // you where you were rather than always dropping you on Commission.
+      let activeTab = 'commission'; // 'commission' | 'shop'
       let svcFilter = 'all'; // 'all' | 'TYPE::<name>' (which group to show)
       let svcFilterOpts = []; // [{ value, name, count }] behind the filter menu
       // The table pages rather than running to the bottom: a censused category
@@ -1195,6 +1348,9 @@
           if (!raw) return;
           const c = JSON.parse(raw);
           if (!c || typeof c !== 'object') return;
+          if (c.activeTab === 'shop' || c.activeTab === 'commission') {
+            activeTab = c.activeTab;
+          }
           if (typeof c.svcFilter === 'string') svcFilter = c.svcFilter;
           if (typeof c.flowWindow === 'string') flowWindow = c.flowWindow;
           if (typeof c.justify === 'boolean') justify = c.justify;
@@ -1207,9 +1363,34 @@
         try {
           localStorage.setItem(
             UI_KEY,
-            JSON.stringify({ svcFilter, flowWindow, justify, svcSort })
+            JSON.stringify({ activeTab, svcFilter, flowWindow, justify, svcSort })
           );
         } catch {}
+      }
+
+      // ---- tabs ----------------------------------------------------------
+      // Purely a view switch: both tabs stay in the DOM, so nothing is torn down
+      // or refetched when you move between them, and a crawl running under
+      // Commission keeps running while you look at Shop.
+      function renderTabs() {
+        const shop = activeTab === 'shop';
+        $('tabCommission').hidden = shop;
+        $('tabShop').hidden = !shop;
+        $('tabBtnCommission').classList.toggle('active', !shop);
+        $('tabBtnShop').classList.toggle('active', shop);
+        $('tabBtnCommission').setAttribute('aria-selected', String(!shop));
+        $('tabBtnShop').setAttribute('aria-selected', String(shop));
+        // The header still describes the Commission side; say so rather than
+        // leaving a stale sentence sitting above an unrelated table.
+        $('tabNote').textContent = shop ? 'shop — not connected yet' : '';
+      }
+
+      function setTab(tab) {
+        if (tab !== 'commission' && tab !== 'shop') return;
+        if (activeTab === tab) return;
+        activeTab = tab;
+        saveUiConfig();
+        renderTabs();
       }
 
       // ---- loading overlay (site-branded, mirrors the trending tool) ----
@@ -2431,8 +2612,15 @@
       // fallback is sliced, hence the loop.
       let discFound = [];
 
-      async function discoverCategories() {
-        const btn = $('discoverBtn');
+      // Which map a discovery run is filling. The modal is shared; the table
+      // behind it is not, because Commission and Shop have separate taxonomies.
+      let discTarget = 'commission';
+
+      async function discoverCategories(target) {
+        discTarget = target === 'shop' ? 'shop' : 'commission';
+        const shop = discTarget === 'shop';
+        const rows = shop ? shopCatRows : catRows;
+        const btn = $(shop ? 'shopDiscoverBtn' : 'discoverBtn');
         btn.disabled = true;
         try {
           const all = [];
@@ -2444,7 +2632,7 @@
           do {
             const body = offset ? { offset } : {};
             if (names) body.names = names;
-            res = await postJson(API.discover, body);
+            res = await postJson(shop ? API.shopDiscover : API.discover, body);
             if (res.names) names = res.names;
             all.push(...(res.results || []));
             offset = res.nextOffset;
@@ -2462,7 +2650,7 @@
             if (r.categoryID) vgenName[r.categoryID] = r.name || r.label || '';
           }
           let backfilled = 0;
-          for (const row of catRows) {
+          for (const row of rows) {
             const id = (row.categoryID || '').trim();
             const known = id ? vgenName[id] : '';
             if (known && (row.defaultName || '').trim() !== known) {
@@ -2471,21 +2659,26 @@
             }
           }
           if (backfilled) {
-            buildCategoryLookup();
-            renderCatEditor();
+            if (shop) {
+              renderShopCatEditor();
+            } else {
+              buildCategoryLookup();
+              renderCatEditor();
+            }
           }
           const via = res.source === 'bundle' ? '' : ' (via page fallback)';
+          const what = shop ? ' VGen shop categories' : ' VGen categories';
 
           if (!discFound.length) {
             status(
-              'Nothing new: all ' + all.length + ' VGen categories are already mapped' + via +
+              'Nothing new: all ' + all.length + what + ' are already mapped' + via +
                 (backfilled ? ' — filled in VGen names for ' + backfilled + ' row(s), press Save to keep them.' : '.'),
               'ok'
             );
             return;
           }
           $('discSummary').textContent =
-            discFound.length + ' new of ' + all.length + ' VGen categories' + via;
+            discFound.length + ' new of ' + all.length + what + via;
           $('discHint').textContent =
             'Adding appends only. Your names, colours and ordering stay as they are.';
           renderDiscover();
@@ -2534,13 +2727,15 @@
       // APPEND only. Existing rows keep their name, colour and position, which is
       // the whole point: discovery must never undo hand-curation.
       function applyDiscover() {
+        const shop = discTarget === 'shop';
+        const rows = shop ? shopCatRows : catRows;
         const picked = discChecked();
-        const have = new Set(catRows.map((r) => (r.categoryID || '').trim()));
+        const have = new Set(rows.map((r) => (r.categoryID || '').trim()));
         let added = 0;
         for (const r of picked) {
           if (have.has(r.categoryID)) continue;
           have.add(r.categoryID);
-          catRows.push({
+          rows.push({
             categoryID: r.categoryID,
             // Left blank on purpose: the row shows VGen's name through the
             // placeholder until you actually rename it, so an untouched row and
@@ -2552,9 +2747,13 @@
           added++;
         }
         $('discModal').classList.add('hidden');
-        buildCategoryLookup();
-        renderCatEditor();
-        populateServiceFilter();
+        if (shop) {
+          renderShopCatEditor();
+        } else {
+          buildCategoryLookup();
+          renderCatEditor();
+          populateServiceFilter();
+        }
         status('Added ' + added + ' categor' + (added === 1 ? 'y' : 'ies') + ' — press Save to keep them.', 'ok');
       }
 
@@ -2795,6 +2994,130 @@
             : '') +
           '">' + kept + '<span class="of' + (huge ? ' huge' : '') +
           '"> / ' + seen + '</span></span>';
+      }
+
+      // ---- Shop category map ---------------------------------------------
+      // A SEPARATE table from the Commission map, because VGen keeps separate
+      // taxonomies: 15 catalogues / 153 categories here against 12 / 160 there,
+      // sharing 36 ids and differing in the rest. The row shape is identical on
+      // purpose, so the editor, the crawl and the one rotation can treat a row
+      // from either table the same way.
+      let shopCatRows = [];
+      let shopCatBaseline = '[]';
+
+      function updateShopCatButtons() {
+        const dirty = catSnapshot(shopCatRows) !== shopCatBaseline;
+        $('shopSaveCatBtn').disabled = !dirty;
+        $('shopRevertCatBtn').disabled = !dirty;
+      }
+
+      function renderShopCatEditor() {
+        $('shopCatCount').textContent =
+          shopCatRows.length + ' categor' + (shopCatRows.length === 1 ? 'y' : 'ies');
+        const body = $('shopCatBody');
+        body.innerHTML = shopCatRows
+          .map((r, i) => {
+            const color = (r.color || '').trim();
+            const swatchStyle = color ? `background:${esc(color)}` : 'background:transparent';
+            const swatchCls = color ? 'cat-swatch' : 'cat-swatch is-empty';
+            const catId = (r.categoryID || '').trim();
+            return `<tr data-shoprow="${i}">
+              <td class="muted">${i + 1}</td>
+              <td><button type="button" class="${swatchCls}" data-shopcolor="${i}" style="${swatchStyle}" title="${
+                color ? 'Text color ' + esc(color) : 'No color — click to pick'
+              }"></button></td>
+              <td><input data-si="${i}" data-sf="categoryName" placeholder="${esc(
+                (r.defaultName || '').trim() || 'e.g. YCH Bases'
+              )}" value="${esc(r.categoryName)}" /></td>
+              <td>${
+                catId
+                  ? '<span class="cat-id" title="' + esc(catId) + '">' + esc(catId) + '</span>'
+                  : '<input class="id-input" data-si="' + i + '" data-sf="categoryID" placeholder="rec…" value="" />'
+              }</td>
+              <td style="text-align:center"><input type="checkbox" data-shopauto="${i}"${
+                r.auto ? ' checked' : ''
+              }${catId ? '' : ' disabled'} title="${
+                catId ? 'Refresh this category automatically' : 'Enter a category ID first'
+              }" /></td>
+              <td><button class="tiny ghost" data-shopdel="${i}" title="Remove this row from the map">&#10005;</button></td>
+            </tr>`;
+          })
+          .join('');
+
+        body.querySelectorAll('input[data-si]').forEach((el) => {
+          el.addEventListener('input', (e) => {
+            const i = Number(e.target.getAttribute('data-si'));
+            shopCatRows[i][e.target.getAttribute('data-sf')] = e.target.value;
+            updateShopCatButtons();
+          });
+        });
+        body.querySelectorAll('[data-shopauto]').forEach((el) => {
+          el.addEventListener('change', (e) => {
+            shopCatRows[Number(e.target.getAttribute('data-shopauto'))].auto = e.target.checked;
+            updateShopCatButtons();
+          });
+        });
+        body.querySelectorAll('[data-shopdel]').forEach((el) => {
+          el.addEventListener('click', (e) => {
+            shopCatRows.splice(Number(e.currentTarget.getAttribute('data-shopdel')), 1);
+            renderShopCatEditor();
+            updateShopCatButtons();
+          });
+        });
+        body.querySelectorAll('[data-shopcolor]').forEach((el) => {
+          el.addEventListener('click', (e) => {
+            const i = Number(e.currentTarget.getAttribute('data-shopcolor'));
+            const picker = document.createElement('input');
+            picker.type = 'color';
+            picker.value = (shopCatRows[i].color || '').trim() || '#6ee7ff';
+            picker.addEventListener('input', () => {
+              shopCatRows[i].color = picker.value;
+              renderShopCatEditor();
+              updateShopCatButtons();
+            });
+            picker.click();
+          });
+        });
+        updateShopCatButtons();
+      }
+
+      async function loadShopCategories() {
+        try {
+          const res = await fetch(API.shopCategories, { cache: 'no-store' });
+          const json = await res.json();
+          if (!res.ok) throw new Error(json.error || 'HTTP ' + res.status);
+          shopCatRows = Array.isArray(json.categories) ? json.categories : [];
+          shopCatBaseline = catSnapshot(shopCatRows);
+          renderShopCatEditor();
+        } catch (e) {
+          status('Shop category map failed to load: ' + e.message, 'err');
+        }
+      }
+
+      async function saveShopCategories() {
+        const btn = $('shopSaveCatBtn');
+        btn.disabled = true;
+        try {
+          const payload = shopCatRows
+            .filter((r) => (r.categoryID || '').trim())
+            .map((r) => ({
+              categoryID: (r.categoryID || '').trim(),
+              categoryName: (r.categoryName || '').trim(),
+              color: (r.color || '').trim(),
+              defaultName: (r.defaultName || '').trim(),
+              auto: !!r.auto,
+            }));
+          const json = await postJson(API.shopCategories, { categories: payload });
+          shopCatRows = json.categories || payload;
+          shopCatBaseline = catSnapshot(shopCatRows);
+          renderShopCatEditor();
+          status('Saved ' + shopCatRows.length + ' shop categor' +
+            (shopCatRows.length === 1 ? 'y' : 'ies') + '.', 'ok');
+        } catch (e) {
+          status('Save failed: ' + e.message, 'err');
+        } finally {
+          updateShopCatButtons();
+        }
       }
 
       function renderCatEditor() {
@@ -3244,8 +3567,22 @@
         if (e.key === 'Escape') closeFilterMenu();
       });
 
+      $('shopDiscoverBtn').addEventListener('click', () => discoverCategories('shop'));
+      $('shopSaveCatBtn').addEventListener('click', saveShopCategories);
+      $('shopRevertCatBtn').addEventListener('click', () => {
+        shopCatRows = JSON.parse(shopCatBaseline);
+        renderShopCatEditor();
+      });
+      $('shopAddCatBtn').addEventListener('click', () => {
+        shopCatRows.push({ categoryID: '', categoryName: '', color: '', defaultName: '', auto: false });
+        renderShopCatEditor();
+      });
+
+      $('tabBtnCommission').addEventListener('click', () => setTab('commission'));
+      $('tabBtnShop').addEventListener('click', () => setTab('shop'));
+
       $('minReviews').addEventListener('change', () => loadData(false));
-      $('discoverBtn').addEventListener('click', discoverCategories);
+      $('discoverBtn').addEventListener('click', () => discoverCategories('commission'));
       $('pgConfirm').addEventListener('click', confirmPurge);
       $('pgCancel').addEventListener('click', () => $('pgModal').classList.add('hidden'));
       $('pgClose').addEventListener('click', () => $('pgModal').classList.add('hidden'));
@@ -3437,7 +3774,8 @@
       // ---- boot ----
       (async function init() {
         beginLoading();
-        loadUiConfig(); // restore saved filter / flow window / sort first
+        loadUiConfig(); // restore saved tab / filter / flow window / sort first
+        renderTabs();
         // Before anything else: find out whether a fetch is already running.
         // Until this answers, every fetch button stays disabled.
         await refreshLease();
@@ -3452,6 +3790,7 @@
           await loadServices();
           await loadData(false); // page-load read = cached, no VGen hit
           loadCensusStats(); // per-category counts for the map
+        loadShopCategories(); // the Shop tab's own map
           resumeRunningJobs(); // continue any crawl a reload interrupted
         } catch (e) {
           status('Init failed: ' + e.message, 'err');

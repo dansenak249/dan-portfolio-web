@@ -26,8 +26,20 @@
 // If any of that stops matching, the caller falls back to the per-page method in
 // fetchCategoryTaxonomy.js, which is slower but depends only on rendered HTML.
 
+// TWO trees, one chunk. VGen ships the Commission taxonomy and the Shop
+// taxonomy as two separate frozen literals inside the SAME bundle, both under
+// the key `catalogues`. They are different tables - 12 catalogues / 160
+// categories for Commission, 15 / 153 for Shop, overlapping but far from equal -
+// so which one you get depends entirely on which occurrence you read. Reading
+// the first and assuming it covers Shop is wrong, and quietly so: the ids look
+// identical in shape and 36 of them really are shared.
 const PROBE_PAGE = 'https://vgen.co/category/custom-backgrounds'
+const SHOP_PROBE_PAGE = 'https://vgen.co/shop/catalogue/emotes-badges'
 const MARKER = 'catalogues:[{catalogueID:'
+
+// Which literal to take, 1-based, in the order they appear in the chunk.
+export const TAXONOMY_COMMISSION = 1
+export const TAXONOMY_SHOP = 2
 const REQUEST_TIMEOUT_MS = 30000
 const MAX_CHUNKS = 120
 const FETCH_BATCH = 8
@@ -107,8 +119,11 @@ function looksLikeDataLiteral(literal) {
  * Fetch and parse VGen's taxonomy literal.
  * @returns {Promise<{ catalogues: object[] }>}
  */
-export async function fetchTaxonomy() {
-  const html = await fetchText(PROBE_PAGE)
+export async function fetchTaxonomy(options = {}) {
+  const occurrence = Math.max(1, Number(options.occurrence) || TAXONOMY_COMMISSION)
+  const probe = options.probePage ||
+    (occurrence === TAXONOMY_SHOP ? SHOP_PROBE_PAGE : PROBE_PAGE)
+  const html = await fetchText(probe)
   const urls = chunkUrls(html)
   if (!urls.length) throw new Error('No script chunks found on the probe page')
 
@@ -118,7 +133,12 @@ export async function fetchTaxonomy() {
     for (const result of settled) {
       if (result.status !== 'fulfilled') continue
       const src = result.value
-      const at = src.indexOf(MARKER)
+      // Walk to the requested occurrence rather than taking the first hit.
+      let at = -1
+      for (let n = 0; n < occurrence; n++) {
+        at = src.indexOf(MARKER, at + 1)
+        if (at < 0) break
+      }
       if (at < 0) continue
       const literal = sliceLiteral(src, src.lastIndexOf('{', at))
       if (!literal) continue
@@ -158,10 +178,17 @@ function composeName(prefix, label) {
  */
 export function flattenTaxonomy(data) {
   const rows = []
+  const seen = new Set()
   for (const cat of data.catalogues || []) {
     for (const sec of cat.sections || []) {
-      for (const c of sec.categories || []) {
+      // `additionalCategories` cross-lists a category under a second section.
+      // Reading both and de-duplicating is what makes the Shop tree come out at
+      // its true 153 rather than dropping the cross-listed ones; Commission is
+      // unaffected, since every one of its extras is already in `categories`.
+      for (const c of [...(sec.categories || []), ...(sec.additionalCategories || [])]) {
         if (!c || typeof c.categoryID !== 'string') continue
+        if (seen.has(c.categoryID)) continue
+        seen.add(c.categoryID)
         rows.push({
           categoryID: c.categoryID,
           slug: c.slug || '',

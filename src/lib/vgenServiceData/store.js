@@ -93,6 +93,29 @@ export async function setCategoryMap(list) {
   await ensureRedis().set(CATEGORIES_KEY, JSON.stringify(list))
 }
 
+// The Shop map is a SEPARATE table because VGen's Shop taxonomy is a separate
+// table - different catalogues, different categories, only partly overlapping
+// ids. It is deliberately the same SHAPE, so the editor, the crawl and the
+// rotation can treat a row from either the same way.
+const SHOP_CATEGORIES_KEY = `${NS}:shop:categories`
+
+/**
+ * The Shop category map, in editor row order. Empty is valid.
+ * @returns {Promise<{ categoryID: string, categoryName: string, color?: string,
+ *   defaultName?: string, auto?: boolean }[]>}
+ */
+export async function getShopCategoryMap() {
+  const stored = parseMaybe(await ensureRedis().get(SHOP_CATEGORIES_KEY))
+  return Array.isArray(stored) ? stored : []
+}
+
+/**
+ * @param {{ categoryID: string, categoryName: string, color?: string }[]} list
+ */
+export async function setShopCategoryMap(list) {
+  await ensureRedis().set(SHOP_CATEGORIES_KEY, JSON.stringify(list))
+}
+
 /**
  * Cache one service's full review pull (overwrites any previous pull).
  * @param {string} serviceID
