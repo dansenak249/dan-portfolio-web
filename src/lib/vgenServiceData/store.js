@@ -301,6 +301,24 @@ const CHUNK_SIZE = 300
  */
 export const shopKey = (categoryID) => 'shop:' + categoryID
 
+/**
+ * The id of a census row, whichever marketplace it came from.
+ *
+ * A row is a service on the Commission side and a product on the Shop side, and
+ * both go through the same chunk machinery. The readers used to test
+ * `row.serviceID` alone, which meant every product ever crawled was dropped on
+ * the way out - the crawl stored them correctly and the table showed nothing.
+ *
+ * @param {object} row
+ * @returns {string|null}
+ */
+const rowID = (row) => {
+  if (!row) return null
+  if (typeof row.serviceID === 'string') return row.serviceID
+  if (typeof row.productID === 'string') return row.productID
+  return null
+}
+
 const catMetaKey = (categoryID) => `${NS}:cat:${categoryID}:meta`
 const catChunkKey = (categoryID, i) => `${NS}:cat:${categoryID}:chunk:${i}`
 const catJobKey = (categoryID) => `${NS}:cat:${categoryID}:job`
@@ -380,9 +398,10 @@ export async function listCategoryServices(categoryID) {
     const rows = parseMaybe(value)
     if (!Array.isArray(rows)) continue
     for (const row of rows) {
-      if (!row || typeof row.serviceID !== 'string') continue
-      if (seen.has(row.serviceID)) continue
-      seen.add(row.serviceID)
+      const id = rowID(row)
+      if (!id) continue
+      if (seen.has(id)) continue
+      seen.add(id)
       out.push(row)
     }
   }
@@ -406,8 +425,10 @@ export async function readCategoryChunks(categoryID, count) {
   const seen = new Set()
   for await (const rows of iterateCategoryChunks(categoryID, count)) {
     for (const row of rows) {
-      if (seen.has(row.serviceID)) continue
-      seen.add(row.serviceID)
+      const id = rowID(row)
+      if (!id) continue
+      if (seen.has(id)) continue
+      seen.add(id)
       out.push(row)
     }
   }
@@ -446,7 +467,7 @@ export async function* iterateCategoryChunks(categoryID, count) {
     for (const value of values) {
       const rows = parseMaybe(value)
       if (!Array.isArray(rows)) continue
-      yield rows.filter((row) => row && typeof row.serviceID === 'string')
+      yield rows.filter((row) => rowID(row) !== null)
     }
   }
 }
