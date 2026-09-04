@@ -2296,8 +2296,16 @@
 
       async function runCollect(categoryID, label, force) {
         if (!categoryID || catLoading.has(categoryID)) return;
+        // Refuse a second crawl outright, not only by greying the button: a
+        // keyboard press or a double click can land before the repaint does.
+        if (localFetchRunning()) {
+          status('One fetch at a time — wait for the running one to finish.', 'err');
+          return;
+        }
         catLoading.add(categoryID);
-        renderCatEditor(); // repaint so THIS row's button spins + disables
+        // Repaint BOTH maps: this crawl disables the Shop rows too.
+        renderCatEditor();
+        renderShopCatEditor();
         try {
           // One fetch at a time, across every tab and the server's own
           // rotation. This is also what pauses the rotation: it stands down
@@ -2411,6 +2419,7 @@
           // the rotation can pick up again as soon as we are done.
           await releaseLease();
           renderCatEditor();
+          renderShopCatEditor();
           loadCensusStats(); // the crawl just changed what this category holds
         }
       }
@@ -2447,8 +2456,24 @@
 
       const leaseWait = (ms) => new Promise((r) => setTimeout(r, ms));
 
+      // Is a crawl running in THIS tab? The lease alone cannot answer that:
+      // while we hold it, `mine` is true and leaseBlocked() is false, so every
+      // other row stayed clickable and a second press started a second crawl
+      // alongside the first. The server could not stop it either - both presses
+      // carry the same holder, so the second read as a renewal of the first.
+      function localFetchRunning() {
+        return catLoading.size > 0 || shopCatLoading.size > 0;
+      }
+
+      // Blocked by SOMEONE ELSE, or by not yet knowing who holds the lease.
       function leaseBlocked() {
         return !fetchLease.checked || (fetchLease.locked && !fetchLease.mine);
+      }
+
+      // Blocked for any reason at all - which is what a fetch button wants to
+      // know. One crawl at a time means one, including our own.
+      function fetchBlocked() {
+        return leaseBlocked() || localFetchRunning();
       }
 
       // Who is holding it, in words, for a button title or a status line.
@@ -2512,6 +2537,7 @@
           fetchLease = { checked: false, locked: true, mine: false, lock: null };
         }
         renderCatEditor();
+        renderShopCatEditor();
         pollCensusIfRemote();
         scheduleLeasePoll();
         return fetchLease;
@@ -3062,8 +3088,13 @@
 
       async function runShopCollect(categoryID, label, force) {
         if (!categoryID || shopCatLoading.has(categoryID)) return;
+        if (localFetchRunning()) {
+          status('One fetch at a time — wait for the running one to finish.', 'err');
+          return;
+        }
         shopCatLoading.add(categoryID);
         renderShopCatEditor();
+        renderCatEditor();
         try {
           if (!(await claimLease(categoryID, label))) {
             status(
@@ -3121,6 +3152,7 @@
           shopCatCancel.delete(categoryID);
           await releaseLease();
           renderShopCatEditor();
+          renderCatEditor();
           loadShopCensusStats();
         }
       }
@@ -3177,7 +3209,7 @@
             const catId = (r.categoryID || '').trim();
             const busy = shopCatLoading.has(catId);
             const remote = !busy && !!catId && remoteBusyCategory() === catId;
-            const blocked = !busy && leaseBlocked();
+            const blocked = !busy && fetchBlocked();
             const loadCls =
               'tiny ghost cat-load' +
               (busy || remote ? ' is-loading' : '') +
@@ -3215,11 +3247,11 @@
                 (!busy && !catId) || blocked ? ' disabled' : ''
               } title="${loadTitle}"><span class="cat-spin">${ICON_RELOAD}</span><span class="cat-x">${ICON_CANCEL}</span></button></td>
               <td><button class="tiny ghost cat-purge" data-shoppurge="${i}"${
-                !catId || leaseBlocked() ? ' disabled' : ''
+                !catId || fetchBlocked() ? ' disabled' : ''
               } title="${
                 !catId
                   ? 'Enter a category ID first'
-                  : leaseBlocked()
+                  : fetchBlocked()
                   ? 'Locked: ' + leaseHolderLabel() + ' is fetching'
                   : 'Clear this category&#39;s crawled products'
               }">${ICON_TRASH}</button></td>
@@ -3341,10 +3373,10 @@
             // other locked row, so there was no way to see WHAT was being
             // fetched - only that something was.
             const remote = !busy && !!catId && remoteBusyCategory() === catId;
-            // Blocked by someone else's fetch, or by not yet knowing. A row
-            // that is itself running stays clickable, because that click
-            // cancels it.
-            const blocked = !busy && leaseBlocked();
+            // A row that is itself running stays clickable, because that
+            // click cancels it. Everything else is blocked while ANY crawl is
+            // in flight, this tab's included.
+            const blocked = !busy && fetchBlocked();
             const loadCls =
               'tiny ghost cat-load' +
               (busy || remote ? ' is-loading' : '') +
@@ -3383,11 +3415,11 @@
               (!busy && !catId) || blocked ? ' disabled' : ''
             } title="${loadTitle}"><span class="cat-spin">${ICON_RELOAD}</span><span class="cat-x">${ICON_CANCEL}</span></button></td>
             <td><button class="tiny ghost cat-purge" data-catpurge="${i}"${
-              !catId || leaseBlocked() ? ' disabled' : ''
+              !catId || fetchBlocked() ? ' disabled' : ''
             } title="${
               !catId
                 ? 'Enter a category ID first'
-                : leaseBlocked()
+                : fetchBlocked()
                 ? 'Locked: ' + leaseHolderLabel() + ' is fetching'
                 : 'Clear this category&#39;s crawled data'
             }">${ICON_TRASH}</button></td>
