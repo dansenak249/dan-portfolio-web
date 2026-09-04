@@ -387,6 +387,14 @@
       .col-star { width: 52px; }
       /* "Sales/mo" is a wider word than the counts beside it. */
       .col-permo { width: 88px; }
+      /* The Auto column had its header left-aligned by the global th rule and
+         its checkbox centred by an inline style, so the two never lined up.
+         One class now owns both ends of the column. */
+      .col-auto { width: 46px; text-align: right; }
+      /* Zero the browser's default checkbox margin, or the tick lands a few
+         pixels short of where the header text sits and the column reads as
+         misaligned even though both ends say "right". */
+      .col-auto input[type='checkbox'] { margin: 0; vertical-align: middle; }
       /* FIXED layout, and it matters here.
          Under the default auto layout a column is sized from its CONTENT, so a
          single very long product name - "Customizable Vtuber Model/Hachimi
@@ -850,7 +858,7 @@
                     <th class="no-sort" style="width:56px">Color</th>
                     <th class="no-sort">Category Name</th>
                     <th class="no-sort" style="width:170px">Category ID</th>
-                    <th class="no-sort" style="width:46px" title="Include this category in the automatic rotation">Auto</th>
+                    <th class="no-sort col-auto" title="Include this category in the automatic rotation">Auto</th>
                     <th class="no-sort" style="width:118px">Services</th>
                     <th class="no-sort" style="width:48px"></th>
                     <th class="no-sort" style="width:48px"></th>
@@ -951,7 +959,7 @@
                       <th class="no-sort" style="width:56px">Color</th>
                       <th class="no-sort">Category Name</th>
                       <th class="no-sort" style="width:170px">Category ID</th>
-                      <th class="no-sort" style="width:46px" title="Include this category in the automatic rotation">Auto</th>
+                      <th class="no-sort col-auto" title="Include this category in the automatic rotation">Auto</th>
                       <th class="no-sort" style="width:118px">Products</th>
                       <th class="no-sort" style="width:48px"></th>
                       <th class="no-sort" style="width:48px"></th>
@@ -3522,7 +3530,7 @@
                   ? '<span class="cat-id" title="' + esc(catId) + '">' + esc(catId) + '</span>'
                   : '<input class="id-input" data-si="' + i + '" data-sf="categoryID" placeholder="rec…" value="" />'
               }</td>
-              <td style="text-align:center"><input type="checkbox" data-shopauto="${i}"${
+              <td class="col-auto"><input type="checkbox" data-shopauto="${i}"${
                 r.auto ? ' checked' : ''
               }${catId ? '' : ' disabled'} title="${
                 catId ? 'Refresh this category automatically' : 'Enter a category ID first'
@@ -3690,7 +3698,7 @@
                 ? '<span class="cat-id" title="' + esc(catId) + '">' + esc(catId) + '</span>'
                 : '<input class="id-input" data-ci="' + i + '" data-cf="categoryID" placeholder="rechY6..." value="" />'
             }</td>
-            <td style="text-align:center"><input type="checkbox" data-catauto="${i}"${
+            <td class="col-auto"><input type="checkbox" data-catauto="${i}"${
               r.auto ? ' checked' : ''
             }${catId ? '' : ' disabled'} title="${
               catId ? 'Refresh this category automatically' : 'Enter a category ID first'
