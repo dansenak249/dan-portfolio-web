@@ -392,9 +392,31 @@
       .col-price { width: 96px; }
       /* Wider than the star it replaced: this holds "$12,345", not "4.9". */
       .col-rev { width: 104px; }
-      /* Earning nothing this month is a fact worth seeing, not an absence, so a
-         zero is dimmed rather than shown as the em dash used for "unknown". */
-      .rev-zero { color: var(--dim); }
+      /* Still used by the product table's rating column. It lost its rule when
+         the service table swapped the star out for Rev/mo, and under a fixed
+         layout an undeclared width is not harmless - it takes the remainder. */
+      .col-star { width: 52px; }
+      /* "Sales/mo" is a wider word than the counts beside it. */
+      .col-permo { width: 88px; }
+      /* FIXED layout, and it matters here.
+         Under the default auto layout a column is sized from its CONTENT, so a
+         single very long product name - "Customizable Vtuber Model/Hachimi
+         Chibi(!!!Check the description for the free trial link)" - stretched
+         the name column from its declared 42% to 863px, pushed the table to
+         1291px inside an 1146px frame, and shoved Sales/mo, Reviews and the
+         rating clean off the right edge. text-overflow could not save it: an
+         ellipsis clips INSIDE whatever width the column already won, and the
+         column had already won too much.
+         Fixed layout makes the declared widths authoritative, so the name
+         ellipsizes and every other column keeps its place no matter what a
+         seller decides to call their listing. */
+      #prodTable { table-layout: fixed; }
+      /* A zero here is a MEASUREMENT - this listing earned nothing - and it
+         has to read as one. Dimming it to var(--dim) made it vanish into the
+         background, so a row of real zeros looked like a row of missing data
+         and the table appeared to fall apart when sorted by revenue ascending.
+         Muted is quiet enough to keep the eye on the numbers that matter. */
+      .rev-zero { color: var(--muted); }
       /* drag-to-reorder handle in the declaration editor */
       .drag-handle {
         cursor: grab;
@@ -891,6 +913,14 @@
           <div class="panel-head">
             <h2><span class="dot"></span>Product</h2>
             <div class="flow-tools">
+              <div class="filter-drop" id="prodFilterWrap">
+                <button type="button" id="prodFilterBtn" class="hdr-select" aria-haspopup="listbox" aria-expanded="false" title="Filter which category to show">
+                  <span class="fd-label" id="prodFilterLabel">All products</span>
+                  <span class="fd-count" id="prodFilterCount">0</span>
+                  <span class="fd-caret">&#9660;</span>
+                </button>
+                <div class="filter-menu" id="prodFilterMenu" role="listbox" hidden></div>
+              </div>
               <span class="sub">kept / walked</span>
               <span class="count-badge" id="prodCount">0</span>
             </div>
@@ -904,7 +934,7 @@
                   <th class="num col-price" data-k="_priceUSD">Price</th>
                   <th class="num col-n" data-k="salesCount" title="Orders VGen reports for this product. A * means the seller does not show the number publicly.">Sales</th>
                   <th class="num col-rev" data-k="_revenue" title="Base price x lifetime sales. An estimate: tiers and add-ons above the base price are not counted.">Revenue</th>
-                  <th class="num col-n" data-k="_salesPerMonth" title="Lifetime sales divided by months listed.">Sales/mo</th>
+                  <th class="num col-permo" data-k="_salesPerMonth" title="Lifetime sales divided by months listed.">Sales/mo</th>
                   <th class="num col-n" data-k="reviewCount">Reviews</th>
                   <th class="num col-star" data-k="avgRating">&#9733;</th>
                 </tr>
@@ -3096,6 +3126,81 @@
         return (p.productName || '').trim();
       }
 
+      // ---- Product filter -------------------------------------------------
+      // Same control as the Commission side: a button and a listbox, so the
+      // count can sit in its own right-hand column instead of trailing each
+      // name. Built from the Shop MAP rather than from the loaded rows, so a
+      // category stays selectable even when the current filter has hidden
+      // every one of its products.
+      let prodFilter = 'all'; // 'all' | 'CAT::<name>'
+      let prodFilterOpts = [];
+
+      function populateProdFilter() {
+        const menu = $('prodFilterMenu');
+        if (!menu) return;
+        annotateProducts();
+
+        const counts = new Map();
+        for (const p of prodData) {
+          const t = (p._category || '').trim();
+          if (t) counts.set(t, (counts.get(t) || 0) + 1);
+        }
+        // Map order first, so the list reads the way the editor does.
+        const named = [];
+        const seen = new Set();
+        for (const r of shopCatRows) {
+          const name =
+            (r.categoryName || '').trim() || (r.defaultName || '').trim();
+          if (name && !seen.has(name)) { seen.add(name); named.push(name); }
+        }
+        const opts = [{ value: 'all', name: 'All products', count: prodData.length }];
+        for (const name of named) {
+          opts.push({ value: 'CAT::' + name, name, count: counts.get(name) || 0 });
+        }
+        // Anything present in the data but missing from the map, alphabetically.
+        for (const t of [...counts.keys()].filter((t) => !seen.has(t)).sort((a, b) => a.localeCompare(b))) {
+          opts.push({ value: 'CAT::' + t, name: t, count: counts.get(t) });
+        }
+
+        const key = prodFilter.startsWith('CAT::') ? prodFilter.slice(5) : '';
+        const valid = prodFilter === 'all' || seen.has(key) || counts.has(key);
+        if (!valid) prodFilter = 'all';
+
+        prodFilterOpts = opts;
+        menu.innerHTML = opts
+          .map(
+            (o) =>
+              `<button type="button" class="filter-opt" role="option" data-v="${esc(
+                o.value
+              )}" aria-selected="${o.value === prodFilter}"><span class="fo-name" title="${esc(
+                o.name
+              )}">${esc(o.name)}</span><span class="fo-count">${num(o.count)}</span></button>`
+          )
+          .join('');
+        syncProdFilterButton();
+      }
+
+      function syncProdFilterButton() {
+        const cur =
+          prodFilterOpts.find((o) => o.value === prodFilter) || prodFilterOpts[0];
+        if (!cur) return;
+        const label = $('prodFilterLabel');
+        label.textContent = cur.name;
+        label.title = cur.name;
+        $('prodFilterCount').textContent = num(cur.count);
+      }
+
+      function openProdFilterMenu() {
+        $('prodFilterMenu').hidden = false;
+        $('prodFilterBtn').setAttribute('aria-expanded', 'true');
+      }
+      function closeProdFilterMenu() {
+        const menu = $('prodFilterMenu');
+        if (!menu || menu.hidden) return;
+        menu.hidden = true;
+        $('prodFilterBtn').setAttribute('aria-expanded', 'false');
+      }
+
       function renderProducts() {
         annotateProducts();
         const body = $('prodBody');
@@ -3109,8 +3214,23 @@
           return;
         }
         empty.style.display = 'none';
+        populateProdFilter();
 
-        const rows = sortRows(prodData, prodSort);
+        // Filtering is a VIEW: everything stays loaded, the dropdown only
+        // decides what is drawn, so switching categories costs no request and
+        // cannot shrink the list of categories on offer.
+        const scoped =
+          prodFilter === 'all'
+            ? prodData
+            : prodData.filter((p) => (p._category || '') === prodFilter.slice(5));
+        const rows = sortRows(scoped, prodSort);
+        if (!rows.length) {
+          body.innerHTML = '';
+          $('prodPager').innerHTML = '';
+          empty.style.display = '';
+          empty.textContent = 'Nothing crawled in this category yet.';
+          return;
+        }
         const pageCount = Math.max(1, Math.ceil(rows.length / PROD_PAGE_SIZE));
         if (prodPage > pageCount) prodPage = pageCount;
         if (prodPage < 1) prodPage = 1;
@@ -3962,9 +4082,30 @@
       // dismiss, so close on anything outside it.
       document.addEventListener('click', (e) => {
         if (!e.target.closest('#svcFilterWrap')) closeFilterMenu();
+        if (!e.target.closest('#prodFilterWrap')) closeProdFilterMenu();
       });
       document.addEventListener('keydown', (e) => {
-        if (e.key === 'Escape') closeFilterMenu();
+        if (e.key === 'Escape') { closeFilterMenu(); closeProdFilterMenu(); }
+      });
+
+      $('prodFilterBtn').addEventListener('click', (e) => {
+        e.stopPropagation();
+        if ($('prodFilterMenu').hidden) openProdFilterMenu();
+        else closeProdFilterMenu();
+      });
+      $('prodFilterMenu').addEventListener('click', (e) => {
+        const opt = e.target.closest('.filter-opt');
+        if (!opt) return;
+        prodFilter = opt.getAttribute('data-v');
+        closeProdFilterMenu();
+        prodPage = 1; // a different group is a different list
+        $('prodFilterMenu')
+          .querySelectorAll('.filter-opt')
+          .forEach((el) =>
+            el.setAttribute('aria-selected', el.getAttribute('data-v') === prodFilter)
+          );
+        syncProdFilterButton();
+        renderProducts();
       });
 
       $('prodTable')
