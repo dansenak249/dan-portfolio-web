@@ -1048,6 +1048,7 @@
         discover: '/api/vgen-service-data/categories/discover',
         purge: '/api/vgen-service-data/categories/purge',
         census: '/api/vgen-service-data/census',
+        fetchLock: '/api/vgen-service-data/fetch-lock',
         reviews: '/api/vgen-service-data/reviews/collect',
       };
 
@@ -2100,6 +2101,17 @@
         catLoading.add(categoryID);
         renderCatEditor(); // repaint so THIS row's button spins + disables
         try {
+          // One fetch at a time, across every tab and the server's own
+          // rotation. This is also what pauses the rotation: it stands down
+          // once it sees the claim, at the end of whatever slice it is in.
+          if (!(await claimLease(categoryID, label))) {
+            status(
+              'Could not get the fetch lock — ' + leaseHolderLabel() +
+                ' is still holding it. Try again in a moment.',
+              'err'
+            );
+            return;
+          }
           let guard = 0;
           let result = null;
           status('Fetching ' + label + '…', 'info');
@@ -2109,6 +2121,10 @@
             result = await postJson(API.collect, {
               categoryID,
               reset: force && guard === 0 ? 1 : 0,
+              // Renews the lease on every slice, so it never expires under a
+              // crawl that is still going.
+              holder: FETCH_HOLDER,
+              lockKind: 'manual',
             });
             status(
               'Fetching ' + label + '… ' + result.stored + ' service(s), ' +
@@ -2147,7 +2163,11 @@
             // No minReviews: that box filters the TABLE, and letting it decide
             // what gets fetched is what used to make lowering it surface
             // nothing. The server pulls the busiest topN of the category.
-            rResult = await postJson(API.reviews, { categoryID });
+            rResult = await postJson(API.reviews, {
+              categoryID,
+              holder: FETCH_HOLDER,
+              lockKind: 'manual',
+            });
             pulledTotal += rResult.pulled || 0;
             status(
               'Reviews for ' + label + '… ' + pulledTotal + ' pulled, ' +
@@ -2189,9 +2209,121 @@
         } finally {
           catLoading.delete(categoryID);
           catCancel.delete(categoryID);
+          // Hand it back immediately rather than letting the TTL run out, so
+          // the rotation can pick up again as soon as we are done.
+          await releaseLease();
           renderCatEditor();
           loadCensusStats(); // the crawl just changed what this category holds
         }
+      }
+
+      // ---- the single fetch lease ----------------------------------------
+      //
+      // Whether a fetch is running is NOT something this tab can know from its
+      // own memory. The tab that started one may have been closed, another tab
+      // may be driving it, or it may be the automatic rotation on the server.
+      // So the lease lives in Redis and the buttons start DISABLED on every
+      // load, enabling only once the server says it is free. The safe default
+      // is "someone might be fetching", never "nobody is".
+      //
+      // The holder id is stored, not generated per load, so reloading the page
+      // mid-crawl reclaims this browser's own lease instead of locking it out
+      // of a fetch it started itself.
+      const HOLDER_KEY = 'vgsd.fetchHolder';
+      let FETCH_HOLDER = '';
+      try {
+        FETCH_HOLDER = localStorage.getItem(HOLDER_KEY) || '';
+      } catch {
+        // Private mode: fall through to a per-load id. Worse after a reload,
+        // still correct.
+      }
+      if (!FETCH_HOLDER) {
+        FETCH_HOLDER = 'ui:' + Math.random().toString(36).slice(2) + Date.now().toString(36);
+        try { localStorage.setItem(HOLDER_KEY, FETCH_HOLDER); } catch { /* ignore */ }
+      }
+
+      // checked=false means "we have not heard back yet", which keeps buttons
+      // disabled. It is deliberately distinct from locked=false.
+      let fetchLease = { checked: false, locked: false, mine: false, lock: null };
+      let leasePollTimer = null;
+
+      const leaseWait = (ms) => new Promise((r) => setTimeout(r, ms));
+
+      function leaseBlocked() {
+        return !fetchLease.checked || (fetchLease.locked && !fetchLease.mine);
+      }
+
+      // Who is holding it, in words, for a button title or a status line.
+      function leaseHolderLabel() {
+        if (!fetchLease.checked) return 'checking whether a fetch is running';
+        const l = fetchLease.lock;
+        if (!l) return '';
+        if (l.kind === 'rotation') return 'the automatic rotation';
+        if (l.holder === FETCH_HOLDER) return 'this browser';
+        return 'another fetch';
+      }
+
+      async function refreshLease() {
+        try {
+          const res = await fetch(API.fetchLock, { cache: 'no-store' });
+          const json = await res.json();
+          if (!res.ok || !json.ok) throw new Error(json.error || 'HTTP ' + res.status);
+          fetchLease = {
+            checked: true,
+            locked: !!json.locked,
+            mine: !!(json.lock && json.lock.holder === FETCH_HOLDER),
+            lock: json.lock || null,
+          };
+        } catch {
+          // Unreachable server: stay locked. Concluding "free" here is how you
+          // get two crawls of the same category running at once.
+          fetchLease = { checked: false, locked: true, mine: false, lock: null };
+        }
+        renderCatEditor();
+        scheduleLeasePoll();
+        return fetchLease;
+      }
+
+      // Poll only while it matters: something else holds it and we are waiting
+      // for that to end.
+      function scheduleLeasePoll() {
+        if (leasePollTimer) { clearTimeout(leasePollTimer); leasePollTimer = null; }
+        if (!leaseBlocked()) return;
+        leasePollTimer = setTimeout(refreshLease, 6000);
+      }
+
+      // Ask the rotation to stand down, then wait for the lease to come free.
+      // The rotation releases at the end of each tick and declines to take it
+      // again while a claim stands, so this is a wait of at most one slice -
+      // not of a whole rotation run.
+      async function claimLease(categoryID, label) {
+        try {
+          await postJson(API.fetchLock, {
+            action: 'claim', holder: FETCH_HOLDER, categoryID, label,
+          });
+        } catch {
+          // A claim is an optimisation, not a requirement: without it we simply
+          // wait for the rotation's current tick instead of jumping the queue.
+        }
+        for (let i = 0; i < 25; i++) {
+          await refreshLease();
+          if (!fetchLease.locked || fetchLease.mine) return true;
+          status(
+            'Waiting for ' + leaseHolderLabel() + ' to release the fetch lock…',
+            'info'
+          );
+          await leaseWait(3000);
+        }
+        return false;
+      }
+
+      async function releaseLease() {
+        try {
+          await postJson(API.fetchLock, { action: 'release', holder: FETCH_HOLDER });
+        } catch {
+          // The lease carries a TTL, so a missed release frees itself.
+        }
+        await refreshLease();
       }
 
       // Row button. Shift-click forces a restart from page 1; a plain click
@@ -2218,11 +2350,22 @@
           );
           const json = await res.json();
           if (!res.ok || !json.jobs) return;
-          for (const categoryID of Object.keys(json.jobs)) {
-            if (!json.jobs[categoryID]) continue;
-            // Deliberately NOT awaited: each resumed category runs its own loop
-            // so one slow crawl does not hold up the others or the first paint.
-            runCollect(categoryID, categoryLabel(categoryID), false);
+          // ONE job, not all of them: there is a single fetch lease, so
+          // starting several would leave the rest spinning in claimLease
+          // waiting for the first. The others are picked up on a later load,
+          // or by the rotation.
+          const pending = Object.keys(json.jobs).filter((id) => json.jobs[id]);
+          if (pending.length) {
+            const first = pending[0];
+            // Deliberately NOT awaited: the crawl runs alongside the first paint.
+            runCollect(first, categoryLabel(first), false);
+            if (pending.length > 1) {
+              status(
+                'Resuming ' + categoryLabel(first) + '. ' + (pending.length - 1) +
+                  ' other unfinished crawl(s) will wait their turn.',
+                'info'
+              );
+            }
           }
         } catch {}
       }
@@ -2604,9 +2747,15 @@
             // when the row has no id yet (nothing to fetch).
             const catId = (r.categoryID || '').trim();
             const busy = catLoading.has(catId);
+            // Blocked by someone else's fetch, or by not yet knowing. A row
+            // that is itself running stays clickable, because that click
+            // cancels it.
+            const blocked = !busy && leaseBlocked();
             const loadCls = 'tiny ghost cat-load' + (busy ? ' is-loading' : '');
             const loadTitle = busy
               ? 'Fetching… click to cancel'
+              : blocked
+              ? 'Locked: ' + leaseHolderLabel() + ' — only one fetch runs at a time'
               : catId
               ? 'Fetch this category from VGen (shift-click to restart from scratch)'
               : 'Enter a category ID first';
@@ -2631,12 +2780,16 @@
             }" /></td>
             <td>${censusCell(catId, !!r.auto)}</td>
             <td><button class="${loadCls}" data-catload="${i}"${
-              !busy && !catId ? ' disabled' : ''
+              (!busy && !catId) || blocked ? ' disabled' : ''
             } title="${loadTitle}"><span class="cat-spin">${ICON_RELOAD}</span><span class="cat-x">${ICON_CANCEL}</span></button></td>
             <td><button class="tiny ghost cat-purge" data-catpurge="${i}"${
-              catId ? '' : ' disabled'
+              !catId || leaseBlocked() ? ' disabled' : ''
             } title="${
-              catId ? 'Clear this category&#39;s crawled data' : 'Enter a category ID first'
+              !catId
+                ? 'Enter a category ID first'
+                : leaseBlocked()
+                ? 'Locked: ' + leaseHolderLabel() + ' is fetching'
+                : 'Clear this category&#39;s crawled data'
             }">${ICON_TRASH}</button></td>
             <td><button class="tiny ghost" data-catdel="${i}" title="Remove this row from the map">✕</button></td>
           </tr>`;
@@ -3209,6 +3362,9 @@
       (async function init() {
         beginLoading();
         loadUiConfig(); // restore saved filter / flow window / sort first
+        // Before anything else: find out whether a fetch is already running.
+        // Until this answers, every fetch button stays disabled.
+        await refreshLease();
         // Reflect the restored flow window in the segmented control.
         $('flowSeg')
           .querySelectorAll('button')

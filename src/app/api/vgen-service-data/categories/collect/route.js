@@ -37,11 +37,16 @@
 // AUTH: intentionally open for now, mirroring the sibling service-data routes.
 // This is a personal, noindex research tool; auth arrives with a unified /tools
 // login.
+// EVERY call takes the single fetch lease first. It is renewed per slice and
+// carries a TTL, so a caller that disappears mid-crawl frees it by itself.
+// Callers that supply no `holder` get an ephemeral one, which still serialises
+// them against everything else - the lease is never optional.
 
 import { NextResponse } from 'next/server'
 import { fetchCategorySlice, serviceScore } from '@/lib/vgenServiceData/fetchCategory'
 import {
   CHUNK_SIZE,
+  acquireFetchLock,
   getCategoryJob,
   setCategoryJob,
   clearCategoryJob,
@@ -129,6 +134,27 @@ export async function POST(request) {
     return NextResponse.json(
       { error: 'categoryID must be a VGen category id, e.g. rechY6VVD1EyfZbHe' },
       { status: 400, headers: NO_STORE }
+    )
+  }
+
+  const holder = String((body && body.holder) || '').trim() ||
+    'direct:' + Math.random().toString(36).slice(2)
+  const lease = await acquireFetchLock(
+    holder,
+    (body && body.lockKind) || 'direct',
+    { categoryID }
+  )
+  if (!lease.ok) {
+    return NextResponse.json(
+      {
+        ok: false,
+        busy: true,
+        error: 'Another fetch holds the lease: ' + (lease.reason || 'busy'),
+        heldBy: lease.lock
+          ? { kind: lease.lock.kind, categoryID: lease.lock.categoryID, label: lease.lock.label }
+          : null,
+      },
+      { status: 409, headers: NO_STORE }
     )
   }
 

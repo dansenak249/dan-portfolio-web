@@ -144,6 +144,13 @@ jobs:
               echo "  no categories are ticked for Auto in the category map; nothing to do"
               exit 0
             fi
+            # Someone is fetching by hand. The rotation stands down for them, so
+            # looping here would just burn ticks refusing to work. Leave the rest
+            # of this run to them; the next one picks the rotation back up.
+            if [ "$(echo "${body}" | jq -r '.paused // false')" = "true" ]; then
+              echo "  $(echo "${body}" | jq -r '.note')"
+              exit 0
+            fi
             if [ "$(echo "${body}" | jq -r '.ok // false')" != "true" ]; then
               echo "  tick failed: $(echo "${body}" | jq -r '.error // .')"
               failed=$((failed + 1)); sleep 20; continue

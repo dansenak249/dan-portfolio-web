@@ -414,6 +414,130 @@ export async function* iterateCategoryChunks(categoryID, count) {
   }
 }
 
+// ---- one fetch at a time -------------------------------------------------
+//
+// Crawling is the only thing here that hits VGen hard, and several at once is
+// how you get rate-limited, or how two crawls of one category end up fighting
+// over the same job record. There is exactly ONE fetch lease for the whole
+// tool, and every driver goes through it: the row buttons, the rotation, and
+// anything calling the endpoints directly.
+//
+// It is a LEASE, not a flag. A browser tab can close mid-crawl and a serverless
+// function can die, and neither gets to leave the tool locked forever - the key
+// carries a TTL and the holder renews it on every slice.
+const fetchLockKey = () => `${NS}:fetch:lock`
+// A manual fetch that finds the rotation holding the lease leaves this behind.
+// The rotation checks it before taking the lease again and stands down, which
+// is what lets a person interrupt an automatic run without anything having to
+// be killed mid-slice.
+const fetchClaimKey = () => `${NS}:fetch:claim`
+
+export const FETCH_LOCK_TTL_SEC = 90
+export const FETCH_CLAIM_TTL_SEC = 60
+
+/**
+ * Current lease and claim, for the dashboard to decide what to enable.
+ * @returns {Promise<{ lock: object|null, claim: object|null }>}
+ */
+export async function getFetchLock() {
+  const r = ensureRedis()
+  const [lock, claim] = await Promise.all([
+    r.get(fetchLockKey()),
+    r.get(fetchClaimKey()),
+  ])
+  return { lock: parseMaybe(lock), claim: parseMaybe(claim) }
+}
+
+/**
+ * Take the lease, or renew it if this holder already holds it.
+ *
+ * A rotation acquire additionally stands down when someone else has claimed.
+ * That is the whole priority rule, and it lives here so no caller can forget it.
+ *
+ * @param {string} holder opaque id, stable for the life of one fetch session
+ * @param {'manual'|'rotation'|'direct'} kind who is asking
+ * @param {{ categoryID?: string, label?: string, phase?: string, startedAt?: string }} meta
+ * @returns {Promise<{ ok: boolean, lock: object|null, reason?: string }>}
+ */
+export async function acquireFetchLock(holder, kind, meta = {}) {
+  const r = ensureRedis()
+  const record = {
+    holder,
+    kind,
+    categoryID: meta.categoryID || null,
+    label: meta.label || null,
+    phase: meta.phase || null,
+    startedAt: meta.startedAt || new Date().toISOString(),
+    renewedAt: new Date().toISOString(),
+  }
+
+  if (kind === 'rotation') {
+    const claim = parseMaybe(await r.get(fetchClaimKey()))
+    if (claim && claim.holder && claim.holder !== holder) {
+      return { ok: false, lock: null, reason: 'a manual fetch has claimed the lease' }
+    }
+  }
+
+  // Free lease: take it.
+  const taken = await r.set(fetchLockKey(), JSON.stringify(record), {
+    nx: true,
+    ex: FETCH_LOCK_TTL_SEC,
+  })
+  if (taken === 'OK' || taken === true) {
+    if (kind !== 'rotation') await r.del(fetchClaimKey())
+    return { ok: true, lock: record }
+  }
+
+  // Held: only the holder itself may renew. Expiry is Redis's job, so there is
+  // no stale-lock arithmetic here to get wrong.
+  const current = parseMaybe(await r.get(fetchLockKey()))
+  if (current && current.holder === holder) {
+    const renewed = { ...record, startedAt: current.startedAt || record.startedAt }
+    await r.set(fetchLockKey(), JSON.stringify(renewed), { ex: FETCH_LOCK_TTL_SEC })
+    if (kind !== 'rotation') await r.del(fetchClaimKey())
+    return { ok: true, lock: renewed }
+  }
+  return { ok: false, lock: current, reason: 'held by another fetch' }
+}
+
+/**
+ * Give up the lease, but only if it is still ours: a lease that expired and was
+ * retaken by someone else must not be deleted out from under them.
+ */
+export async function releaseFetchLock(holder) {
+  const r = ensureRedis()
+  const current = parseMaybe(await r.get(fetchLockKey()))
+  if (current && current.holder !== holder) return false
+  await r.del(fetchLockKey())
+  return true
+}
+
+/**
+ * Ask the rotation to stand down so a person can go first. Short-lived on
+ * purpose: if whoever claimed never follows through, the rotation resumes on its
+ * own rather than waiting on a promise nobody kept.
+ */
+export async function claimFetchLock(holder, meta = {}) {
+  await ensureRedis().set(
+    fetchClaimKey(),
+    JSON.stringify({
+      holder,
+      categoryID: meta.categoryID || null,
+      label: meta.label || null,
+      claimedAt: new Date().toISOString(),
+    }),
+    { ex: FETCH_CLAIM_TTL_SEC }
+  )
+}
+
+export async function clearFetchClaim(holder) {
+  const r = ensureRedis()
+  const claim = parseMaybe(await r.get(fetchClaimKey()))
+  if (claim && claim.holder !== holder) return false
+  await r.del(fetchClaimKey())
+  return true
+}
+
 /**
  * The running top-N of an in-flight crawl, or [] if there is none.
  * @param {string} categoryID

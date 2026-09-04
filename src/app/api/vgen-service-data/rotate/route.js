@@ -25,6 +25,8 @@ import {
   getCategoryMap,
   getRotation,
   setRotation,
+  acquireFetchLock,
+  releaseFetchLock,
 } from '@/lib/vgenServiceData/store'
 
 export const runtime = 'nodejs'
@@ -33,6 +35,11 @@ export const revalidate = 0
 export const maxDuration = 60
 
 const NO_STORE = { 'Cache-Control': 'no-store' }
+
+// Stable across ticks on purpose. Successive ticks renew the same lease rather
+// than queueing behind each other, and a tick that died without releasing is
+// simply renewed by the next one instead of blocking the rotation for a TTL.
+const ROTATION_HOLDER = 'rotation'
 
 function isAuthorized(request) {
   const secret = process.env.VGEN_COLLECT_SECRET
@@ -103,18 +110,34 @@ export async function POST(request) {
     )
   }
 
-  let body = {}
-  try {
-    body = (await request.json()) || {}
-  } catch {
-    // No body: run with defaults.
-  }
+  // No parameters: a tick reads its position from Redis and takes the next
+  // bounded slice. Anything a caller could pass here would be a way to make one
+  // tick behave unlike another, which is exactly what the design avoids.
 
   try {
     const list = await autoCategories()
     if (!list.length) {
       return NextResponse.json(
         { ok: true, note: 'No categories are ticked for auto refresh.', idle: true },
+        { headers: NO_STORE }
+      )
+    }
+
+    // Stand down for a person. This does not interrupt anything mid-slice: the
+    // tick simply does not start, the position is not touched, and the manual
+    // fetch has the lease to itself. The rotation picks up on its next tick,
+    // whenever that is.
+    const lease = await acquireFetchLock(ROTATION_HOLDER, 'rotation', {})
+    if (!lease.ok) {
+      return NextResponse.json(
+        {
+          ok: true,
+          paused: true,
+          note: 'Standing down: ' + (lease.reason || 'the fetch lease is busy'),
+          heldBy: lease.lock
+            ? { kind: lease.lock.kind, label: lease.lock.label }
+            : null,
+        },
         { headers: NO_STORE }
       )
     }
@@ -147,11 +170,16 @@ export async function POST(request) {
     if (phase === 'census') {
       detail = await callSlice(request, '/api/vgen-service-data/categories/collect', {
         categoryID: current.categoryID,
+        // Renews the lease this tick already holds rather than fighting it.
+        holder: ROTATION_HOLDER,
+        lockKind: 'rotation',
       })
       if (detail.done) phase = 'reviews'
     } else {
       detail = await callSlice(request, '/api/vgen-service-data/reviews/collect', {
         categoryID: current.categoryID,
+        holder: ROTATION_HOLDER,
+        lockKind: 'rotation',
       })
       if (detail.done) {
         // This category is finished; hand over to the next one.
@@ -196,5 +224,14 @@ export async function POST(request) {
       { ok: false, error: `Rotation tick failed: ${message}` },
       { status: 502, headers: NO_STORE }
     )
+  } finally {
+    // Released between ticks, not held across a whole run: that is what lets a
+    // person get in after at most one slice instead of waiting out the run.
+    // Harmless when we never took it - release only deletes our own lease.
+    try {
+      await releaseFetchLock(ROTATION_HOLDER)
+    } catch {
+      // The TTL is the backstop; a failed release costs at most one tick.
+    }
   }
 }

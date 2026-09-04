@@ -31,9 +31,14 @@
 // `force: 1` ignores all of that and re-pulls the batch regardless.
 //
 // AUTH: intentionally open for now, mirroring the sibling service-data routes.
+// EVERY call takes the single fetch lease first. It is renewed per slice and
+// carries a TTL, so a caller that disappears mid-crawl frees it by itself.
+// Callers that supply no `holder` get an ephemeral one, which still serialises
+// them against everything else - the lease is never optional.
 
 import { NextResponse } from 'next/server'
 import { fetchServiceReviews } from '@/lib/vgenServiceData/fetchReviews'
+import { acquireFetchLock } from '@/lib/vgenServiceData/store'
 import { serviceScore } from '@/lib/vgenServiceData/fetchCategory'
 import {
   getCategoryMap,
@@ -119,6 +124,26 @@ export async function POST(request) {
     Math.max(1, Number(body.limit) || DEFAULT_LIMIT)
   )
   const force = !!body.force
+
+  const holder = String(body.holder || '').trim() ||
+    'direct:' + Math.random().toString(36).slice(2)
+  const lease = await acquireFetchLock(holder, body.lockKind || 'direct', {
+    categoryID,
+    phase: 'reviews',
+  })
+  if (!lease.ok) {
+    return NextResponse.json(
+      {
+        ok: false,
+        busy: true,
+        error: 'Another fetch holds the lease: ' + (lease.reason || 'busy'),
+        heldBy: lease.lock
+          ? { kind: lease.lock.kind, categoryID: lease.lock.categoryID, label: lease.lock.label }
+          : null,
+      },
+      { status: 409, headers: NO_STORE }
+    )
+  }
 
   const startedNow = Date.now()
   try {
