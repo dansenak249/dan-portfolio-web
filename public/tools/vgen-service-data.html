@@ -50,8 +50,7 @@
         gap: 20px;
         flex-wrap: wrap;
         padding-bottom: 20px;
-        border-bottom: 1px solid var(--line);
-        margin-bottom: 26px;
+        margin-bottom: 6px;
       }
       .title-block h1 {
         font-size: clamp(1.6rem, 1rem + 2.4vw, 2.6rem);
@@ -72,19 +71,9 @@
         color: var(--accent-2);
         margin-bottom: 10px;
       }
-      .top-actions {
-        display: flex;
-        align-items: center;
-        gap: 10px;
-        flex-wrap: wrap;
-      }
-      .updated {
-        font-family: var(--mono);
-        font-size: 0.75rem;
-        color: var(--dim);
-        text-align: right;
-      }
-      .updated b { color: var(--muted); font-weight: 600; }
+      /* The freshness stamp moved onto the tab bar, so the header carries the
+         title alone; .top-actions and .updated went with it. */
+      .tab-note b { color: var(--muted); font-weight: 600; }
 
       button {
         font-family: var(--sans);
@@ -777,18 +766,16 @@
             monthly business, across commission services and shop products.
           </p>
         </div>
-        <div class="top-actions">
-          <div class="updated">
-            updated<br /><b id="lastUpdated">—</b>
-          </div>
-        </div>
       </header>
 
       <!-- One tab per VGen marketplace section, named as VGen names them. -->
       <div class="tabs" role="tablist">
         <button type="button" id="tabBtnCommission" class="active" role="tab" aria-selected="true" aria-controls="tabCommission">Commission</button>
         <button type="button" id="tabBtnShop" role="tab" aria-selected="false" aria-controls="tabShop">Shop</button>
-        <span class="tab-note" id="tabNote"></span>
+        <!-- The freshness stamp sits here rather than in the header: it is a
+             property of the DATA, so it belongs on the same line as the tabs
+             that choose which data you are looking at. -->
+        <span class="tab-note">updated <b id="lastUpdated">—</b></span>
       </div>
 
       <div id="status" class="status"></div>
@@ -921,8 +908,6 @@
                 </button>
                 <div class="filter-menu" id="prodFilterMenu" role="listbox" hidden></div>
               </div>
-              <span class="sub">kept / walked</span>
-              <span class="count-badge" id="prodCount">0</span>
             </div>
           </div>
           <div class="table-scroll">
@@ -1424,9 +1409,7 @@
         $('tabBtnShop').classList.toggle('active', shop);
         $('tabBtnCommission').setAttribute('aria-selected', String(!shop));
         $('tabBtnShop').setAttribute('aria-selected', String(shop));
-        // The header still describes the Commission side; say so rather than
-        // leaving a stale sentence sitting above an unrelated table.
-        $('tabNote').textContent = shop ? 'shop — not connected yet' : '';
+        renderLastUpdated();
       }
 
       function setTab(tab) {
@@ -3088,6 +3071,19 @@
       // compute — but it publishes no per-review dates in the crawl, so there
       // is no monthly series to draw either. Showing the columns that exist and
       // leaving out the ones that do not beats faking a sparkline.
+      // One stamp, two datasets. Each tab reports when ITS data was last
+      // refreshed; showing the commission timestamp while looking at Shop would
+      // be a quietly wrong number rather than a missing one.
+      let commissionFetchedAt = null;
+      let shopFetchedAt = null;
+
+      function renderLastUpdated() {
+        const el = $('lastUpdated');
+        if (!el) return;
+        const at = activeTab === 'shop' ? shopFetchedAt : commissionFetchedAt;
+        el.textContent = at ? new Date(at).toLocaleString() : 'never';
+      }
+
       let prodData = [];
       let prodPage = 1;
       let prodSort = { key: '_revenue', dir: -1 };
@@ -3321,9 +3317,11 @@
           const json = await res.json();
           if (!res.ok) throw new Error(json.error || 'HTTP ' + res.status);
           prodData = Array.isArray(json.products) ? json.products : [];
-          $('prodCount').textContent =
-            num(json.productCount) +
-            (json.censusSeenTotal ? ' / ' + num(json.censusSeenTotal) : '');
+          shopFetchedAt = json.lastFetchedAt || null;
+          renderLastUpdated();
+          // No kept/walked summary here: the category map below reports it per
+          // category, which is where it is actually actionable - one total
+          // cannot say WHICH category is only a slice of itself.
           renderProducts();
         } catch (e) {
           status('Shop products failed to load: ' + e.message, 'err');
@@ -4014,9 +4012,8 @@
         svcByID = {};
         for (const s of svcData) svcByID[s.serviceID] = s;
         buildDeclLookup(); // keep the id join fresh for modals + type resolution
-        $('lastUpdated').textContent = json.lastFetchedAt
-          ? new Date(json.lastFetchedAt).toLocaleString()
-          : 'never';
+        commissionFetchedAt = json.lastFetchedAt || null;
+        renderLastUpdated();
         populateServiceFilter();
         renderServices();
         if (json.refreshErrors && json.refreshErrors.length) {
