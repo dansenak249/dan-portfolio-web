@@ -272,8 +272,10 @@ const CFG_VERSION = 4;
 // The trending threshold is no longer a free-form rank; it snaps to the cut
 // points the collector actually stores (vgen:threshold:series .cuts keys), so
 // the dashboard can plot a real per-cut SI line over time. Trending is collected
-// to top 200, so the cuts stop at 200 (older 300/500/1000 nodes were dropped).
-const THR_NODES = [10, 20, 50, 100, 200];
+// to top 100, so the cuts stop there. Must stay in step with THRESHOLD_CUTS in
+// src/lib/vgen/fetchVgen.js: a node with no stored cut plots nothing.
+// A saved thr of 200 from the wider era snaps down to 100 on load.
+const THR_NODES = [10, 20, 50, 100];
 const CFG_DEFAULT = { v: CFG_VERSION, maxLikes: 100, thr: 100, justify: true };
 // Snap any number to the nearest stored cut node.
 function snapNode(n) {
@@ -419,8 +421,7 @@ function thresholdTable() {
     .filter(r => r.snapshot_ts === ts && typeof r.searchIndex === "number")
     .sort((a, b) => a.rank - b.rank);
   if (!rows.length) return "";
-  const cuts = [10, 20, 50, 100, 200];
-  const body = cuts.map(n => {
+  const body = THR_NODES.map(n => {
     const have = n <= rows.length;
     const r = rows[Math.min(n, rows.length) - 1];
     return '<tr><td class="num">' + n + '</td>' +
@@ -590,6 +591,14 @@ function wireOverview() {
     localStorage.removeItem("vg_log");
     render();
   };
+  const prune = document.getElementById("pruneBtn");
+  const pruneOut = document.getElementById("pruneOut");
+  if (prune && pruneOut) prune.onclick = () => {
+    if (!confirm("Delete every stored snapshot past the 7-day window, and cut " +
+      "the survivors down to their top 100 rows? This cannot be undone."))
+      return;
+    runPrune(prune, pruneOut);
+  };
   loadUniqueTrending();
 }
 
@@ -651,6 +660,7 @@ function viewOverview() {
     (users.length ? '<div>' + users.map(u => '<span class="pill flat" style="margin:3px">'+esc(u)+'</span>').join("") + '</div>'
                   : '<div class="hint">No profile data yet.</div>') +
     '</div>' +
+    storagePanel() +
     logSection();
 }
 
@@ -672,7 +682,7 @@ function viewProfiles() {
       '<div class="field"><label>Max column height - likes</label>' +
         '<input type="number" id="cfgMaxV" min="1" step="10"></div>' +
       '<div class="field"><label>Trending threshold (top N rank)</label>' +
-        '<div class="thr-slider"><input type="range" id="cfgThr" min="0" max="7" step="1">' +
+        '<div class="thr-slider"><input type="range" id="cfgThr" min="0" step="1">' +
         '<div class="thr-ticks" id="thrTicks"></div></div></div>' +
       '<div class="hint">searchIndex axis is fixed 0&ndash;1. The threshold line now follows ' +
         'the chosen cut&rsquo;s searchIndex over time. <b>Justify</b> (button on the right) ' +
@@ -776,7 +786,10 @@ function wireProfiles() {
   const cMaxV = document.getElementById("cfgMaxV");
   const cThr = document.getElementById("cfgThr");
   const thrTicks = document.getElementById("thrTicks");
-  // thr snaps to one of the 8 stored cut nodes; the slider value is the node index.
+  // thr snaps to one of the stored cut nodes; the slider value is the node index.
+  // max comes from the node list so shrinking it can never leave dead positions
+  // at the right-hand end that all clamp to the last node.
+  cThr.max = String(THR_NODES.length - 1);
   CFG.thr = snapNode(CFG.thr);
   saveCfg();
   cMaxV.value = CFG.maxLikes;
@@ -805,7 +818,7 @@ function wireProfiles() {
     CFG.maxLikes = Math.max(1, Number(cMaxV.value) || CFG_DEFAULT.maxLikes);
     saveCfg(); drawPost();
   };
-  // slider value is the node index (0..7); map it back to the rank node.
+  // slider value is the node index; map it back to the rank node.
   const applyThr = () => {
     const i = Math.min(Math.max(0, Math.round(Number(cThr.value) || 0)), THR_NODES.length - 1);
     CFG.thr = THR_NODES[i];
@@ -858,9 +871,10 @@ function renderProfileTable() {
 // ---- Watchlist manager ---------------------------------------------------
 // The watchlist (userID + label per account) lives in Redis and drives what the
 // collector fetches each run. Edits go through the protected POST /watchlist
-// (Bearer VGEN_ADMIN_SECRET); the secret is prompted once and kept in
-// localStorage. Removing an account is destructive: its stored snapshots are
-// deleted immediately (server-side purgeProfileUsers), not left to age out.
+// (Bearer VGEN_ADMIN_SECRET; the same secret also guards /prune). The secret is
+// prompted once and kept in localStorage. Removing an account is destructive:
+// its stored snapshots are deleted immediately (server-side purgeProfileUsers),
+// not left to age out.
 function watchlistPanel() {
   return '<div class="panel"><h2>Manage tracked accounts</h2>' +
     '<div class="hint">Add a VGen account to collect its portfolio each run. ' +
@@ -875,10 +889,80 @@ function watchlistPanel() {
     '<div id="wlTbl"></div></div>';
 }
 
+// ---- Storage ---------------------------------------------------------------
+// Retention is enforced in two places and they are not equivalent. The collector
+// trims only a few snapshots per run, on purpose: dropping a cap would otherwise
+// make one unlucky collect delete hundreds of keys inside the function timeout.
+// And nothing on the hot path ever narrows a snapshot that was WRITTEN wider -
+// the rows inside it are whatever the collector captured that hour. So after a
+// limit change the old data just sits there until this button clears it.
+function storagePanel() {
+  const t = uniq(DATA.trending.map(r => r.snapshot_ts)).length;
+  const p = uniq(DATA.profiles.map(r => r.snapshot_ts)).length;
+  return '<div class="panel"><h2>Storage</h2>' +
+    '<div class="hint">Snapshots are kept for <b>7 days</b> (168 hourly snapshots per kind), ' +
+    'and trending is collected to the <b>top 100</b>. Loaded right now: ' +
+    fmt(t) + ' trending / ' + fmt(p) + ' profile snapshot(s) \u2013 that is what this ' +
+    'dashboard has fetched, not necessarily all the server still holds.<br>' +
+    'Prune deletes everything past those limits, including cutting snapshots that ' +
+    'were captured under a wider setting down to their top 100. <b>Irreversible.</b></div>' +
+    '<div class="ctrl-row"><button id="pruneBtn">Prune stored snapshots</button>' +
+    '<span id="pruneOut" class="hint" style="margin:0"></span></div></div>';
+}
+
+// One POST is budgeted, not exhaustive: trimming rows means reading and
+// rewriting whole payloads, so the server stops on a clock and reports what it
+// did not reach. Loop until it says done rather than asking for a single call
+// that would sit past the function timeout.
+async function runPrune(btn, out) {
+  const secret = getAdminSecret();
+  if (!secret) return;
+  btn.disabled = true;
+  const totals = { dropped: 0, trimmed: 0, rows: 0, passes: 0 };
+  try {
+    for (let pass = 1; pass <= 20; pass++) {
+      out.textContent = "Pruning\u2026 (pass " + pass + ")";
+      const res = await fetch("/api/vgen-trending/prune", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Authorization": "Bearer " + secret },
+        body: JSON.stringify({}),
+      });
+      if (res.status === 401) {
+        localStorage.removeItem("vg_admin_secret");
+        out.textContent = "";
+        alert("Wrong admin secret \u2013 cleared. Try the action again to re-enter it.");
+        return;
+      }
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok || !json.ok) {
+        out.textContent = "";
+        pushLog("err", "Prune failed: " + ((json && json.error) || ("HTTP " + res.status)));
+        alert("Prune failed: " + ((json && json.error) || ("HTTP " + res.status)));
+        return;
+      }
+      totals.passes = pass;
+      totals.dropped += json.trending.snapshotsDropped + json.profiles.snapshotsDropped;
+      totals.trimmed += json.trending.snapshotsTrimmed;
+      totals.rows += json.trending.rowsRemoved;
+      if (json.done) break;
+    }
+    const msg = "Pruned: " + fmt(totals.dropped) + " snapshot(s) deleted, " +
+      fmt(totals.trimmed) + " narrowed to top 100 (" + fmt(totals.rows) + " rows dropped)" +
+      (totals.passes > 1 ? ", " + totals.passes + " passes" : "");
+    out.textContent = msg;
+    pushLog("ok", msg);
+  } catch (e) {
+    out.textContent = "";
+    alert("Prune failed: " + ((e && e.message) || e));
+  } finally {
+    btn.disabled = false;
+  }
+}
+
 function getAdminSecret() {
   let s = localStorage.getItem("vg_admin_secret");
   if (!s) {
-    s = prompt("Enter the admin secret (VGEN_ADMIN_SECRET) to edit the watchlist:");
+    s = prompt("Enter the admin secret (VGEN_ADMIN_SECRET) to run this action:");
     if (s) localStorage.setItem("vg_admin_secret", s.trim());
   }
   return s ? s.trim() : null;

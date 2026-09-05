@@ -1012,6 +1012,42 @@
         </section>
       </div><!-- /tabShop -->
 
+      <!-- Maintenance sits OUTSIDE the tabs because the keyspace does. Reviews
+           are keyed by service and census keys by category, so a sweep spans
+           Commission and Shop at once and belongs to neither tab. -->
+      <section class="panel">
+        <details class="decl" id="sweepWrap">
+          <summary>
+            <span class="chev">&#9654;</span>
+            Storage maintenance
+            <span class="count-badge" id="sweepBadge">not scanned</span>
+          </summary>
+          <div style="margin-top:16px">
+            <p class="foot-note">
+              A category stores its busiest 1,000 rows and one number for how many
+              it walked. Review payloads do not follow that rule: they are keyed by
+              SERVICE, so a service that drops out of the top on a re-crawl — or a
+              category removed from the map — leaves its reviews behind with nothing
+              pointing at them. This finds those, plus census keys of categories no
+              longer on either map, across BOTH tabs.
+            </p>
+            <div class="decl-foot">
+              <div class="left">
+                <button id="sweepScanBtn" class="ghost">&#9906; Scan for orphans</button>
+              </div>
+              <div class="right">
+                <button id="sweepRunBtn" class="primary" disabled>Delete orphans</button>
+              </div>
+            </div>
+            <p class="foot-note" id="sweepOut">
+              Scan is read-only and safe to run any time. Deleting is irreversible;
+              the reviews it removes would have to be re-pulled from VGen. Neither
+              runs while a crawl holds the fetch lock.
+            </p>
+          </div>
+        </details>
+      </section>
+
       <!-- Import preview modal: review a harvested list before adding to the editor -->
       <!-- Discovered categories: what VGen's taxonomy holds that the stored map
            does not cover yet. Nothing is applied until Add is pressed, and adding
@@ -1423,6 +1459,110 @@
       // Purely a view switch: both tabs stay in the DOM, so nothing is torn down
       // or refetched when you move between them, and a crawl running under
       // Commission keeps running while you look at Shop.
+      // ---- storage maintenance ------------------------------------------------
+      // The sweep endpoint is admin-gated and irreversible, so this drives it in two
+      // deliberate steps: scan (read-only) to see the number, then delete. The count
+      // is never assumed - the delete pass re-derives the reachable set server-side,
+      // so a crawl finishing between the two cannot turn a live key into an orphan.
+      let sweepFound = null;
+
+      function sweepSecret() {
+        let v = localStorage.getItem("vgsd:adminSecret");
+        if (!v) {
+          v = prompt("Enter the admin secret (VGEN_ADMIN_SECRET) to run storage maintenance:");
+          if (v) localStorage.setItem("vgsd:adminSecret", v.trim());
+        }
+        return v ? v.trim() : null;
+      }
+
+      // One pass is budgeted, not exhaustive: the server rebuilds the reachable set
+      // and then SCANs against a clock, handing back cursors. Loop until it says done.
+      async function sweepPass(confirm, onProgress) {
+        const secret = sweepSecret();
+        if (!secret) return null;
+        const totals = { scanned: 0, orphans: 0, deleted: 0, passes: 0, live: null, sample: [] };
+        let cursors;
+        for (let pass = 1; pass <= 40; pass++) {
+          if (onProgress) onProgress(pass);
+          const res = await fetch("/api/vgen-service-data/purge-orphans", {
+            method: "POST",
+            headers: { "Content-Type": "application/json", Authorization: "Bearer " + secret },
+            body: JSON.stringify({ confirm: confirm === true, cursors: cursors }),
+          });
+          if (res.status === 401) {
+            localStorage.removeItem("vgsd:adminSecret");
+            throw new Error("Wrong admin secret - cleared. Try again to re-enter it.");
+          }
+          const json = await res.json().catch(function () { return {}; });
+          if (!res.ok || !json.ok) {
+            throw new Error((json && json.error) || "HTTP " + res.status);
+          }
+          totals.passes = pass;
+          totals.live = json.live;
+          for (const k of Object.keys(json.byPattern || {})) {
+            totals.scanned += json.byPattern[k].scanned;
+            totals.orphans += json.byPattern[k].orphans;
+            totals.deleted += json.byPattern[k].deleted;
+          }
+          for (const key of json.sample || []) {
+            if (totals.sample.length < 6) totals.sample.push(key);
+          }
+          cursors = json.cursors;
+          if (json.done) break;
+        }
+        return totals;
+      }
+
+      function wireSweep() {
+        const scanBtn = document.getElementById("sweepScanBtn");
+        const runBtn = document.getElementById("sweepRunBtn");
+        const badge = document.getElementById("sweepBadge");
+        const out = document.getElementById("sweepOut");
+        if (!scanBtn || !runBtn || !badge || !out) return;
+
+        const busy = (on) => { scanBtn.disabled = on; runBtn.disabled = on || !sweepFound; };
+
+        scanBtn.onclick = async () => {
+          busy(true);
+          try {
+            const t = await sweepPass(false, (p) => { out.textContent = "Scanning... (pass " + p + ")"; });
+            if (!t) return;
+            sweepFound = t.orphans;
+            badge.textContent = t.orphans + " orphan key(s)";
+            out.textContent = "Scanned " + t.scanned.toLocaleString() + " key(s) against " +
+              t.live.reachableIDs.toLocaleString() + " reachable row(s) in " + t.live.categories +
+              " category map entr(ies). " +
+              (t.orphans ? t.orphans.toLocaleString() + " unreachable, e.g. " + t.sample.join(", ")
+                         : "Nothing to clean up.");
+          } catch (e) {
+            out.textContent = "";
+            alert("Scan failed: " + ((e && e.message) || e));
+          } finally {
+            busy(false);
+          }
+        };
+
+        runBtn.onclick = async () => {
+          if (sweepFound === null) return;
+          if (!confirm("Permanently delete " + sweepFound + " unreachable key(s)? " +
+            "Any review payload among them has to be re-pulled from VGen to come back.")) return;
+          busy(true);
+          try {
+            const t = await sweepPass(true, (p) => { out.textContent = "Deleting... (pass " + p + ")"; });
+            if (!t) return;
+            sweepFound = 0;
+            badge.textContent = "0 orphan key(s)";
+            out.textContent = "Deleted " + t.deleted.toLocaleString() + " key(s)" +
+              (t.passes > 1 ? " over " + t.passes + " passes" : "") + ".";
+          } catch (e) {
+            out.textContent = "";
+            alert("Sweep failed: " + ((e && e.message) || e));
+          } finally {
+            busy(false);
+          }
+        };
+      }
+
       function renderTabs() {
         const shop = activeTab === 'shop';
         $('tabCommission').hidden = shop;
@@ -4348,6 +4488,7 @@
         beginLoading();
         loadUiConfig(); // restore saved tab / filter / flow window / sort first
         renderTabs();
+        wireSweep();
         // Before anything else: find out whether a fetch is already running.
         // Until this answers, every fetch button stays disabled.
         await refreshLease();

@@ -29,7 +29,8 @@ const PROFILE_QUERY = {
 }
 
 const PAGE_SIZE = 20
-const MAX_TRENDING = 200 // top 200 => 10 pages
+// Exported so /prune can cut older, wider snapshots to the same width.
+export const MAX_TRENDING = 100 // top 100 => 5 pages
 const MAX_PER_USER = 10 // cap per profile per snapshot (10 most recent) to avoid noisy tail data
 const TRENDING_BATCH = 5 // pages fetched concurrently per batch
 const BATCH_GAP_MS = 250 // small pause between batches (politeness)
@@ -123,7 +124,7 @@ function profilePageUrl(userID, cursor) {
 }
 
 /**
- * Collect the trending "top" feed (up to top 1000).
+ * Collect the trending "top" feed (up to MAX_TRENDING rows).
  * Pages are fetched in small concurrent batches to stay under the
  * serverless time budget; stops early once the API reports no more.
  * @param {string} snapshotTs ISO timestamp shared by every row
@@ -172,9 +173,11 @@ export async function fetchTrending(snapshotTs) {
 }
 
 // Rank cutoffs whose searchIndex we track over time (matches the dashboard).
-// Trending is now collected to top 200, so cutoffs beyond 200 (300/500/1000)
-// are dropped: they would just clamp to the rank-200 floor and duplicate it.
-const THRESHOLD_CUTS = [10, 20, 50, 100, 200]
+// Trending is now collected to top 100, so cutoffs beyond 100 are dropped: a cut
+// past the end of the snapshot clamps to the last row, which would silently
+// record the rank-100 floor under a "200" label and make the long-lived series
+// lie about itself.
+const THRESHOLD_CUTS = [10, 20, 50, 100]
 
 /**
  * Build a tiny "threshold over time" record from a trending snapshot's rows.

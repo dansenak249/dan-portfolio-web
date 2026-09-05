@@ -713,6 +713,259 @@ export async function clearRotation() {
 }
 
 // ---------------------------------------------------------------------------
+// Orphan sweep
+// ---------------------------------------------------------------------------
+// The census answers a category with its best CENSUS_KEEP rows plus one number
+// for how many it walked; everything else the crawl saw is deliberately not
+// stored. Two key families do NOT follow that rule, because they are keyed by
+// the THING rather than by the category that led to it:
+//
+//   vgsd:reviews:<serviceID>  a service's pulled review feed
+//   vgsd:meta:<serviceID>     that pull's freshness record
+//
+// Nothing ever deletes them. purgeCategory drops chunks / meta / job / top and
+// leaves the reviews of the very services it just unpublished, so a service
+// that falls out of the top on a re-crawl, or a category deleted from the map,
+// keeps its review payload forever with no path back to it. Same story for
+// vgsd:cat:<categoryID>:* once its row is gone from the map.
+//
+// This sweep is the missing half: rebuild what is reachable, then delete the
+// keys nothing points at any more. It covers BOTH marketplaces, since Shop
+// categories live in the same vgsd:cat:* space behind a shopKey() prefix.
+//
+// It is a bulk irreversible delete driven by a COMPUTED set, so it fails closed
+// wherever that set could be wrong - see the guards below.
+
+// Key families it may delete from. Anything unlisted is untouchable, which is
+// what keeps vgsd:categories, vgsd:shop:categories and vgsd:fx safe even if the
+// reachability pass were buggy enough to call them orphans.
+const SWEEP_REVIEWS = `${NS}:reviews:*`
+const SWEEP_META = `${NS}:meta:*`
+const SWEEP_CAT = `${NS}:cat:*`
+const SWEEP_PATTERNS = [SWEEP_REVIEWS, SWEEP_META, SWEEP_CAT]
+
+// vgsd:cat:<categoryID>:<suffix>, where categoryID can itself contain a colon
+// (a Shop row is stored as `shop:recXXXX`), so the category is whatever sits
+// between the prefix and a KNOWN suffix rather than "up to the next colon".
+const CAT_KEY_RE = new RegExp(`^${NS}:cat:(.+):(meta|job|top|chunk:\\d+)$`)
+
+/**
+ * Every id the census can still reach, plus the category keys still on the map.
+ * Reads the published chunks of every live category, and the running top of any
+ * category mid-crawl (those rows are not in chunks yet).
+ *
+ * Throws rather than returning a suspicious set: this feeds a bulk delete, so
+ * "I read nothing" must never be allowed to mean "delete everything".
+ *
+ * @returns {Promise<{ rowIDs: Set<string>, categoryKeys: Set<string>,
+ *   runningCrawls: Set<string>, commission: number, shop: number }>}
+ */
+async function reachableSet() {
+  const [commission, shop] = await Promise.all([
+    getCategoryMap(),
+    getShopCategoryMap(),
+  ])
+
+  const categoryKeys = new Set()
+  for (const row of commission) {
+    const id = row && typeof row.categoryID === 'string' ? row.categoryID.trim() : ''
+    if (id) categoryKeys.add(id)
+  }
+  for (const row of shop) {
+    const id = row && typeof row.categoryID === 'string' ? row.categoryID.trim() : ''
+    if (id) categoryKeys.add(shopKey(id))
+  }
+
+  // An empty map would mark every stored key an orphan. That is either a fresh
+  // install or a failed read, and in neither case is wiping the database right.
+  if (categoryKeys.size === 0) {
+    throw new Error(
+      'refusing to sweep: both category maps are empty, so every stored key ' +
+        'would look unreachable'
+    )
+  }
+
+  const rowIDs = new Set()
+  const runningCrawls = new Set()
+
+  for (const key of categoryKeys) {
+    const [meta, job] = await Promise.all([
+      getCategoryMeta(key),
+      getCategoryJob(key),
+    ])
+
+    if (job) {
+      runningCrawls.add(key)
+      // A crawl in flight holds its best rows here, not in chunks. Skipping
+      // them would orphan the reviews of everything it is about to publish.
+      for (const row of await getCategoryTop(key)) {
+        const id = rowID(row)
+        if (id) rowIDs.add(id)
+      }
+    }
+
+    const chunks = (meta && meta.chunks) || 0
+    if (!chunks) continue
+
+    let seen = 0
+    for await (const rows of iterateCategoryChunks(key, chunks)) {
+      for (const row of rows) {
+        const id = rowID(row)
+        if (id) {
+          rowIDs.add(id)
+          seen++
+        }
+      }
+    }
+    // meta promised rows and the chunks did not deliver: a partial read, not an
+    // empty category. Continuing would orphan every service in it.
+    if (seen === 0) {
+      throw new Error(
+        'refusing to sweep: ' + key + ' reports ' + chunks + ' chunk(s) but ' +
+          'read back no rows'
+      )
+    }
+  }
+
+  return {
+    rowIDs,
+    categoryKeys,
+    runningCrawls,
+    commission: commission.length,
+    shop: shop.length,
+  }
+}
+
+/**
+ * Is this key unreachable from the current census?
+ * @param {string} key
+ * @param {string} pattern the family it came from
+ * @param {{ rowIDs: Set<string>, categoryKeys: Set<string> }} live
+ * @returns {boolean}
+ */
+export function isOrphanKey(key, pattern, live) {
+  if (pattern === SWEEP_CAT) {
+    const m = CAT_KEY_RE.exec(key)
+    // A vgsd:cat:* key in a shape this code does not understand is left alone:
+    // guessing wrong here deletes a live census.
+    if (!m) return false
+    return !live.categoryKeys.has(m[1])
+  }
+  const prefix = pattern.slice(0, -1) // drop the trailing '*'
+  if (!key.startsWith(prefix)) return false
+  const id = key.slice(prefix.length)
+  if (!id) return false
+  return !live.rowIDs.has(id)
+}
+
+/**
+ * Find (and optionally delete) keys the census can no longer reach, across both
+ * marketplaces.
+ *
+ * SCAN is resumable and reading every chunk of every category is not free, so
+ * one call works to a wall-clock budget and hands back its cursors. Pass them to
+ * the next call to continue; `done` says when every pattern is exhausted.
+ * Deleting is idempotent, so an interrupted sweep is safe to simply repeat.
+ *
+ * @param {object} [options]
+ * @param {boolean} [options.confirm] false (the default) only reports
+ * @param {number} [options.budgetMs] wall-clock budget for the scan pass
+ * @param {Record<string, string>} [options.cursors] cursors from a previous call
+ * @returns {Promise<object>}
+ */
+export async function sweepOrphans(options = {}) {
+  const { confirm = false, budgetMs = 35000 } = options
+  const deadline = Date.now() + budgetMs
+  const r = ensureRedis()
+
+  // A crawl writes its chunks and clears its running top as it finishes, so a
+  // sweep racing one could read a category between the two and orphan exactly
+  // what it just published. There is one fetch lease for the whole tool; if it
+  // is held, stand down rather than risk it.
+  // getFetchLock reports the raw records, not a boolean: the lease is held
+  // exactly when there is a lock record, since the key carries its own TTL.
+  const { lock } = await getFetchLock()
+  if (lock) {
+    return {
+      ok: false,
+      busy: true,
+      error:
+        'a fetch holds the lease' +
+        (lock.label ? ' (' + lock.label + ')' : lock.kind ? ' (' + lock.kind + ')' : '') +
+        '; sweeping while a crawl is publishing could orphan its rows',
+    }
+  }
+
+  const live = await reachableSet()
+
+  // '0' starts a pattern, 'done' means it is finished; anything else is a
+  // SCAN cursor handed back by an earlier call.
+  const cursors = {}
+  const byPattern = {}
+  for (const pattern of SWEEP_PATTERNS) {
+    const given = options.cursors && options.cursors[pattern]
+    cursors[pattern] = typeof given === 'string' && given ? given : '0'
+    byPattern[pattern] = { scanned: 0, orphans: 0, deleted: 0, done: false }
+  }
+
+  const sample = []
+  let outOfTime = false
+
+  for (const pattern of SWEEP_PATTERNS) {
+    if (cursors[pattern] === 'done') {
+      byPattern[pattern].done = true
+      continue
+    }
+    if (outOfTime) continue
+
+    let cursor = cursors[pattern]
+    do {
+      const [next, keys] = await r.scan(cursor, { match: pattern, count: SCAN_COUNT })
+      cursor = String(next)
+      const orphans = []
+      for (const key of Array.isArray(keys) ? keys : []) {
+        byPattern[pattern].scanned++
+        if (isOrphanKey(key, pattern, live)) orphans.push(key)
+      }
+      byPattern[pattern].orphans += orphans.length
+      if (sample.length < 12) sample.push(...orphans.slice(0, 12 - sample.length))
+
+      if (confirm && orphans.length) {
+        for (let i = 0; i < orphans.length; i += DELETE_BATCH) {
+          await r.del(...orphans.slice(i, i + DELETE_BATCH))
+        }
+        byPattern[pattern].deleted += orphans.length
+      }
+
+      if (Date.now() > deadline) {
+        outOfTime = true
+        break
+      }
+      // Upstash returns '0' when the sweep is complete.
+    } while (cursor !== '0')
+
+    cursors[pattern] = cursor === '0' ? 'done' : cursor
+    byPattern[pattern].done = cursors[pattern] === 'done'
+  }
+
+  return {
+    ok: true,
+    dryRun: !confirm,
+    done: SWEEP_PATTERNS.every((p) => cursors[p] === 'done'),
+    cursors,
+    live: {
+      categories: live.categoryKeys.size,
+      commissionRows: live.commission,
+      shopRows: live.shop,
+      reachableIDs: live.rowIDs.size,
+      crawlsInFlight: [...live.runningCrawls],
+    },
+    byPattern,
+    sample,
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Legacy cleanup
 // ---------------------------------------------------------------------------
 // Keys written by the OLD flow (declare services one by one, then pull each
