@@ -3032,13 +3032,18 @@
       // "1.000 / 2.721" once crawled, the running total while a crawl is in
       // flight, and a dash when the category has never been fetched.
       //
-      // The red warning is deliberately conditional on `auto`: size only matters
-      // because a huge category monopolises the rotation for hours. One sitting
-      // outside the rotation is simply large, and colouring it red would be an
-      // alarm about nothing.
+      // Red means DATA WAS DISCARDED, not "this is expensive". The crawl keeps
+      // only the busiest CENSUS_KEEP rows, so the moment a category walks past
+      // that number the tail is thrown away and what you see is a sample, not
+      // the category. That is true whether or not the row is in the rotation,
+      // so unlike the old size warning this one does not look at `auto`.
       // Serves both maps: `opts.stats` is whichever census this row belongs
       // to, `opts.loading` whichever in-flight set. Defaults keep every
       // existing commission call site working unchanged.
+      // Mirrors CENSUS_KEEP in categories/collect. Walking MORE than this many
+      // rows means the crawl dropped everything past it.
+      const CENSUS_KEEP = 1000;
+
       function censusCell(categoryID, auto, opts) {
         const stats = (opts && opts.stats) || censusStats;
         const loading = (opts && opts.loading) || catLoading;
@@ -3066,7 +3071,7 @@
               'itself at its next tick.'
             : so.toLocaleString() + ' crawled so far, then the crawl stopped. ' +
               'Nothing will resume it until you press fetch on this row.';
-          return '<span class="cat-count' + (auto && so >= 10000 ? ' huge' : '') +
+          return '<span class="cat-count' + (so > CENSUS_KEEP ? ' huge' : '') +
             '" title="' + why + '">' + so.toLocaleString() +
             '<span class="of"> ' + word + '</span></span>';
         }
@@ -3074,9 +3079,9 @@
         const seenNum = c.seenTotal || c.count || 0;
         const kept = (c.count || 0).toLocaleString();
         const seen = seenNum.toLocaleString();
-        // Past this a full crawl runs to hours, which only matters while the
-        // category is in the rotation.
-        const huge = auto && seenNum >= 10000;
+        // Past the keep limit the crawl is discarding rows, so the pair stops
+        // being "kept / walked" and becomes "sample / population".
+        const huge = seenNum > CENSUS_KEEP;
         // The warning goes on the WALKED total, not on the kept count. The kept
         // count is always CENSUS_KEEP, so colouring it says nothing; the number
         // that makes this category expensive is the one behind the slash.
@@ -3084,7 +3089,8 @@
           '" title="Keeping the busiest ' + kept + ' of ' + seen +
           ' services walked' +
           (huge
-            ? ' — a full crawl takes hours, and it is in the auto rotation'
+            ? ' — the other ' + (seenNum - (c.count || 0)).toLocaleString() +
+              ' were discarded, so this row is a sample of the category'
             : '') +
           '">' + kept + '<span class="of' + (huge ? ' huge' : '') +
           '"> / ' + seen + '</span></span>';
