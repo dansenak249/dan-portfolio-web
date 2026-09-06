@@ -861,11 +861,11 @@ function renderProfileTable() {
 
 // ---- Watchlist manager ---------------------------------------------------
 // The watchlist (userID + label per account) lives in Redis and drives what the
-// collector fetches each run. Edits go through the protected POST /watchlist
-// (Bearer VGEN_ADMIN_SECRET; the same secret also guards /prune). The secret is
-// prompted once and kept in localStorage. Removing an account is destructive:
-// its stored snapshots are deleted immediately (server-side purgeProfileUsers),
-// not left to age out.
+// collector fetches each run. Edits go straight through POST /watchlist, which
+// no longer asks for a secret. Removing an account is still destructive: its
+// stored snapshots are deleted immediately (server-side purgeProfileUsers), not
+// left to age out - and profile history cannot be re-crawled, so the confirm
+// prompt on the remove action is now the only thing standing in front of it.
 function watchlistPanel() {
   return '<div class="panel"><h2>Manage tracked accounts</h2>' +
     '<div class="hint">Add a VGen account to collect its portfolio each run. ' +
@@ -880,31 +880,15 @@ function watchlistPanel() {
     '<div id="wlTbl"></div></div>';
 }
 
-function getAdminSecret() {
-  let s = localStorage.getItem("vg_admin_secret");
-  if (!s) {
-    s = prompt("Enter the admin secret (VGEN_ADMIN_SECRET) to run this action:");
-    if (s) localStorage.setItem("vg_admin_secret", s.trim());
-  }
-  return s ? s.trim() : null;
-}
-
 // Replace the whole watchlist on the server, then sync DATA + cache + UI. add /
 // remove / reorder all funnel through here (each just passes a new ordered list).
 async function saveWatchlist(list) {
-  const secret = getAdminSecret();
-  if (!secret) return false;
   try {
     const res = await fetch("/api/vgen-trending/watchlist", {
       method: "POST",
-      headers: { "Content-Type": "application/json", "Authorization": "Bearer " + secret },
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ watchlist: list }),
     });
-    if (res.status === 401) {
-      localStorage.removeItem("vg_admin_secret");
-      alert("Wrong admin secret \u2013 cleared. Try the action again to re-enter it.");
-      return false;
-    }
     const json = await res.json().catch(() => ({}));
     if (!res.ok || !json.ok) {
       alert("Failed to save watchlist: " + ((json && json.error) || ("HTTP " + res.status)));
