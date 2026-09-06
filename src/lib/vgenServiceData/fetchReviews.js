@@ -40,11 +40,14 @@ async function fetchJson(url) {
 // Keep only the fields the survey needs. reviewText and notables are dropped on
 // purpose: VGen reviews are near-uniformly positive, so the free text carries
 // little analytical signal and would bloat storage.
+// serviceID and artistUserID are deliberately NOT stored per entry: the record
+// that wraps them already carries both, and every entry repeated them - 100% of
+// 5,109 sampled entries did. Two 36-char UUIDs per review across ~347k reviews
+// was 28% of the whole review store. Nothing reads them off an entry; callers
+// key by service and take the artist from the wrapper.
 function slimReview(item) {
   return {
     reviewID: item.reviewID,
-    serviceID: item.serviceID,
-    artistUserID: item.artistUserID,
     clientUserID: item.clientUserID ?? null,
     clientUsername:
       (item.client && item.client.username) ||

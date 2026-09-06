@@ -36,7 +36,7 @@ on:
       rotate_ticks:
         description: "How many rotation ticks to run (service-data refresh)"
         required: false
-        default: "40"
+        default: "4"
 
 jobs:
   collect:
@@ -105,13 +105,25 @@ jobs:
         env:
           SITE_URL: ${{ secrets.VGEN_SITE_URL }}
           COLLECT_SECRET: ${{ secrets.VGEN_COLLECT_SECRET }}
-          MAX_TICKS: ${{ github.event.inputs.rotate_ticks || '40' }}
-          # Measured at ~17-24s per tick, so 40 ticks is roughly 11-16 minutes
-          # and this ceiling rarely binds. It exists so a run of unusually slow
-          # ticks ends on its own terms rather than at the runner's 6-hour limit.
-          # Public repo, so runner minutes are free; the reason not to go higher
-          # is that the vgen-rotate concurrency group makes the next run queue
-          # behind this one.
+          MAX_TICKS: ${{ github.event.inputs.rotate_ticks || '4' }}
+          # FOUR, not forty. Runner minutes are free, but Upstash bills per Redis
+          # COMMAND, and a tick costs ~17 of them whether or not it finds anything
+          # new: /rotate and the endpoint it calls each take the fetch lease, read
+          # the two category maps, and write back the position. So the bill is set
+          # by how OFTEN we tick, not by how much data moves.
+          #
+          # Three cron slots x 40 ticks was ~120 ticks/hour, about 1.5M commands a
+          # month against a 500k plan. Three x 4 is ~12/hour: a full refresh of all
+          # 313 categories takes 1,390 ticks, so ~4.8 days per cycle instead of
+          # ~12 hours, for roughly 220k commands a month.
+          #
+          # The three cron slots stay. They are not throughput - they are the hedge
+          # against GitHub dropping scheduled runs on this repo (see the note at the
+          # top). Cutting to one slot and keeping the ticks would cost the same and
+          # lose that redundancy.
+          #
+          # Ticks are measured at ~17-24s, so 4 of them is under two minutes and the
+          # budget below never binds; it stays as a guard against a pathological run.
           BUDGET_SECONDS: "2400"
         run: |
           set -uo pipefail
