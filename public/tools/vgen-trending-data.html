@@ -591,14 +591,6 @@ function wireOverview() {
     localStorage.removeItem("vg_log");
     render();
   };
-  const prune = document.getElementById("pruneBtn");
-  const pruneOut = document.getElementById("pruneOut");
-  if (prune && pruneOut) prune.onclick = () => {
-    if (!confirm("Delete every stored snapshot past the 7-day window, and cut " +
-      "the survivors down to their top 100 rows? This cannot be undone."))
-      return;
-    runPrune(prune, pruneOut);
-  };
   loadUniqueTrending();
 }
 
@@ -660,7 +652,6 @@ function viewOverview() {
     (users.length ? '<div>' + users.map(u => '<span class="pill flat" style="margin:3px">'+esc(u)+'</span>').join("") + '</div>'
                   : '<div class="hint">No profile data yet.</div>') +
     '</div>' +
-    storagePanel() +
     logSection();
 }
 
@@ -887,76 +878,6 @@ function watchlistPanel() {
       '<button id="wlAdd">Add</button>' +
     '</div>' +
     '<div id="wlTbl"></div></div>';
-}
-
-// ---- Storage ---------------------------------------------------------------
-// Retention is enforced in two places and they are not equivalent. The collector
-// trims only a few snapshots per run, on purpose: dropping a cap would otherwise
-// make one unlucky collect delete hundreds of keys inside the function timeout.
-// And nothing on the hot path ever narrows a snapshot that was WRITTEN wider -
-// the rows inside it are whatever the collector captured that hour. So after a
-// limit change the old data just sits there until this button clears it.
-function storagePanel() {
-  const t = uniq(DATA.trending.map(r => r.snapshot_ts)).length;
-  const p = uniq(DATA.profiles.map(r => r.snapshot_ts)).length;
-  return '<div class="panel"><h2>Storage</h2>' +
-    '<div class="hint">Snapshots are kept for <b>7 days</b> (168 hourly snapshots per kind), ' +
-    'and trending is collected to the <b>top 100</b>. Loaded right now: ' +
-    fmt(t) + ' trending / ' + fmt(p) + ' profile snapshot(s) \u2013 that is what this ' +
-    'dashboard has fetched, not necessarily all the server still holds.<br>' +
-    'Prune deletes everything past those limits, including cutting snapshots that ' +
-    'were captured under a wider setting down to their top 100. <b>Irreversible.</b></div>' +
-    '<div class="ctrl-row"><button id="pruneBtn">Prune stored snapshots</button>' +
-    '<span id="pruneOut" class="hint" style="margin:0"></span></div></div>';
-}
-
-// One POST is budgeted, not exhaustive: trimming rows means reading and
-// rewriting whole payloads, so the server stops on a clock and reports what it
-// did not reach. Loop until it says done rather than asking for a single call
-// that would sit past the function timeout.
-async function runPrune(btn, out) {
-  const secret = getAdminSecret();
-  if (!secret) return;
-  btn.disabled = true;
-  const totals = { dropped: 0, trimmed: 0, rows: 0, passes: 0 };
-  try {
-    for (let pass = 1; pass <= 20; pass++) {
-      out.textContent = "Pruning\u2026 (pass " + pass + ")";
-      const res = await fetch("/api/vgen-trending/prune", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "Authorization": "Bearer " + secret },
-        body: JSON.stringify({}),
-      });
-      if (res.status === 401) {
-        localStorage.removeItem("vg_admin_secret");
-        out.textContent = "";
-        alert("Wrong admin secret \u2013 cleared. Try the action again to re-enter it.");
-        return;
-      }
-      const json = await res.json().catch(() => ({}));
-      if (!res.ok || !json.ok) {
-        out.textContent = "";
-        pushLog("err", "Prune failed: " + ((json && json.error) || ("HTTP " + res.status)));
-        alert("Prune failed: " + ((json && json.error) || ("HTTP " + res.status)));
-        return;
-      }
-      totals.passes = pass;
-      totals.dropped += json.trending.snapshotsDropped + json.profiles.snapshotsDropped;
-      totals.trimmed += json.trending.snapshotsTrimmed;
-      totals.rows += json.trending.rowsRemoved;
-      if (json.done) break;
-    }
-    const msg = "Pruned: " + fmt(totals.dropped) + " snapshot(s) deleted, " +
-      fmt(totals.trimmed) + " narrowed to top 100 (" + fmt(totals.rows) + " rows dropped)" +
-      (totals.passes > 1 ? ", " + totals.passes + " passes" : "");
-    out.textContent = msg;
-    pushLog("ok", msg);
-  } catch (e) {
-    out.textContent = "";
-    alert("Prune failed: " + ((e && e.message) || e));
-  } finally {
-    btn.disabled = false;
-  }
 }
 
 function getAdminSecret() {

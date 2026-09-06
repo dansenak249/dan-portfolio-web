@@ -23,9 +23,9 @@ const NS = 'vgen'
 // of a ~197 MB database at the old 504 cap, so the window was cut to 7 days.
 // Both kinds are lazy-read by the dashboard (latest snapshot up front, older
 // loaded on demand), so a shorter window costs nothing until you scroll back.
-// Lowering this cap does NOT free space by itself: appendSnapshot only trims a
-// bounded number per run (see TRIM_PER_RUN). POST /api/vgen-trending/prune does
-// the bulk clear in one go.
+// Lowering this cap does not free the backlog at once: appendSnapshot trims a
+// bounded number per run (see TRIM_PER_RUN), so a big cut drains over a day or
+// so of collect runs rather than in one long purge.
 const MAX_SNAPSHOTS = { trending: 168, profiles: 168 }
 const DEFAULT_MAX_SNAPSHOTS = 168
 // A collect run must finish inside Vercel's function timeout. Dropping the cap
@@ -33,8 +33,6 @@ const DEFAULT_MAX_SNAPSHOTS = 168
 // mean ~672 sequential Redis round trips on one unlucky collect. So the hot path
 // trims only a few per run and /prune handles a backlog.
 const TRIM_PER_RUN = 8
-// Upstash accepts many keys per DEL; batched so one command cannot get huge.
-const DELETE_BATCH = 50
 // Compact threshold records are tiny (~250 bytes each) and ARE the long-term
 // searchIndex-floor-drift signal the project tracks, so they are kept far longer
 // than the heavy snapshots: ~1 year at hourly cadence is only ~2 MB.
@@ -190,81 +188,6 @@ export async function appendSnapshot(kind, ts, rows) {
     len--
   }
   return { kept: len, overCap: Math.max(0, len - cap) }
-}
-
-/**
- * Bring a kind's stored snapshots back within the current limits, for when the
- * limits themselves changed: drop everything past the retention cap, and
- * optionally cut each surviving snapshot down to its top `maxRows` rows.
- *
- * Row trimming is the expensive half - one GET plus one SET per snapshot, each
- * carrying the whole payload - so it runs against a wall-clock budget and
- * reports how many snapshots it did not reach. Call again to continue.
- *
- * @param {'trending'|'profiles'} kind
- * @param {object} [options]
- * @param {number|null} [options.maxRows] keep only the top N rows by rank; omit
- *   to leave row contents alone (profiles rows are not ranked)
- * @param {number} [options.budgetMs] wall-clock budget for the row-trim pass
- * @returns {Promise<{ kind: string, cap: number, before: number, after: number,
- *   snapshotsDropped: number, snapshotsTrimmed: number, rowsRemoved: number,
- *   remaining: number }>}
- */
-export async function pruneSnapshots(kind, options = {}) {
-  const r = ensureRedis()
-  const cap = MAX_SNAPSHOTS[kind] ?? DEFAULT_MAX_SNAPSHOTS
-  const maxRows = Number.isFinite(options.maxRows) ? options.maxRows : null
-  const deadline = Date.now() + (options.budgetMs ?? 20000)
-
-  const ids = (await r.lrange(indexKey(kind), 0, -1)) || []
-  const before = ids.length
-  let snapshotsDropped = 0
-
-  if (before > cap) {
-    const drop = ids.slice(0, before - cap)
-    // Trim the index FIRST. A reader racing us then sees a short index whose
-    // every id still resolves; the reverse order would hand it dangling ids.
-    await r.ltrim(indexKey(kind), before - cap, -1)
-    for (let i = 0; i < drop.length; i += DELETE_BATCH) {
-      const keys = drop.slice(i, i + DELETE_BATCH).map((ts) => snapKey(kind, ts))
-      await r.del(...keys)
-    }
-    snapshotsDropped = drop.length
-  }
-
-  const survivors = ids.slice(Math.max(0, before - cap))
-  let snapshotsTrimmed = 0
-  let rowsRemoved = 0
-  let remaining = 0
-
-  if (maxRows != null) {
-    for (let i = 0; i < survivors.length; i++) {
-      if (Date.now() > deadline) {
-        remaining = survivors.length - i
-        break
-      }
-      const ts = survivors[i]
-      const rows = parseMaybe(await r.get(snapKey(kind, ts)))
-      if (!Array.isArray(rows) || rows.length <= maxRows) continue
-      // Sort by rank rather than trusting insertion order: "top N" has to mean
-      // the N best-placed posts even if a snapshot was written out of order.
-      const ranked = [...rows].sort((a, b) => (a.rank ?? 0) - (b.rank ?? 0))
-      rowsRemoved += rows.length - maxRows
-      await r.set(snapKey(kind, ts), JSON.stringify(ranked.slice(0, maxRows)))
-      snapshotsTrimmed++
-    }
-  }
-
-  return {
-    kind,
-    cap,
-    before,
-    after: Math.min(before, cap),
-    snapshotsDropped,
-    snapshotsTrimmed,
-    rowsRemoved,
-    remaining,
-  }
 }
 
 /**
