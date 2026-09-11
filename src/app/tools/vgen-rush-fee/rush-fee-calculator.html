@@ -1,0 +1,1283 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Rush Fee Calculator — DAN</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700&family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&family=IBM+Plex+Mono:wght@400;500;600&family=STIX+Two+Text:ital,wght@0,400..600;1,400..600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --paper:#EDE7F3;
+    --panel:#FCFAFD;
+    --ink:#221A31;
+    --ink-soft:#6C6284;
+    --line:#DAD1E4;
+    --dead:#CBC3D6;
+    --calm:#2F8F86;
+    --hot:#E1275F;
+    --gold:#C99320;
+    --accent:#2F8F86;
+
+    --r:14px;
+    --shadow:0 1px 0 rgba(34,26,49,.05), 0 12px 32px -18px rgba(34,26,49,.45);
+
+    /* Mirrors the SVG plot area so the slider lines up with the chart.
+       PAD_L / VIEW_W = 34 / 640, PAD_R / VIEW_W = 18 / 640 */
+    --plot-left:5.3125%;
+    --plot-right:2.8125%;
+
+    --display:"Bricolage Grotesque",system-ui,sans-serif;
+    --body:"Be Vietnam Pro",system-ui,-apple-system,sans-serif;
+    --mono:"IBM Plex Mono",ui-monospace,monospace;
+    --math:"STIX Two Text","Times New Roman",Georgia,serif;
+  }
+
+  *{box-sizing:border-box}
+
+  html,body{margin:0;padding:0}
+
+  body{
+    background:var(--paper);
+    background-image:
+      radial-gradient(circle at 12% 8%, rgba(47,143,134,.10), transparent 42%),
+      radial-gradient(circle at 88% 92%, rgba(225,39,95,.09), transparent 46%);
+    color:var(--ink);
+    font-family:var(--body);
+    font-size:15px;
+    line-height:1.55;
+    -webkit-font-smoothing:antialiased;
+    padding:32px 20px 64px;
+  }
+
+  .wrap{max-width:940px;margin:0 auto}
+
+  /* ---------- header ---------- */
+  .eyebrow{
+    font-family:var(--mono);
+    font-size:11px;
+    font-weight:500;
+    letter-spacing:.18em;
+    text-transform:uppercase;
+    color:var(--ink-soft);
+    display:flex;
+    align-items:center;
+    gap:10px;
+  }
+  .eyebrow::after{content:"";flex:1;height:1px;background:var(--line)}
+
+  h1{
+    font-family:var(--display);
+    font-weight:800;
+    font-size:clamp(28px,5vw,42px);
+    line-height:1.05;
+    letter-spacing:-.02em;
+    margin:14px 0 6px;
+  }
+
+  .sub{color:var(--ink-soft);margin:0 0 28px;max-width:58ch}
+
+  /* ---------- readout ---------- */
+  .readout{
+    background:var(--panel);
+    border:1px solid var(--line);
+    border-radius:var(--r);
+    box-shadow:var(--shadow);
+    padding:24px 26px;
+    display:grid;
+    grid-template-columns:auto 1fr;
+    gap:26px;
+    align-items:center;
+    border-left:5px solid var(--accent);
+    transition:border-color .35s ease;
+  }
+
+  .rate-block{min-width:180px}
+
+  .rate{
+    font-family:var(--display);
+    font-weight:800;
+    font-size:clamp(52px,11vw,78px);
+    line-height:.9;
+    letter-spacing:-.035em;
+    color:var(--accent);
+    transition:color .35s ease;
+    font-variant-numeric:tabular-nums;
+  }
+
+  .rate-label{
+    font-family:var(--mono);
+    font-size:11px;
+    letter-spacing:.14em;
+    text-transform:uppercase;
+    color:var(--ink-soft);
+    margin-top:8px;
+  }
+
+  .money{display:grid;gap:12px}
+
+  .money-row{
+    display:flex;
+    justify-content:space-between;
+    align-items:baseline;
+    gap:16px;
+    padding-bottom:10px;
+    border-bottom:1px dashed var(--line);
+  }
+  .money-row:last-child{border-bottom:none;padding-bottom:0}
+
+  .money-key{color:var(--ink-soft);font-size:13px}
+
+  .money-val{
+    font-family:var(--mono);
+    font-weight:500;
+    font-size:17px;
+    font-variant-numeric:tabular-nums;
+  }
+  .money-row.total .money-val{
+    font-size:22px;font-weight:600;color:var(--accent);transition:color .35s ease;
+  }
+
+  .chip{
+    display:inline-flex;
+    align-items:center;
+    gap:7px;
+    font-family:var(--mono);
+    font-size:11px;
+    font-weight:500;
+    letter-spacing:.1em;
+    text-transform:uppercase;
+    padding:5px 11px;
+    border-radius:999px;
+    background:color-mix(in srgb, var(--accent) 12%, transparent);
+    color:var(--accent);
+    border:1px solid color-mix(in srgb, var(--accent) 32%, transparent);
+    transition:color .35s ease, background .35s ease, border-color .35s ease;
+  }
+  .chip::before{content:"";width:6px;height:6px;border-radius:50%;background:currentColor}
+
+  /* ---------- card shell ---------- */
+  .card{
+    background:var(--panel);
+    border:1px solid var(--line);
+    border-radius:var(--r);
+    box-shadow:var(--shadow);
+    margin-top:20px;
+  }
+
+  .card-title{
+    font-family:var(--mono);
+    font-size:11px;
+    letter-spacing:.16em;
+    text-transform:uppercase;
+    color:var(--ink-soft);
+  }
+
+  /* ---------- curve ---------- */
+  .curve-card{padding:22px 24px 20px}
+
+  .curve-head{
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    gap:16px;
+    margin-bottom:6px;
+    flex-wrap:wrap;
+  }
+
+  svg.curve{display:block;width:100%;height:auto;overflow:visible}
+
+  .grid-line{stroke:var(--line);stroke-width:1}
+  .axis-text{font-family:var(--mono);font-size:10px;fill:var(--ink-soft);letter-spacing:.06em}
+  .anchor-line{stroke:var(--gold);stroke-width:1.5;stroke-dasharray:3 4}
+  .anchor-text{font-family:var(--mono);font-size:10px;font-weight:600;fill:var(--gold);letter-spacing:.08em}
+  .curve-path{fill:none;stroke:url(#strokeGrad);stroke-width:3;stroke-linecap:round;stroke-linejoin:round}
+  .curve-area{fill:url(#areaGrad)}
+  .marker-line{stroke:var(--accent);stroke-width:1.5}
+  .marker-dot{fill:var(--panel);stroke:var(--accent);stroke-width:3.5}
+  .nogo-rect{fill:url(#hatch)}
+  .nogo-edge{stroke:var(--hot);stroke-width:1.5}
+  .nogo-text{font-family:var(--mono);font-size:10px;font-weight:600;fill:var(--hot);letter-spacing:.08em}
+  .flat-text{font-family:var(--mono);font-size:10px;font-weight:600;fill:var(--calm);letter-spacing:.08em}
+
+  /* ---------- custom slider ---------- */
+  .slider-shell{padding:22px 0 4px}
+
+  /* Inset by the same fraction the SVG reserves for its axis labels */
+  .slider-inner{
+    padding-left:var(--plot-left);
+    padding-right:var(--plot-right);
+  }
+
+  .track{
+    position:relative;
+    height:10px;
+    border-radius:999px;
+    background:var(--dead);
+    cursor:pointer;
+    touch-action:none;
+  }
+
+  .track-live{
+    position:absolute;
+    top:0;bottom:0;
+    border-radius:999px;
+    background:linear-gradient(90deg,var(--calm),var(--gold) 62%,var(--hot));
+  }
+
+  .thumb{
+    position:absolute;
+    top:50%;
+    width:22px;height:22px;
+    border-radius:50%;
+    transform:translate(-50%,-50%);
+    background:var(--panel);
+    border:4px solid var(--accent);
+    box-shadow:0 2px 8px -2px rgba(34,26,49,.55);
+    transition:border-color .35s ease;
+    pointer-events:none;
+  }
+
+  .ticks{position:relative;height:22px;margin-top:9px;overflow:visible}
+
+  .tick{
+    position:absolute;
+    transform:translateX(-50%);
+    font-family:var(--mono);
+    font-size:10px;
+    letter-spacing:.08em;
+    color:var(--ink-soft);
+    white-space:nowrap;
+  }
+  .tick.is-anchor{color:var(--gold);font-weight:600}
+
+  .track:focus-visible{outline:2.5px solid var(--accent);outline-offset:6px}
+
+  /* ---------- controls ---------- */
+  .controls{
+    display:grid;
+    grid-template-columns:repeat(auto-fit,minmax(166px,1fr));
+    gap:14px;
+    margin-top:20px;
+  }
+
+  .field{
+    background:var(--panel);
+    border:1px solid var(--line);
+    border-radius:var(--r);
+    padding:14px 16px 15px;
+    box-shadow:var(--shadow);
+  }
+
+  .field label,.field .label{
+    display:block;
+    font-family:var(--mono);
+    font-size:10px;
+    letter-spacing:.14em;
+    text-transform:uppercase;
+    color:var(--ink-soft);
+    margin-bottom:9px;
+  }
+
+  .field input[type="number"],
+  .field select{
+    width:100%;
+    font-family:var(--mono);
+    font-size:16px;
+    font-weight:500;
+    color:var(--ink);
+    background:transparent;
+    border:none;
+    border-bottom:1.5px solid var(--line);
+    padding:3px 0 6px;
+    outline:none;
+    min-width:0;
+  }
+  .field input[type="number"]:focus,
+  .field select:focus{border-bottom-color:var(--accent)}
+
+  .field input[type="range"]{width:100%;accent-color:var(--accent);margin:6px 0 0}
+
+  .field-hint{font-family:var(--mono);font-size:11px;color:var(--ink-soft);margin-top:7px}
+
+  .split{display:flex;gap:9px;align-items:center}
+  .split select{flex:0 0 72px}
+  .split .arrow{
+    font-family:var(--mono);
+    font-size:13px;
+    color:var(--ink-soft);
+    flex:0 0 auto;
+  }
+
+  /* ---------- milestones ---------- */
+  .table-card{padding:20px 24px 22px}
+
+  table{width:100%;border-collapse:collapse;font-family:var(--mono);font-size:13px}
+
+  th{
+    text-align:left;
+    font-size:10px;
+    font-weight:500;
+    letter-spacing:.14em;
+    text-transform:uppercase;
+    color:var(--ink-soft);
+    padding:0 0 10px;
+    border-bottom:1px solid var(--line);
+  }
+  th:not(:first-child),td:not(:first-child){text-align:right}
+
+  td{padding:9px 0;border-bottom:1px dashed var(--line);font-variant-numeric:tabular-nums}
+  tr:last-child td{border-bottom:none}
+  tr.is-current td{color:var(--accent);font-weight:600}
+
+  /* ---------- reference ---------- */
+  .ref-card{padding:22px 24px 24px}
+
+  .formula-box{
+    background:var(--paper);
+    border-radius:10px;
+    padding:2px 18px;
+    margin:14px 0 6px;
+  }
+
+  .fx-lane{padding:16px 0;border-bottom:1px dashed var(--line)}
+  .fx-lane:last-child{border-bottom:none}
+
+  .fx-lane-tag{
+    display:block;
+    font-family:var(--mono);
+    font-size:9.5px;
+    letter-spacing:.2em;
+    text-transform:uppercase;
+    color:var(--ink-soft);
+    margin-bottom:13px;
+  }
+
+  .fx-code{
+    font-family:var(--mono);
+    font-size:14px;
+    line-height:2;
+    white-space:pre;
+    overflow-x:auto;
+  }
+  .fx-code .fx-key{color:var(--accent);font-weight:600}
+  .fx-code .fx-note{color:var(--ink-soft);font-size:12px}
+
+  /* ---------- math typesetting ---------- */
+  .fx-math{
+    font-family:var(--math);
+    font-size:19px;
+    line-height:1.5;
+    color:var(--ink);
+    overflow-x:auto;
+    padding-bottom:2px;
+  }
+
+  .math-row{
+    display:flex;
+    align-items:center;
+    gap:.32em;
+    min-width:max-content;
+  }
+  .math-row + .math-row{margin-top:16px}
+
+  .mv{font-style:italic}
+  .mv sub{font-style:normal;font-size:.6em;letter-spacing:.03em}
+  .mv sup{font-style:normal;font-size:.62em}
+
+  .brace{
+    display:inline-block;
+    font-size:22px;
+    line-height:1;
+    color:var(--ink-soft);
+    transform:scaleY(4.1);
+    transform-origin:center;
+    margin:0 .5em 0 .18em;
+  }
+
+  .paren{
+    display:inline-block;
+    font-size:22px;
+    line-height:1;
+    color:var(--ink);
+    transform:scaleY(2.3);
+    transform-origin:center;
+    margin:0 .28em;
+  }
+
+  .cases{display:grid;gap:6px}
+
+  .case{
+    display:grid;
+    grid-template-columns:auto auto;
+    gap:0 2.4em;
+    align-items:center;
+    justify-items:start;
+  }
+
+  .cond{font-size:.8em;color:var(--ink-soft)}
+
+  .frac{
+    display:inline-flex;
+    flex-direction:column;
+    text-align:center;
+    vertical-align:middle;
+    margin:0 .12em;
+  }
+  .frac .num{padding:0 .5em .12em;border-bottom:1.3px solid currentColor}
+  .frac .den{padding:.12em .5em 0}
+
+  .math-note{
+    font-family:var(--body);
+    font-size:12.5px;
+    line-height:1.6;
+    color:var(--ink-soft);
+    margin-top:18px;
+  }
+
+  .short-form{
+    display:flex;
+    align-items:center;
+    gap:.32em;
+    font-family:var(--math);
+    font-size:20px;
+    color:var(--ink);
+    background:color-mix(in srgb, var(--gold) 14%, transparent);
+    border-left:3px solid var(--gold);
+    border-radius:0 8px 8px 0;
+    padding:14px 18px;
+    margin:16px 0 20px;
+    overflow-x:auto;
+  }
+  .short-form > *{flex:0 0 auto}
+
+  .defs{width:100%;border-collapse:collapse;font-size:13px;margin-top:6px}
+  .defs th{padding-bottom:9px}
+  .defs td{
+    padding:9px 0;
+    border-bottom:1px dashed var(--line);
+    vertical-align:top;
+    font-family:var(--body);
+    text-align:left;
+  }
+  .defs td:first-child{
+    font-family:var(--mono);
+    font-weight:600;
+    color:var(--accent);
+    width:74px;
+    white-space:nowrap;
+  }
+  .defs td:last-child{
+    font-family:var(--mono);
+    color:var(--ink-soft);
+    text-align:right;
+    white-space:nowrap;
+    width:96px;
+  }
+  .defs tr:last-child td{border-bottom:none}
+
+  .rules{margin:22px 0 0;padding:0;list-style:none;display:grid;gap:10px}
+  .rules li{
+    display:grid;
+    grid-template-columns:132px 1fr;
+    gap:14px;
+    align-items:baseline;
+    font-size:13.5px;
+    padding-bottom:10px;
+    border-bottom:1px dashed var(--line);
+  }
+  .rules li:last-child{border-bottom:none;padding-bottom:0}
+  .rules b{
+    font-family:var(--mono);
+    font-size:12px;
+    font-weight:600;
+    color:var(--ink);
+    letter-spacing:.02em;
+  }
+  .rules span{color:var(--ink-soft)}
+
+  .worked{
+    margin-top:22px;
+    padding-top:18px;
+    border-top:1px solid var(--line);
+    font-family:var(--mono);
+    font-size:13px;
+    line-height:1.95;
+    color:var(--ink-soft);
+    overflow-x:auto;
+  }
+  .worked b{color:var(--accent);font-weight:600}
+
+  :focus-visible{outline:2.5px solid var(--accent);outline-offset:3px;border-radius:4px}
+
+  @media (max-width:640px){
+    .readout{grid-template-columns:1fr;gap:20px}
+    .rules li{grid-template-columns:1fr;gap:2px}
+  }
+
+  @media (prefers-reduced-motion:reduce){
+    *{transition:none !important;animation:none !important}
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="eyebrow">Rush fee &middot; DAN</div>
+  <h1>Rush deadline surcharge</h1>
+  <p class="sub">Drag the handle to set the deadline the client is asking for. At or above the upper anchor the price is standard; at the lower anchor the surcharge peaks. Anything shorter than the lower anchor is not accepted.</p>
+
+  <!-- readout -->
+  <section class="readout" id="readout">
+    <div class="rate-block">
+      <div class="rate" id="rateBig">+0%</div>
+      <div class="rate-label" id="dayLabel">28 days</div>
+      <div style="margin-top:14px"><span class="chip" id="stateChip">Standard rate</span></div>
+    </div>
+    <div class="money">
+      <div class="money-row">
+        <span class="money-key">Base price</span>
+        <span class="money-val" id="outBase">$100</span>
+      </div>
+      <div class="money-row">
+        <span class="money-key">Rush surcharge</span>
+        <span class="money-val" id="outSur">$0</span>
+      </div>
+      <div class="money-row total">
+        <span class="money-key">Quote to client</span>
+        <span class="money-val" id="outTotal">$100</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- curve + slider -->
+  <section class="card curve-card">
+    <div class="curve-head">
+      <span class="card-title">Surcharge curve</span>
+      <span class="card-title" id="curveNote">k = 1.0 &middot; linear</span>
+    </div>
+
+    <svg class="curve" id="curve" viewBox="0 0 640 200" role="img" aria-label="Surcharge rate plotted against deadline length">
+      <defs>
+        <linearGradient id="strokeGrad" x1="0" y1="0" x2="1" y2="0">
+          <stop offset="0%"   stop-color="#2F8F86"/>
+          <stop offset="60%"  stop-color="#C99320"/>
+          <stop offset="100%" stop-color="#E1275F"/>
+        </linearGradient>
+        <linearGradient id="areaGrad" x1="0" y1="0" x2="1" y2="0">
+          <stop offset="0%"   stop-color="#2F8F86" stop-opacity=".12"/>
+          <stop offset="60%"  stop-color="#C99320" stop-opacity=".16"/>
+          <stop offset="100%" stop-color="#E1275F" stop-opacity=".22"/>
+        </linearGradient>
+        <pattern id="hatch" width="7" height="7" patternTransform="rotate(45)" patternUnits="userSpaceOnUse">
+          <rect width="7" height="7" fill="#E1275F" fill-opacity=".06"/>
+          <line x1="0" y1="0" x2="0" y2="7" stroke="#E1275F" stroke-opacity=".30" stroke-width="1.6"/>
+        </pattern>
+      </defs>
+      <g id="plot"></g>
+    </svg>
+
+    <div class="slider-shell">
+      <div class="slider-inner">
+        <div class="track" id="track" role="slider" tabindex="0"
+             aria-valuemin="7" aria-valuemax="28" aria-valuenow="18"
+             aria-valuetext="18 days" aria-label="Deadline in days">
+          <div class="track-live" id="trackLive"></div>
+          <div class="thumb" id="thumb"></div>
+        </div>
+        <div class="ticks" id="ticks"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- controls -->
+  <section class="controls">
+    <div class="field">
+      <label for="basePrice">Base price</label>
+      <div class="split">
+        <select id="currency" aria-label="Currency">
+          <option value="USD">USD</option>
+          <option value="VND">VND</option>
+        </select>
+        <input id="basePrice" type="number" min="0" step="1" value="100">
+      </div>
+      <div class="field-hint">Before any surcharge</div>
+    </div>
+
+    <div class="field">
+      <label for="maxRate">Max surcharge</label>
+      <div class="split">
+        <input id="maxRate" type="number" min="10" max="500" step="10" value="100">
+        <span class="field-hint" style="margin:0">%</span>
+      </div>
+      <div class="field-hint">Reached at the lower anchor</div>
+    </div>
+
+    <div class="field">
+      <label for="stepSel">Rounding</label>
+      <select id="stepSel">
+        <option value="0">None</option>
+        <option value="0.05" selected>Nearest 5%</option>
+        <option value="0.1">Nearest 10%</option>
+      </select>
+      <div class="field-hint">Keeps quotes tidy</div>
+    </div>
+
+    <div class="field">
+      <label for="curveK">Curve &mdash; k</label>
+      <input id="curveK" type="range" min="0.6" max="2" step="0.1" value="1">
+      <div class="field-hint" id="curveHint">1.0 &mdash; linear, even climb</div>
+    </div>
+
+    <div class="field">
+      <span class="label">Anchors (days)</span>
+      <div class="split">
+        <input id="anchorA" type="number" min="1" max="30" step="1" value="7"
+               aria-label="First anchor in days">
+        <span class="arrow">&rarr;</span>
+        <input id="anchorB" type="number" min="1" max="30" step="1" value="28"
+               aria-label="Second anchor in days">
+      </div>
+      <div class="field-hint" id="anchorHint">Full rate 7d &middot; free from 28d</div>
+    </div>
+  </section>
+
+  <!-- milestones -->
+  <section class="card table-card">
+    <table>
+      <thead>
+        <tr>
+          <th>Deadline</th>
+          <th>Surcharge</th>
+          <th>Added</th>
+          <th>Total</th>
+        </tr>
+      </thead>
+      <tbody id="tableBody"></tbody>
+    </table>
+  </section>
+
+  <!-- reference -->
+  <section class="card ref-card">
+    <span class="card-title">How the number is calculated</span>
+
+    <div class="formula-box">
+
+      <div class="fx-lane">
+        <span class="fx-lane-tag">In code</span>
+        <div class="fx-code"><span class="fx-key">t</span>     = clamp( (Dmax &minus; d) / (Dmax &minus; Dmin), 0, 1 )   <span class="fx-note">&larr; urgency, 0 to 1</span>
+<span class="fx-key">rate</span>  = Math.pow(t, k) * Rmax                       <span class="fx-note">&larr; surcharge rate</span>
+<span class="fx-key">total</span> = base * (1 + rate)                          <span class="fx-note">&larr; what the client pays</span></div>
+      </div>
+
+      <div class="fx-lane">
+        <span class="fx-lane-tag">In math</span>
+        <div class="fx-math">
+
+          <div class="math-row">
+            <span class="mv">t</span>(<span class="mv">d</span>)&nbsp;=
+            <span class="brace">{</span>
+            <div class="cases">
+              <div class="case">
+                <span>0</span>
+                <span class="cond"><span class="mv">d</span> &ge; <span class="mv">D<sub>max</sub></span></span>
+              </div>
+              <div class="case">
+                <span class="frac">
+                  <span class="num"><span class="mv">D<sub>max</sub></span> &minus; <span class="mv">d</span></span>
+                  <span class="den"><span class="mv">D<sub>max</sub></span> &minus; <span class="mv">D<sub>min</sub></span></span>
+                </span>
+                <span class="cond"><span class="mv">D<sub>min</sub></span> &lt; <span class="mv">d</span> &lt; <span class="mv">D<sub>max</sub></span></span>
+              </div>
+              <div class="case">
+                <span>1</span>
+                <span class="cond"><span class="mv">d</span> &le; <span class="mv">D<sub>min</sub></span></span>
+              </div>
+            </div>
+          </div>
+
+          <div class="math-row">
+            <span class="mv">r</span>(<span class="mv">d</span>)&nbsp;=&nbsp;<span class="mv">R<sub>max</sub></span> &middot; <span class="mv">t</span>(<span class="mv">d</span>)<span class="mv"><sup>k</sup></span>
+          </div>
+
+          <div class="math-row">
+            <span class="mv">P</span>(<span class="mv">d</span>)&nbsp;=&nbsp;<span class="mv">P<sub>0</sub></span> &middot; ( 1 + <span class="mv">r</span>(<span class="mv">d</span>) )
+          </div>
+
+          <p class="math-note"><span class="mv" style="font-family:var(--math)">t</span> is a piecewise function of the deadline, clamped to the closed interval [0,&nbsp;1]. <span class="mv" style="font-family:var(--math)">P<sub>0</sub></span> is the base price and <span class="mv" style="font-family:var(--math)">P</span>(<span class="mv" style="font-family:var(--math)">d</span>) is the quoted total. Rounding is applied to <span class="mv" style="font-family:var(--math)">r</span>(<span class="mv" style="font-family:var(--math)">d</span>) after the exponent, so it does not change either endpoint.</p>
+
+        </div>
+      </div>
+
+    </div>
+
+    <div class="short-form" id="shortForm"></div>
+
+    <table class="defs">
+      <thead>
+        <tr><th>Symbol</th><th style="text-align:left">Meaning</th><th>Now</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>d</td><td>Deadline the client is asking for, in days</td><td id="defD">18</td></tr>
+        <tr><td>Dmax</td><td>Upper anchor &mdash; at or above this, no surcharge</td><td id="defDmax">28</td></tr>
+        <tr><td>Dmin</td><td>Lower anchor &mdash; surcharge peaks here, nothing shorter is taken</td><td id="defDmin">7</td></tr>
+        <tr><td>t</td><td>Urgency after clamping: 0 at Dmax, 1 at Dmin</td><td id="defT">0.476</td></tr>
+        <tr><td>k</td><td>Curve exponent that bends the climb between the anchors</td><td id="defK">1.0</td></tr>
+        <tr><td>Rmax</td><td>Surcharge charged at Dmin</td><td id="defRmax">100%</td></tr>
+        <tr><td>rate</td><td>Final surcharge, optionally rounded to a tidy step</td><td id="defRate">50%</td></tr>
+      </tbody>
+    </table>
+
+    <ul class="rules">
+      <li><b>d &ge; Dmax</b><span>t clamps to 0, so the price stays at base. No upper limit &mdash; 60 days costs the same as 28.</span></li>
+      <li><b>d = Dmin</b><span>t is exactly 1, so the surcharge lands on Rmax whatever k is set to.</span></li>
+      <li><b>d &lt; Dmin</b><span>Out of range. The tool marks it as not accepted instead of quoting a number.</span></li>
+      <li><b>k = 1</b><span>Straight line. Halfway between the anchors costs half the max surcharge.</span></li>
+      <li><b>k &lt; 1</b><span>Climbs fast early, then flattens. Charges more for mid-range deadlines.</span></li>
+      <li><b>k &gt; 1</b><span>Stays gentle in the middle, then steepens near Dmin. Easier on mid-range jobs.</span></li>
+    </ul>
+
+    <div class="worked" id="worked"></div>
+  </section>
+
+</div>
+
+<script>
+(function () {
+  "use strict";
+
+  // ---------- domain of the slider track ----------
+  var DOMAIN_MIN = 1;   // left-most day on the track
+  var DOMAIN_MAX = 30;  // right-most day on the track
+
+  var COLOR_CALM = [47, 143, 134];  // #2F8F86
+  var COLOR_GOLD = [201, 147, 32];  // #C99320
+  var COLOR_HOT  = [225, 39, 95];   // #E1275F
+
+  // ---------- state ----------
+  var state = {
+    days: 18,
+    minDays: 7,
+    maxDays: 28
+  };
+
+  // ---------- core formula ----------
+  function calcRushFee(days, options) {
+    options = options || {};
+    var basePrice = options.basePrice || 0;
+    var minDays   = options.minDays !== undefined ? options.minDays : 7;
+    var maxDays   = options.maxDays !== undefined ? options.maxDays : 28;
+    var maxRate   = options.maxRate !== undefined ? options.maxRate : 1;
+    var curve     = options.curve   !== undefined ? options.curve   : 1;
+    var step      = options.step    !== undefined ? options.step    : 0;
+
+    if (!isFinite(days) || days <= 0) {
+      return { accepted: false, reason: "INVALID_INPUT", days: days, t: 0,
+               rate: 0, percent: 0, surcharge: 0, total: basePrice };
+    }
+
+    var accepted = true;
+    var reason = null;
+    if (days < minDays) {
+      accepted = false;
+      reason = "BELOW_MIN_DAYS";
+    }
+
+    // Urgency: 0 at maxDays, 1 at minDays, clamped at both ends
+    var span = maxDays - minDays;
+    var t = span > 0 ? (maxDays - days) / span : 1;
+    t = Math.min(1, Math.max(0, t));
+
+    // Bend the climb, then scale to the configured ceiling
+    var rate = Math.pow(t, curve) * maxRate;
+
+    // Optional rounding to a tidy step
+    if (step > 0) {
+      rate = Math.round(rate / step) * step;
+    }
+
+    var surcharge = basePrice * rate;
+
+    return {
+      accepted: accepted,
+      reason: reason,
+      days: days,
+      t: t,
+      rate: rate,
+      percent: Math.round(rate * 1000) / 10,
+      surcharge: surcharge,
+      total: basePrice + surcharge
+    };
+  }
+
+  // ---------- helpers ----------
+  function clamp(v, lo, hi) { return Math.min(hi, Math.max(lo, v)); }
+
+  function lerp(a, b, t) { return a + (b - a) * t; }
+
+  function mixColor(c1, c2, t) {
+    return [
+      Math.round(lerp(c1[0], c2[0], t)),
+      Math.round(lerp(c1[1], c2[1], t)),
+      Math.round(lerp(c1[2], c2[2], t))
+    ];
+  }
+
+  function rgbToHex(c) {
+    return "#" + c.map(function (v) {
+      var h = v.toString(16);
+      return h.length === 1 ? "0" + h : h;
+    }).join("");
+  }
+
+  // Accent color tracks the rate: calm -> gold -> hot
+  function accentFor(norm) {
+    var t = clamp(norm, 0, 1);
+    var c = t <= 0.6
+      ? mixColor(COLOR_CALM, COLOR_GOLD, t / 0.6)
+      : mixColor(COLOR_GOLD, COLOR_HOT, (t - 0.6) / 0.4);
+    return rgbToHex(c);
+  }
+
+  function fmtMoney(v, currency) {
+    if (currency === "VND") {
+      return Math.round(v).toLocaleString("en-US") + " \u20AB";
+    }
+    return "$" + (Math.round(v * 100) / 100).toLocaleString("en-US", {
+      maximumFractionDigits: 2
+    });
+  }
+
+  function fmtPercent(p) { return (Math.round(p * 10) / 10) + "%"; }
+
+  function curveDescription(k) {
+    if (k < 0.9)  return k.toFixed(1) + " \u2014 steep early, harsher mid-range";
+    if (k <= 1.1) return k.toFixed(1) + " \u2014 linear, even climb";
+    return k.toFixed(1) + " \u2014 gentle mid, steep near the floor";
+  }
+
+  // Track position as a percentage: more days on the left, fewer on the right
+  function posForDay(d) {
+    return ((DOMAIN_MAX - d) / (DOMAIN_MAX - DOMAIN_MIN)) * 100;
+  }
+
+  // ---------- DOM refs ----------
+  var el = {
+    track:     document.getElementById("track"),
+    trackLive: document.getElementById("trackLive"),
+    thumb:     document.getElementById("thumb"),
+    ticks:     document.getElementById("ticks"),
+
+    basePrice: document.getElementById("basePrice"),
+    currency:  document.getElementById("currency"),
+    maxRate:   document.getElementById("maxRate"),
+    stepSel:   document.getElementById("stepSel"),
+    curveK:    document.getElementById("curveK"),
+    anchorA:   document.getElementById("anchorA"),
+    anchorB:   document.getElementById("anchorB"),
+
+    rateBig:    document.getElementById("rateBig"),
+    dayLabel:   document.getElementById("dayLabel"),
+    stateChip:  document.getElementById("stateChip"),
+    outBase:    document.getElementById("outBase"),
+    outSur:     document.getElementById("outSur"),
+    outTotal:   document.getElementById("outTotal"),
+
+    curveNote:  document.getElementById("curveNote"),
+    curveHint:  document.getElementById("curveHint"),
+    anchorHint: document.getElementById("anchorHint"),
+    plot:       document.getElementById("plot"),
+    tableBody:  document.getElementById("tableBody"),
+
+    shortForm: document.getElementById("shortForm"),
+    defD:      document.getElementById("defD"),
+    defDmax:   document.getElementById("defDmax"),
+    defDmin:   document.getElementById("defDmin"),
+    defT:      document.getElementById("defT"),
+    defK:      document.getElementById("defK"),
+    defRmax:   document.getElementById("defRmax"),
+    defRate:   document.getElementById("defRate"),
+    worked:    document.getElementById("worked")
+  };
+
+  var SVG_NS = "http://www.w3.org/2000/svg";
+
+  function svgEl(tag, attrs) {
+    var node = document.createElementNS(SVG_NS, tag);
+    for (var key in attrs) {
+      if (Object.prototype.hasOwnProperty.call(attrs, key)) {
+        node.setAttribute(key, attrs[key]);
+      }
+    }
+    return node;
+  }
+
+  // ---------- chart geometry ----------
+  var VIEW_W = 640, VIEW_H = 200;
+  var PAD_L = 34, PAD_R = 18, PAD_T = 16, PAD_B = 30;
+  var PLOT_W = VIEW_W - PAD_L - PAD_R;
+  var PLOT_H = VIEW_H - PAD_T - PAD_B;
+
+  function xForDay(d) {
+    return PAD_L + ((DOMAIN_MAX - d) / (DOMAIN_MAX - DOMAIN_MIN)) * PLOT_W;
+  }
+
+  function yForRate(rate, maxRate) {
+    var norm = maxRate > 0 ? rate / maxRate : 0;
+    return PAD_T + (1 - clamp(norm, 0, 1)) * PLOT_H;
+  }
+
+  function drawChart(opts, current) {
+    var plot = el.plot;
+    while (plot.firstChild) { plot.removeChild(plot.firstChild); }
+
+    var maxRate = opts.maxRate;
+
+    // horizontal grid at 0 / 50 / 100 percent of the ceiling
+    [0, 0.5, 1].forEach(function (frac) {
+      var y = yForRate(frac * maxRate, maxRate);
+      plot.appendChild(svgEl("line", {
+        "class": "grid-line", x1: PAD_L, y1: y, x2: PAD_L + PLOT_W, y2: y
+      }));
+      var label = svgEl("text", {
+        "class": "axis-text", x: PAD_L - 8, y: y + 3, "text-anchor": "end"
+      });
+      label.textContent = Math.round(frac * maxRate * 100) + "%";
+      plot.appendChild(label);
+    });
+
+    // no-go band below the lower anchor
+    var nogoX = xForDay(opts.minDays);
+    var nogoW = xForDay(DOMAIN_MIN) - nogoX;
+    if (nogoW > 0) {
+      plot.appendChild(svgEl("rect", {
+        "class": "nogo-rect", x: nogoX, y: PAD_T, width: nogoW, height: PLOT_H
+      }));
+      plot.appendChild(svgEl("line", {
+        "class": "nogo-edge", x1: nogoX, y1: PAD_T, x2: nogoX, y2: PAD_T + PLOT_H
+      }));
+      var nogoLabel = svgEl("text", {
+        "class": "nogo-text",
+        x: nogoX + nogoW / 2, y: PAD_T + PLOT_H + 20, "text-anchor": "middle"
+      });
+      nogoLabel.textContent = "NOT ACCEPTED";
+      plot.appendChild(nogoLabel);
+    }
+
+    // standard-rate label on the flat left side
+    var flatW = xForDay(opts.maxDays) - xForDay(DOMAIN_MAX);
+    if (flatW > 60) {
+      var flatLabel = svgEl("text", {
+        "class": "flat-text",
+        x: xForDay(DOMAIN_MAX) + flatW / 2,
+        y: PAD_T + PLOT_H + 20,
+        "text-anchor": "middle"
+      });
+      flatLabel.textContent = "STANDARD RATE";
+      plot.appendChild(flatLabel);
+    }
+
+    // curve: flat from the left edge, then climbing between the anchors
+    var pts = [[xForDay(DOMAIN_MAX), yForRate(0, maxRate)]];
+    var stepDay = (opts.maxDays - opts.minDays) / 120;
+    for (var d = opts.maxDays; d >= opts.minDays; d -= stepDay) {
+      var r = calcRushFee(d, {
+        basePrice: 0, minDays: opts.minDays, maxDays: opts.maxDays,
+        maxRate: maxRate, curve: opts.curve, step: 0
+      });
+      pts.push([xForDay(d), yForRate(r.rate, maxRate)]);
+    }
+    pts.push([xForDay(opts.minDays), yForRate(maxRate, maxRate)]);
+
+    var dPath = pts.map(function (p, i) {
+      return (i === 0 ? "M" : "L") + p[0].toFixed(2) + " " + p[1].toFixed(2);
+    }).join(" ");
+
+    var baseY = yForRate(0, maxRate);
+    var areaPath = dPath +
+      " L" + pts[pts.length - 1][0].toFixed(2) + " " + baseY.toFixed(2) +
+      " L" + pts[0][0].toFixed(2) + " " + baseY.toFixed(2) + " Z";
+
+    plot.appendChild(svgEl("path", { "class": "curve-area", d: areaPath }));
+    plot.appendChild(svgEl("path", { "class": "curve-path", d: dPath }));
+
+    // gold anchor posts
+    [opts.maxDays, opts.minDays].forEach(function (d) {
+      var x = xForDay(d);
+      plot.appendChild(svgEl("line", {
+        "class": "anchor-line", x1: x, y1: PAD_T - 4, x2: x, y2: PAD_T + PLOT_H
+      }));
+      var t = svgEl("text", {
+        "class": "anchor-text", x: x, y: PAD_T - 8, "text-anchor": "middle"
+      });
+      t.textContent = d + "d";
+      plot.appendChild(t);
+    });
+
+    // current position
+    var cx = xForDay(current.days);
+    var cy = yForRate(current.rate, maxRate);
+    plot.appendChild(svgEl("line", {
+      "class": "marker-line", x1: cx, y1: cy, x2: cx, y2: PAD_T + PLOT_H
+    }));
+    plot.appendChild(svgEl("circle", { "class": "marker-dot", cx: cx, cy: cy, r: 6.5 }));
+  }
+
+  // ---------- slider ----------
+  function dayFromClientX(clientX) {
+    var rect = el.track.getBoundingClientRect();
+    var frac = rect.width > 0 ? (clientX - rect.left) / rect.width : 0;
+    frac = clamp(frac, 0, 1);
+    var d = DOMAIN_MAX - frac * (DOMAIN_MAX - DOMAIN_MIN);
+    return Math.round(d);
+  }
+
+  function setDays(d) {
+    state.days = clamp(Math.round(d), state.minDays, state.maxDays);
+    render();
+  }
+
+  var dragging = false;
+
+  el.track.addEventListener("pointerdown", function (e) {
+    dragging = true;
+    el.track.setPointerCapture(e.pointerId);
+    el.track.focus();
+    setDays(dayFromClientX(e.clientX));
+    e.preventDefault();
+  });
+
+  el.track.addEventListener("pointermove", function (e) {
+    if (!dragging) { return; }
+    setDays(dayFromClientX(e.clientX));
+  });
+
+  ["pointerup", "pointercancel"].forEach(function (evt) {
+    el.track.addEventListener(evt, function (e) {
+      dragging = false;
+      if (el.track.hasPointerCapture(e.pointerId)) {
+        el.track.releasePointerCapture(e.pointerId);
+      }
+    });
+  });
+
+  // Left means more days, so ArrowLeft adds a day
+  el.track.addEventListener("keydown", function (e) {
+    var handled = true;
+    switch (e.key) {
+      case "ArrowLeft":
+      case "ArrowUp":    setDays(state.days + 1); break;
+      case "ArrowRight":
+      case "ArrowDown":  setDays(state.days - 1); break;
+      case "PageUp":     setDays(state.days + 7); break;
+      case "PageDown":   setDays(state.days - 7); break;
+      case "Home":       setDays(state.maxDays); break;
+      case "End":        setDays(state.minDays); break;
+      default:           handled = false;
+    }
+    if (handled) { e.preventDefault(); }
+  });
+
+  function renderTicks() {
+    var marks = [
+      { d: DOMAIN_MAX,     anchor: false },
+      { d: state.maxDays,  anchor: true  },
+      { d: state.minDays,  anchor: true  },
+      { d: DOMAIN_MIN,     anchor: false }
+    ];
+    var html = "";
+    marks.forEach(function (m) {
+      html += '<span class="tick' + (m.anchor ? " is-anchor" : "") + '" style="left:' +
+        posForDay(m.d).toFixed(2) + '%">' + m.d + 'd</span>';
+    });
+    el.ticks.innerHTML = html;
+  }
+
+  // ---------- anchors ----------
+  function syncAnchors() {
+    var a = parseInt(el.anchorA.value, 10);
+    var b = parseInt(el.anchorB.value, 10);
+    if (!isFinite(a)) { a = state.minDays; }
+    if (!isFinite(b)) { b = state.maxDays; }
+
+    a = clamp(a, DOMAIN_MIN, DOMAIN_MAX);
+    b = clamp(b, DOMAIN_MIN, DOMAIN_MAX);
+
+    // Whichever order they were typed in, the smaller one is the floor
+    var lo = Math.min(a, b);
+    var hi = Math.max(a, b);
+    if (lo === hi) {
+      hi = Math.min(DOMAIN_MAX, lo + 1);
+      if (hi === lo) { lo = Math.max(DOMAIN_MIN, hi - 1); }
+    }
+
+    state.minDays = lo;
+    state.maxDays = hi;
+    state.days = clamp(state.days, lo, hi);
+  }
+
+  // ---------- render ----------
+  function readOptions() {
+    return {
+      basePrice: parseFloat(el.basePrice.value) || 0,
+      minDays: state.minDays,
+      maxDays: state.maxDays,
+      maxRate: (parseFloat(el.maxRate.value) || 100) / 100,
+      curve: parseFloat(el.curveK.value) || 1,
+      step: parseFloat(el.stepSel.value) || 0
+    };
+  }
+
+  function render() {
+    var opts = readOptions();
+    var currency = el.currency.value;
+    var result = calcRushFee(state.days, opts);
+    var norm = opts.maxRate > 0 ? result.rate / opts.maxRate : 0;
+
+    // accent color drives the whole page
+    document.documentElement.style.setProperty("--accent", accentFor(norm));
+
+    // readout
+    el.rateBig.textContent  = "+" + fmtPercent(result.percent);
+    el.dayLabel.textContent = state.days + (state.days === 1 ? " day" : " days");
+
+    if (result.rate <= 0) {
+      el.stateChip.textContent = "Standard rate";
+    } else if (result.rate < opts.maxRate * 0.5) {
+      el.stateChip.textContent = "Light rush";
+    } else if (result.rate < opts.maxRate) {
+      el.stateChip.textContent = "Rush";
+    } else {
+      el.stateChip.textContent = "Max rush";
+    }
+
+    el.outBase.textContent  = fmtMoney(opts.basePrice, currency);
+    el.outSur.textContent   = fmtMoney(result.surcharge, currency);
+    el.outTotal.textContent = fmtMoney(result.total, currency);
+
+    // slider
+    var leftPos = posForDay(opts.maxDays);
+    var rightPos = posForDay(opts.minDays);
+    el.trackLive.style.left = leftPos.toFixed(3) + "%";
+    el.trackLive.style.width = (rightPos - leftPos).toFixed(3) + "%";
+    el.thumb.style.left = posForDay(state.days).toFixed(3) + "%";
+
+    el.track.setAttribute("aria-valuemin", opts.minDays);
+    el.track.setAttribute("aria-valuemax", opts.maxDays);
+    el.track.setAttribute("aria-valuenow", state.days);
+    el.track.setAttribute("aria-valuetext", state.days + " days, plus " +
+      fmtPercent(result.percent));
+
+    renderTicks();
+
+    // curve labels
+    el.curveNote.textContent = "k = " + opts.curve.toFixed(1) +
+      (Math.abs(opts.curve - 1) < 0.05 ? " \u00b7 linear" : " \u00b7 power");
+    el.curveHint.textContent = curveDescription(opts.curve);
+    el.anchorHint.textContent = "Full rate " + opts.minDays + "d \u00b7 free from " +
+      opts.maxDays + "d";
+
+    drawChart(opts, result);
+    renderTable(opts, currency);
+    renderReference(opts, currency, result);
+  }
+
+  function renderTable(opts, currency) {
+    var span = opts.maxDays - opts.minDays;
+    var days = [];
+    for (var i = 0; i <= 5; i++) {
+      days.push(Math.round(opts.maxDays - (span * i) / 5));
+    }
+    if (days.indexOf(state.days) === -1) { days.push(state.days); }
+
+    days = days.filter(function (v, i, arr) { return arr.indexOf(v) === i; })
+               .sort(function (a, b) { return b - a; });
+
+    var rows = "";
+    days.forEach(function (d) {
+      var r = calcRushFee(d, opts);
+      var cls = d === state.days ? ' class="is-current"' : "";
+      rows += "<tr" + cls + ">" +
+        "<td>" + d + " days</td>" +
+        "<td>+" + fmtPercent(r.percent) + "</td>" +
+        "<td>" + fmtMoney(r.surcharge, currency) + "</td>" +
+        "<td>" + fmtMoney(r.total, currency) + "</td>" +
+        "</tr>";
+    });
+    el.tableBody.innerHTML = rows;
+  }
+
+  function renderReference(opts, currency, result) {
+    var span = opts.maxDays - opts.minDays;
+    var kTxt = opts.curve.toFixed(1);
+
+    // Live short form, typeset the same way as the math lane
+    el.shortForm.innerHTML =
+      '<span class="mv">r</span>(<span class="mv">d</span>)&nbsp;=&nbsp;' +
+      '<span class="paren">(</span>' +
+      '<span class="frac">' +
+        '<span class="num">' + opts.maxDays + ' &minus; <span class="mv">d</span></span>' +
+        '<span class="den">' + span + '</span>' +
+      '</span>' +
+      '<span class="paren">)</span>' +
+      '<span class="mv"><sup>' + kTxt + '</sup></span>' +
+      '&nbsp;&middot;&nbsp;' + Math.round(opts.maxRate * 100) + '%';
+
+    el.defD.textContent    = state.days;
+    el.defDmax.textContent = opts.maxDays;
+    el.defDmin.textContent = opts.minDays;
+    el.defT.textContent    = result.t.toFixed(3);
+    el.defK.textContent    = kTxt;
+    el.defRmax.textContent = Math.round(opts.maxRate * 100) + "%";
+    el.defRate.textContent = fmtPercent(result.percent);
+
+    var rawRate = Math.pow(result.t, opts.curve) * opts.maxRate;
+    var roundNote = opts.step > 0
+      ? "\n5. round to nearest " + Math.round(opts.step * 100) + "%   \u2192   rate = <b>" +
+        fmtPercent(result.percent) + "</b>"
+      : "";
+
+    el.worked.innerHTML =
+      "Worked example with the current settings\n" +
+      "1. d = <b>" + state.days + "</b> days\n" +
+      "2. t = (" + opts.maxDays + " \u2212 " + state.days + ") / " + span +
+        "   \u2192   t = <b>" + result.t.toFixed(3) + "</b>\n" +
+      "3. rate = " + result.t.toFixed(3) + " ^ " + kTxt + " \u00d7 " +
+        Math.round(opts.maxRate * 100) + "%   \u2192   <b>" +
+        (Math.round(rawRate * 1000) / 10) + "%</b>" +
+      roundNote + "\n" +
+      (opts.step > 0 ? "6" : "5") + ". total = " + fmtMoney(opts.basePrice, currency) +
+        " \u00d7 (1 + " + (Math.round(result.rate * 1000) / 1000) + ")   \u2192   <b>" +
+        fmtMoney(result.total, currency) + "</b>";
+    el.worked.style.whiteSpace = "pre-wrap";
+  }
+
+  // ---------- events ----------
+  ["input", "change"].forEach(function (evt) {
+    [el.basePrice, el.maxRate, el.stepSel, el.curveK].forEach(function (node) {
+      node.addEventListener(evt, render);
+    });
+  });
+
+  [el.anchorA, el.anchorB].forEach(function (node) {
+    node.addEventListener("change", function () {
+      syncAnchors();
+      el.anchorA.value = state.minDays;
+      el.anchorB.value = state.maxDays;
+      render();
+    });
+  });
+
+  el.currency.addEventListener("change", function () {
+    // Swap in a sensible default amount for the new currency
+    el.basePrice.value = el.currency.value === "VND" ? 2500000 : 100;
+    render();
+  });
+
+  syncAnchors();
+  render();
+})();
+</script>
+</body>
+</html>
