@@ -17,16 +17,22 @@
 import { Redis } from '@upstash/redis'
 
 const NS = 'vgen'
-// Per-kind snapshot retention (hourly cadence => 24/day). 504 = ~21 days: rows
-// older than that are dropped to save space (appendSnapshot trims past the cap).
-// Storage is NOT the binding constraint (plan allows 100 GB); the real limits
-// are the ~10 MB per-request cap (see batching below) and per-command billing.
-// Both kinds are now lazy-read by the dashboard (latest snapshot up front, older
-// loaded on demand). Lowering this cap takes effect on the next collect run: its
-// trim loop pops every snapshot beyond the cap in one pass, so a single forced
-// collect (?force=1) immediately purges anything older than ~21 days.
-const MAX_SNAPSHOTS = { trending: 504, profiles: 504 }
-const DEFAULT_MAX_SNAPSHOTS = 504
+// Per-kind snapshot retention (hourly cadence => 24/day). 168 = ~7 days: rows
+// older than that are dropped (appendSnapshot trims past the cap).
+// Storage IS now the binding constraint: the snapshot pair was measured at ~93 MB
+// of a ~197 MB database at the old 504 cap, so the window was cut to 7 days.
+// Both kinds are lazy-read by the dashboard (latest snapshot up front, older
+// loaded on demand), so a shorter window costs nothing until you scroll back.
+// Lowering this cap does not free the backlog at once: appendSnapshot trims a
+// bounded number per run (see TRIM_PER_RUN), so a big cut drains over a day or
+// so of collect runs rather than in one long purge.
+const MAX_SNAPSHOTS = { trending: 168, profiles: 168 }
+const DEFAULT_MAX_SNAPSHOTS = 168
+// A collect run must finish inside Vercel's function timeout. Dropping the cap
+// from 504 to 168 leaves 336 snapshots to delete, and doing that inline would
+// mean ~672 sequential Redis round trips on one unlucky collect. So the hot path
+// trims only a few per run and /prune handles a backlog.
+const TRIM_PER_RUN = 8
 // Compact threshold records are tiny (~250 bytes each) and ARE the long-term
 // searchIndex-floor-drift signal the project tracks, so they are kept far longer
 // than the heavy snapshots: ~1 year at hourly cadence is only ~2 MB.
@@ -174,13 +180,14 @@ export async function appendSnapshot(kind, ts, rows) {
 
   const cap = MAX_SNAPSHOTS[kind] ?? DEFAULT_MAX_SNAPSHOTS
   let len = await r.llen(indexKey(kind))
-  while (len > cap) {
+  // Bounded, so lowering the cap can never turn one collect into a long purge.
+  for (let i = 0; i < TRIM_PER_RUN && len > cap; i++) {
     const oldest = await r.lpop(indexKey(kind))
     if (!oldest) break
     await r.del(snapKey(kind, oldest))
     len--
   }
-  return { kept: len }
+  return { kept: len, overCap: Math.max(0, len - cap) }
 }
 
 /**

@@ -1,20 +1,24 @@
-// VGen watchlist endpoint (read public, write protected)
-// ------------------------------------------------------
-// GET  -> { watchlist: [{ userID, label }, ...] }   (public, read-only)
+// VGen watchlist endpoint (open read/write)
+// -----------------------------------------
+// GET  -> { watchlist: [{ userID, label }, ...] }
 // POST -> replace the whole watchlist (add / remove / reorder in one shot).
-//         Requires `Authorization: Bearer <VGEN_ADMIN_SECRET>`. Body:
-//           { watchlist: [{ userID, label }, ...] }
+//         Body: { watchlist: [{ userID, label }, ...] }
 //
 // Removing an account stops FUTURE collection for it AND immediately deletes its
 // already stored profile snapshots (purgeProfileUsers), so a removed profile's
 // history is scrubbed at once instead of aging out on the retention window.
 //
-// VGEN_ADMIN_SECRET is a DEDICATED secret, intentionally NOT the collect secret
-// (which lives in a third-party cron service): only this endpoint can mutate the
-// watchlist, so the secret that edits what we track is never shared externally.
+// This used to sit behind VGEN_ADMIN_SECRET. That gate is gone at the owner's
+// request: the secret is not to hand, and prompting for it on every add, remove
+// or reorder made the editor unusable. So the endpoint is now open, like the
+// per-category purge next door.
+//
+// Know what that means: the dashboard's own source names this URL, so anyone who
+// opens the page can POST to it. Two guards remain in the handler - a non-empty
+// list, and sanitizeWatchlist - but neither stops a caller who sends a valid
+// small list, and the profile history a removal deletes is NOT re-crawlable.
 
 import { NextResponse } from 'next/server'
-import { timingSafeEqual } from 'crypto'
 import {
   getWatchlist,
   setWatchlist,
@@ -27,18 +31,6 @@ export const revalidate = 0
 
 // Upper bound so a bad/abusive POST can't store an unbounded list.
 const MAX_WATCHLIST = 200
-
-function isAuthorized(request) {
-  const secret = process.env.VGEN_ADMIN_SECRET
-  if (!secret) return false
-  const header = request.headers.get('authorization') || ''
-  const token = header.startsWith('Bearer ') ? header.slice(7) : header
-  const a = Buffer.from(token)
-  const b = Buffer.from(secret)
-  // timingSafeEqual requires equal-length buffers.
-  if (a.length !== b.length) return false
-  return timingSafeEqual(a, b)
-}
 
 // Normalize + validate the incoming list: keep only well-formed entries, trim
 // strings, dedupe by userID (first wins), and cap the length.
@@ -77,10 +69,6 @@ export async function GET() {
 }
 
 export async function POST(request) {
-  if (!isAuthorized(request)) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  }
-
   let body
   try {
     body = await request.json()

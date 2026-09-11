@@ -272,8 +272,10 @@ const CFG_VERSION = 4;
 // The trending threshold is no longer a free-form rank; it snaps to the cut
 // points the collector actually stores (vgen:threshold:series .cuts keys), so
 // the dashboard can plot a real per-cut SI line over time. Trending is collected
-// to top 200, so the cuts stop at 200 (older 300/500/1000 nodes were dropped).
-const THR_NODES = [10, 20, 50, 100, 200];
+// to top 100, so the cuts stop there. Must stay in step with THRESHOLD_CUTS in
+// src/lib/vgen/fetchVgen.js: a node with no stored cut plots nothing.
+// A saved thr of 200 from the wider era snaps down to 100 on load.
+const THR_NODES = [10, 20, 50, 100];
 const CFG_DEFAULT = { v: CFG_VERSION, maxLikes: 100, thr: 100, justify: true };
 // Snap any number to the nearest stored cut node.
 function snapNode(n) {
@@ -419,8 +421,7 @@ function thresholdTable() {
     .filter(r => r.snapshot_ts === ts && typeof r.searchIndex === "number")
     .sort((a, b) => a.rank - b.rank);
   if (!rows.length) return "";
-  const cuts = [10, 20, 50, 100, 200];
-  const body = cuts.map(n => {
+  const body = THR_NODES.map(n => {
     const have = n <= rows.length;
     const r = rows[Math.min(n, rows.length) - 1];
     return '<tr><td class="num">' + n + '</td>' +
@@ -672,7 +673,7 @@ function viewProfiles() {
       '<div class="field"><label>Max column height - likes</label>' +
         '<input type="number" id="cfgMaxV" min="1" step="10"></div>' +
       '<div class="field"><label>Trending threshold (top N rank)</label>' +
-        '<div class="thr-slider"><input type="range" id="cfgThr" min="0" max="7" step="1">' +
+        '<div class="thr-slider"><input type="range" id="cfgThr" min="0" step="1">' +
         '<div class="thr-ticks" id="thrTicks"></div></div></div>' +
       '<div class="hint">searchIndex axis is fixed 0&ndash;1. The threshold line now follows ' +
         'the chosen cut&rsquo;s searchIndex over time. <b>Justify</b> (button on the right) ' +
@@ -776,7 +777,10 @@ function wireProfiles() {
   const cMaxV = document.getElementById("cfgMaxV");
   const cThr = document.getElementById("cfgThr");
   const thrTicks = document.getElementById("thrTicks");
-  // thr snaps to one of the 8 stored cut nodes; the slider value is the node index.
+  // thr snaps to one of the stored cut nodes; the slider value is the node index.
+  // max comes from the node list so shrinking it can never leave dead positions
+  // at the right-hand end that all clamp to the last node.
+  cThr.max = String(THR_NODES.length - 1);
   CFG.thr = snapNode(CFG.thr);
   saveCfg();
   cMaxV.value = CFG.maxLikes;
@@ -805,7 +809,7 @@ function wireProfiles() {
     CFG.maxLikes = Math.max(1, Number(cMaxV.value) || CFG_DEFAULT.maxLikes);
     saveCfg(); drawPost();
   };
-  // slider value is the node index (0..7); map it back to the rank node.
+  // slider value is the node index; map it back to the rank node.
   const applyThr = () => {
     const i = Math.min(Math.max(0, Math.round(Number(cThr.value) || 0)), THR_NODES.length - 1);
     CFG.thr = THR_NODES[i];
@@ -857,10 +861,11 @@ function renderProfileTable() {
 
 // ---- Watchlist manager ---------------------------------------------------
 // The watchlist (userID + label per account) lives in Redis and drives what the
-// collector fetches each run. Edits go through the protected POST /watchlist
-// (Bearer VGEN_ADMIN_SECRET); the secret is prompted once and kept in
-// localStorage. Removing an account is destructive: its stored snapshots are
-// deleted immediately (server-side purgeProfileUsers), not left to age out.
+// collector fetches each run. Edits go straight through POST /watchlist, which
+// no longer asks for a secret. Removing an account is still destructive: its
+// stored snapshots are deleted immediately (server-side purgeProfileUsers), not
+// left to age out - and profile history cannot be re-crawled, so the confirm
+// prompt on the remove action is now the only thing standing in front of it.
 function watchlistPanel() {
   return '<div class="panel"><h2>Manage tracked accounts</h2>' +
     '<div class="hint">Add a VGen account to collect its portfolio each run. ' +
@@ -875,31 +880,15 @@ function watchlistPanel() {
     '<div id="wlTbl"></div></div>';
 }
 
-function getAdminSecret() {
-  let s = localStorage.getItem("vg_admin_secret");
-  if (!s) {
-    s = prompt("Enter the admin secret (VGEN_ADMIN_SECRET) to edit the watchlist:");
-    if (s) localStorage.setItem("vg_admin_secret", s.trim());
-  }
-  return s ? s.trim() : null;
-}
-
 // Replace the whole watchlist on the server, then sync DATA + cache + UI. add /
 // remove / reorder all funnel through here (each just passes a new ordered list).
 async function saveWatchlist(list) {
-  const secret = getAdminSecret();
-  if (!secret) return false;
   try {
     const res = await fetch("/api/vgen-trending/watchlist", {
       method: "POST",
-      headers: { "Content-Type": "application/json", "Authorization": "Bearer " + secret },
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ watchlist: list }),
     });
-    if (res.status === 401) {
-      localStorage.removeItem("vg_admin_secret");
-      alert("Wrong admin secret \u2013 cleared. Try the action again to re-enter it.");
-      return false;
-    }
     const json = await res.json().catch(() => ({}));
     if (!res.ok || !json.ok) {
       alert("Failed to save watchlist: " + ((json && json.error) || ("HTTP " + res.status)));

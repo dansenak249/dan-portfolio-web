@@ -4,6 +4,17 @@
 // unauthenticated read-only snapshot of the trending feed + watchlist
 // profiles and stores them in Upstash Redis. A short Redis lock prevents
 // two runs from overlapping if a trigger fires while one is in progress.
+//
+// IT ALSO NUDGES THE SERVICE-DATA ROTATION. That rotation is driven by GitHub
+// Actions, whose schedule drops most of its slots for this repo, while THIS
+// endpoint is pinged on a reliable external cron. Spending the leftover request
+// budget on a rotation tick gives the rotation a dependable floor without
+// anyone having to configure a second external cron or copy the secret
+// anywhere new — the server already holds it.
+//
+// The snapshot always comes first and is never put at risk: rotation runs after
+// it, inside whatever time is left, and any failure is reported in the response
+// rather than thrown.
 
 import { NextResponse } from 'next/server'
 import { timingSafeEqual } from 'crypto'
@@ -32,6 +43,71 @@ export const maxDuration = 60 // trending = up to 50 paged fetches
 // any missed slot covered by the next trigger. Pass ?force=1 to bypass (manual
 // runs / testing). 45 min < 60 min cadence so a slightly late run still collects.
 const MIN_INTERVAL_MS = 45 * 60 * 1000
+
+// Wall clock from the start of the request at which we stop starting rotation
+// work. External cron services commonly give up on a response after 30s and
+// record the job as failed, so the whole handler aims to answer inside this.
+const REQUEST_SOFT_LIMIT_MS = 25000
+// Don't begin a tick without a reasonable chance of seeing it through. A tick
+// that IS cut off is still harmless — see runRotationTicks — but waiting for
+// one we know cannot finish just burns the budget.
+const MIN_TICK_BUDGET_MS = 12000
+
+/**
+ * Spend whatever request budget is left on service-data rotation ticks.
+ *
+ * Each tick is a self-contained POST that persists its own progress, and the
+ * rotation only advances its position on success. So abandoning the wait costs
+ * at most a repeated slice: nothing is corrupted, and the next trigger picks up
+ * from the same place. That is what makes it safe to bound this by the clock.
+ *
+ * Never throws: the trending snapshot is the job here, and the rotation is a
+ * passenger.
+ */
+async function runRotationTicks(request, startedAt) {
+  const base = new URL(request.url).origin
+  const secret = process.env.VGEN_COLLECT_SECRET || ''
+  const out = { ticks: 0, last: null, error: null }
+
+  for (;;) {
+    const remaining = REQUEST_SOFT_LIMIT_MS - (Date.now() - startedAt)
+    if (remaining < MIN_TICK_BUDGET_MS) break
+    try {
+      const res = await fetch(base + '/api/vgen-service-data/rotate', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          authorization: 'Bearer ' + secret,
+        },
+        body: JSON.stringify({}),
+        cache: 'no-store',
+        signal: AbortSignal.timeout(remaining),
+      })
+      const json = await res.json().catch(() => null)
+      if (!res.ok) {
+        out.error = 'HTTP ' + res.status + (json && json.error ? ' - ' + json.error : '')
+        break
+      }
+      // Nothing is ticked for auto refresh. Valid state, not a failure, and no
+      // amount of retrying changes it.
+      if (json && json.idle) {
+        out.last = 'idle'
+        break
+      }
+      out.ticks++
+      out.last = json && json.ranCategory
+        ? json.ranPhase + ' / ' + json.ranCategory
+        : 'ok'
+    } catch (error) {
+      // A timeout here means the tick outlived our budget, not that it failed.
+      out.error = error && error.name === 'TimeoutError'
+        ? 'tick still running when the budget ran out'
+        : String(error && error.message)
+      break
+    }
+  }
+  return out
+}
 
 function isAuthorized(request) {
   const secret = process.env.VGEN_COLLECT_SECRET
@@ -80,6 +156,9 @@ export async function POST(request) {
   }
 
   const force = request.nextUrl.searchParams.get('force') === '1'
+  const startedAt = Date.now()
+  // ?rotate=0 opts a trigger out, for when you want the snapshot alone.
+  const wantRotation = request.nextUrl.searchParams.get('rotate') !== '0'
 
   let locked = false
   try {
@@ -90,12 +169,18 @@ export async function POST(request) {
       if (lastTs) {
         const ageMs = Date.now() - new Date(lastTs).getTime()
         if (ageMs < MIN_INTERVAL_MS) {
+          // The cheap path, and the one with the most budget to spare: the
+          // snapshot needed nothing, so nearly the whole request is free.
+          const rotation = wantRotation
+            ? await runRotationTicks(request, startedAt)
+            : null
           return NextResponse.json(
             {
               ok: true,
               skipped: 'fresh snapshot exists',
               last_snapshot_ts: lastTs,
               age_min: Math.round(ageMs / 60000),
+              rotation,
             },
             { headers: { 'Cache-Control': 'no-store' } }
           )
@@ -112,9 +197,15 @@ export async function POST(request) {
     }
 
     const result = await runCollection()
-    return NextResponse.json(result, {
-      headers: { 'Cache-Control': 'no-store' },
-    })
+    // Snapshot is stored; the lock is released in `finally` either way. What is
+    // left of the budget goes to the rotation.
+    const rotation = wantRotation
+      ? await runRotationTicks(request, startedAt)
+      : null
+    return NextResponse.json(
+      { ...result, rotation },
+      { headers: { 'Cache-Control': 'no-store' } }
+    )
   } catch (error) {
     const message =
       error instanceof Error ? error.message : 'Unknown collection error'

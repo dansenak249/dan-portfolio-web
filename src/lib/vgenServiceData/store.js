@@ -93,6 +93,29 @@ export async function setCategoryMap(list) {
   await ensureRedis().set(CATEGORIES_KEY, JSON.stringify(list))
 }
 
+// The Shop map is a SEPARATE table because VGen's Shop taxonomy is a separate
+// table - different catalogues, different categories, only partly overlapping
+// ids. It is deliberately the same SHAPE, so the editor, the crawl and the
+// rotation can treat a row from either the same way.
+const SHOP_CATEGORIES_KEY = `${NS}:shop:categories`
+
+/**
+ * The Shop category map, in editor row order. Empty is valid.
+ * @returns {Promise<{ categoryID: string, categoryName: string, color?: string,
+ *   defaultName?: string, auto?: boolean }[]>}
+ */
+export async function getShopCategoryMap() {
+  const stored = parseMaybe(await ensureRedis().get(SHOP_CATEGORIES_KEY))
+  return Array.isArray(stored) ? stored : []
+}
+
+/**
+ * @param {{ categoryID: string, categoryName: string, color?: string }[]} list
+ */
+export async function setShopCategoryMap(list) {
+  await ensureRedis().set(SHOP_CATEGORIES_KEY, JSON.stringify(list))
+}
+
 /**
  * Cache one service's full review pull (overwrites any previous pull).
  * @param {string} serviceID
@@ -107,6 +130,11 @@ export async function setCachedReviews(serviceID, payload, fetchedAt) {
     count: payload.count ?? (payload.reviews ? payload.reviews.length : 0),
     reviews: Array.isArray(payload.reviews) ? payload.reviews : [],
     fetchedAt,
+    // The census's artist review total AT THE TIME OF THIS PULL. The next run
+    // compares it against the fresh census to decide whether anything can have
+    // changed, which is what lets an unchanged service be skipped instead of
+    // re-fetched and re-written.
+    sourceTotalReviews: payload.sourceTotalReviews ?? null,
   }
   await r.set(reviewsKey(serviceID), JSON.stringify(record))
   // Lightweight meta lets the dashboard show freshness without loading reviews.
@@ -117,6 +145,9 @@ export async function setCachedReviews(serviceID, payload, fetchedAt) {
       artistUserID: record.artistUserID,
       count: record.count,
       fetchedAt,
+      // Mirrored here so a freshness check can read the tiny meta record
+      // instead of the full review payload.
+      sourceTotalReviews: record.sourceTotalReviews,
     })
   )
 }
@@ -143,6 +174,30 @@ export async function getCachedReviewsMany(serviceIDs) {
   const out = {}
   if (!ids.length) return out
   const values = await ensureRedis().mget(...ids.map(reviewsKey))
+  ids.forEach((id, i) => {
+    const v = parseMaybe(values[i])
+    out[id] = v && typeof v === 'object' ? v : null
+  })
+  return out
+}
+
+/**
+ * Batch-read the lightweight freshness records.
+ *
+ * Deciding whether a service needs re-pulling only needs its last-fetched time
+ * and the review total it was fetched against — a couple of hundred bytes. The
+ * full cached payload carries every review, so reading those in bulk sends
+ * megabytes per batch and trips Upstash's 10 MB request ceiling on services with
+ * long review histories. This reads the meta records instead.
+ *
+ * @param {string[]} serviceIDs
+ * @returns {Promise<Object<string, null | object>>}
+ */
+export async function getMetaMany(serviceIDs) {
+  const ids = Array.isArray(serviceIDs) ? serviceIDs : []
+  const out = {}
+  if (!ids.length) return out
+  const values = await ensureRedis().mget(...ids.map(metaKey))
   ids.forEach((id, i) => {
     const v = parseMaybe(values[i])
     out[id] = v && typeof v === 'object' ? v : null
@@ -213,4 +268,518 @@ export async function setArtistName(userID, name) {
       displayName: name.displayName ?? null,
     })
   )
+}
+
+// ---------------------------------------------------------------------------
+// Category listing layer (the census produced by fetchCategory.js)
+// ---------------------------------------------------------------------------
+// Layout:
+//   vgsd:cat:<categoryID>:meta       -> { categoryID, count, chunks, pages,
+//                                         duplicates, offCategory, startedAt,
+//                                         finishedAt }
+//   vgsd:cat:<categoryID>:chunk:<i>  -> slim service records (CHUNK_SIZE each)
+//   vgsd:cat:<categoryID>:job        -> in-progress crawl state
+//
+// Services are stored in CHUNKS rather than one key per service. A category runs
+// to a few thousand services; one key each would mean thousands of Redis writes
+// per refresh (the metered cost here is commands, not bytes), while one key for
+// the whole category would push a single value past the request size limit.
+// A few hundred per chunk keeps both in bounds.
+const CHUNK_SIZE = 300
+
+/**
+ * Namespace a category key for the SHOP census.
+ *
+ * Shop and Commission share the chunk / meta / job / top machinery below, and
+ * 36 of their category ids are literally the same string, so the two censuses
+ * would overwrite each other without this. Prefixing the key rather than
+ * threading a scope argument through a dozen functions keeps one implementation
+ * of the storage and makes the collision impossible by construction.
+ *
+ * @param {string} categoryID
+ * @returns {string} the key to pass to the category store functions
+ */
+export const shopKey = (categoryID) => 'shop:' + categoryID
+
+/**
+ * The id of a census row, whichever marketplace it came from.
+ *
+ * A row is a service on the Commission side and a product on the Shop side, and
+ * both go through the same chunk machinery. The readers used to test
+ * `row.serviceID` alone, which meant every product ever crawled was dropped on
+ * the way out - the crawl stored them correctly and the table showed nothing.
+ *
+ * @param {object} row
+ * @returns {string|null}
+ */
+const rowID = (row) => {
+  if (!row) return null
+  if (typeof row.serviceID === 'string') return row.serviceID
+  if (typeof row.productID === 'string') return row.productID
+  return null
+}
+
+const catMetaKey = (categoryID) => `${NS}:cat:${categoryID}:meta`
+const catChunkKey = (categoryID, i) => `${NS}:cat:${categoryID}:chunk:${i}`
+const catJobKey = (categoryID) => `${NS}:cat:${categoryID}:job`
+// The best CENSUS_KEEP services found so far, carried through a running crawl.
+// Kept OUT of the job record on purpose: the job is read and written on every
+// slice, while this is only touched when a slice actually beats the current
+// worst score - which, after the first few slices, it usually does not.
+const catTopKey = (categoryID) => `${NS}:cat:${categoryID}:top`
+
+/**
+ * In-progress crawl state, or null when no crawl is running.
+ * @param {string} categoryID
+ */
+export async function getCategoryJob(categoryID) {
+  const stored = parseMaybe(await ensureRedis().get(catJobKey(categoryID)))
+  return stored && typeof stored === 'object' ? stored : null
+}
+
+/**
+ * @param {string} categoryID
+ * @param {object} job
+ */
+export async function setCategoryJob(categoryID, job) {
+  await ensureRedis().set(catJobKey(categoryID), JSON.stringify(job))
+}
+
+/** @param {string} categoryID */
+export async function clearCategoryJob(categoryID) {
+  await ensureRedis().del(catJobKey(categoryID))
+}
+
+/**
+ * Write one chunk of slim service records.
+ * @param {string} categoryID
+ * @param {number} index
+ * @param {object[]} services
+ */
+export async function setCategoryChunk(categoryID, index, services) {
+  await ensureRedis().set(catChunkKey(categoryID, index), JSON.stringify(services))
+}
+
+/**
+ * The finished census summary for one category, or null if never crawled.
+ * @param {string} categoryID
+ */
+export async function getCategoryMeta(categoryID) {
+  const stored = parseMaybe(await ensureRedis().get(catMetaKey(categoryID)))
+  return stored && typeof stored === 'object' ? stored : null
+}
+
+/**
+ * @param {string} categoryID
+ * @param {object} meta
+ */
+export async function setCategoryMeta(categoryID, meta) {
+  await ensureRedis().set(catMetaKey(categoryID), JSON.stringify(meta))
+}
+
+/**
+ * Read every stored service for one category (all chunks, in order). Chunks are
+ * read in ONE round trip so load time stays flat as a category grows.
+ * @param {string} categoryID
+ * @returns {Promise<object[]>}
+ */
+export async function listCategoryServices(categoryID) {
+  const meta = await getCategoryMeta(categoryID)
+  if (!meta || !meta.chunks) return []
+  const keys = []
+  for (let i = 0; i < meta.chunks; i++) keys.push(catChunkKey(categoryID, i))
+  const values = await ensureRedis().mget(...keys)
+  const out = []
+  // Duplicates are only suppressed within a crawl slice, so a service can land
+  // in two chunks when VGen reshuffles mid-crawl. De-duplicate on the way out;
+  // first occurrence wins.
+  const seen = new Set()
+  for (const value of values) {
+    const rows = parseMaybe(value)
+    if (!Array.isArray(rows)) continue
+    for (const row of rows) {
+      const id = rowID(row)
+      if (!id) continue
+      if (seen.has(id)) continue
+      seen.add(id)
+      out.push(row)
+    }
+  }
+  return out
+}
+
+/**
+ * Read chunks 0..count-1 without consulting meta.
+ *
+ * listCategoryServices() derives the chunk count from meta, which is only
+ * written once a crawl finishes — so a crawl that wants to read back what it
+ * just stored cannot use it. Doing so returned an empty list and, in the trim
+ * step, took that to mean "nothing to keep".
+ *
+ * @param {string} categoryID
+ * @param {number} count number of chunks written
+ * @returns {Promise<object[]>}
+ */
+export async function readCategoryChunks(categoryID, count) {
+  const out = []
+  const seen = new Set()
+  for await (const rows of iterateCategoryChunks(categoryID, count)) {
+    for (const row of rows) {
+      const id = rowID(row)
+      if (!id) continue
+      if (seen.has(id)) continue
+      seen.add(id)
+      out.push(row)
+    }
+  }
+  return out
+}
+
+// How many chunks to pull per round trip while streaming. Twenty chunks is a few
+// megabytes: enough to be efficient, small enough that a category in the
+// hundreds of thousands never lands in memory all at once.
+const CHUNK_READ_BATCH = 20
+// Keys per DEL command. Same reasoning as CHUNK_READ_BATCH: bounded so one
+// command cannot grow past what the server will accept.
+const DELETE_BATCH = 20
+
+/**
+ * Yield stored services a batch of chunks at a time.
+ *
+ * readCategoryChunks() loads everything at once, which is fine for a few
+ * thousand services and impossible for a few hundred thousand — a single MGET of
+ * every chunk would be tens of megabytes inside one serverless invocation. The
+ * trim step streams instead, so its cost is bounded by the batch rather than by
+ * how large the category turned out to be.
+ *
+ * @param {string} categoryID
+ * @param {number} count number of chunks written
+ */
+export async function* iterateCategoryChunks(categoryID, count) {
+  if (!count) return
+  const r = ensureRedis()
+  for (let start = 0; start < count; start += CHUNK_READ_BATCH) {
+    const keys = []
+    for (let i = start; i < Math.min(start + CHUNK_READ_BATCH, count); i++) {
+      keys.push(catChunkKey(categoryID, i))
+    }
+    const values = await r.mget(...keys)
+    for (const value of values) {
+      const rows = parseMaybe(value)
+      if (!Array.isArray(rows)) continue
+      yield rows.filter((row) => rowID(row) !== null)
+    }
+  }
+}
+
+// ---- one fetch at a time -------------------------------------------------
+//
+// Crawling is the only thing here that hits VGen hard, and several at once is
+// how you get rate-limited, or how two crawls of one category end up fighting
+// over the same job record. There is exactly ONE fetch lease for the whole
+// tool, and every driver goes through it: the row buttons, the rotation, and
+// anything calling the endpoints directly.
+//
+// It is a LEASE, not a flag. A browser tab can close mid-crawl and a serverless
+// function can die, and neither gets to leave the tool locked forever - the key
+// carries a TTL and the holder renews it on every slice.
+const fetchLockKey = () => `${NS}:fetch:lock`
+// A manual fetch that finds the rotation holding the lease leaves this behind.
+// The rotation checks it before taking the lease again and stands down, which
+// is what lets a person interrupt an automatic run without anything having to
+// be killed mid-slice.
+const fetchClaimKey = () => `${NS}:fetch:claim`
+
+export const FETCH_LOCK_TTL_SEC = 90
+export const FETCH_CLAIM_TTL_SEC = 60
+
+/**
+ * Current lease and claim, for the dashboard to decide what to enable.
+ * @returns {Promise<{ lock: object|null, claim: object|null }>}
+ */
+export async function getFetchLock() {
+  const r = ensureRedis()
+  const [lock, claim] = await Promise.all([
+    r.get(fetchLockKey()),
+    r.get(fetchClaimKey()),
+  ])
+  return { lock: parseMaybe(lock), claim: parseMaybe(claim) }
+}
+
+/**
+ * Take the lease, or renew it if this holder already holds it.
+ *
+ * A rotation acquire additionally stands down when someone else has claimed.
+ * That is the whole priority rule, and it lives here so no caller can forget it.
+ *
+ * @param {string} holder opaque id, stable for the life of one fetch session
+ * @param {'manual'|'rotation'|'direct'} kind who is asking
+ * @param {{ categoryID?: string, label?: string, phase?: string, startedAt?: string }} meta
+ * @returns {Promise<{ ok: boolean, lock: object|null, reason?: string }>}
+ */
+export async function acquireFetchLock(holder, kind, meta = {}) {
+  const r = ensureRedis()
+  const record = {
+    holder,
+    kind,
+    categoryID: meta.categoryID || null,
+    label: meta.label || null,
+    phase: meta.phase || null,
+    startedAt: meta.startedAt || new Date().toISOString(),
+    renewedAt: new Date().toISOString(),
+  }
+
+  if (kind === 'rotation') {
+    const claim = parseMaybe(await r.get(fetchClaimKey()))
+    if (claim && claim.holder && claim.holder !== holder) {
+      return { ok: false, lock: null, reason: 'a manual fetch has claimed the lease' }
+    }
+  }
+
+  // Free lease: take it.
+  const taken = await r.set(fetchLockKey(), JSON.stringify(record), {
+    nx: true,
+    ex: FETCH_LOCK_TTL_SEC,
+  })
+  if (taken === 'OK' || taken === true) {
+    if (kind !== 'rotation') await r.del(fetchClaimKey())
+    return { ok: true, lock: record }
+  }
+
+  // Held: only the holder itself may renew. Expiry is Redis's job, so there is
+  // no stale-lock arithmetic here to get wrong.
+  const current = parseMaybe(await r.get(fetchLockKey()))
+  if (current && current.holder === holder) {
+    const renewed = { ...record, startedAt: current.startedAt || record.startedAt }
+    await r.set(fetchLockKey(), JSON.stringify(renewed), { ex: FETCH_LOCK_TTL_SEC })
+    if (kind !== 'rotation') await r.del(fetchClaimKey())
+    return { ok: true, lock: renewed }
+  }
+  return { ok: false, lock: current, reason: 'held by another fetch' }
+}
+
+/**
+ * Give up the lease, but only if it is still ours: a lease that expired and was
+ * retaken by someone else must not be deleted out from under them.
+ */
+export async function releaseFetchLock(holder) {
+  const r = ensureRedis()
+  const current = parseMaybe(await r.get(fetchLockKey()))
+  if (current && current.holder !== holder) return false
+  await r.del(fetchLockKey())
+  return true
+}
+
+/**
+ * Ask the rotation to stand down so a person can go first. Short-lived on
+ * purpose: if whoever claimed never follows through, the rotation resumes on its
+ * own rather than waiting on a promise nobody kept.
+ */
+export async function claimFetchLock(holder, meta = {}) {
+  await ensureRedis().set(
+    fetchClaimKey(),
+    JSON.stringify({
+      holder,
+      categoryID: meta.categoryID || null,
+      label: meta.label || null,
+      claimedAt: new Date().toISOString(),
+    }),
+    { ex: FETCH_CLAIM_TTL_SEC }
+  )
+}
+
+export async function clearFetchClaim(holder) {
+  const r = ensureRedis()
+  const claim = parseMaybe(await r.get(fetchClaimKey()))
+  if (claim && claim.holder !== holder) return false
+  await r.del(fetchClaimKey())
+  return true
+}
+
+/**
+ * The running top-N of an in-flight crawl, or [] if there is none.
+ * @param {string} categoryID
+ * @returns {Promise<object[]>}
+ */
+export async function getCategoryTop(categoryID) {
+  const stored = parseMaybe(await ensureRedis().get(catTopKey(categoryID)))
+  return Array.isArray(stored) ? stored : []
+}
+
+/**
+ * Replace the running top-N.
+ * @param {string} categoryID
+ * @param {object[]} rows
+ */
+export async function setCategoryTop(categoryID, rows) {
+  await ensureRedis().set(catTopKey(categoryID), JSON.stringify(rows))
+}
+
+/**
+ * Drop the running top-N. Called once a crawl finishes and its result has been
+ * written to chunks, so a finished category does not keep a second copy.
+ * @param {string} categoryID
+ */
+export async function clearCategoryTop(categoryID) {
+  await ensureRedis().del(catTopKey(categoryID))
+}
+
+/**
+ * Delete chunks from `fromIndex` upward. Used after a crawl trims itself down to
+ * the busiest services: the earlier, larger run left chunks the shorter one no
+ * longer covers, and meta.chunks alone would just orphan them.
+ * @param {string} categoryID
+ * @param {number} fromIndex
+ * @param {number} throughIndex last index to try, inclusive
+ */
+export async function deleteCategoryChunks(categoryID, fromIndex, throughIndex) {
+  const r = ensureRedis()
+  // Batched: one round trip per DELETE_BATCH keys rather than per key. A
+  // category that once held hundreds of chunks made this the slowest step in
+  // the whole crawl, at one Upstash round trip apiece.
+  const keys = []
+  for (let i = fromIndex; i <= throughIndex; i++) keys.push(catChunkKey(categoryID, i))
+  for (let i = 0; i < keys.length; i += DELETE_BATCH) {
+    await r.del(...keys.slice(i, i + DELETE_BATCH))
+  }
+}
+
+/**
+ * Drop a category's stored census (chunks + meta + any half-finished job). Used
+ * before a fresh crawl so a shrunk category cannot leave stale rows behind.
+ * @param {string} categoryID
+ */
+export async function purgeCategory(categoryID) {
+  const r = ensureRedis()
+  const meta = await getCategoryMeta(categoryID)
+  const chunks = (meta && meta.chunks) || 0
+  if (chunks) await deleteCategoryChunks(categoryID, 0, chunks - 1)
+  await r.del(catMetaKey(categoryID))
+  await r.del(catJobKey(categoryID))
+  await r.del(catTopKey(categoryID))
+}
+
+export { CHUNK_SIZE }
+
+// ---------------------------------------------------------------------------
+// Exchange-rate cache
+// ---------------------------------------------------------------------------
+// VGen's rate matrix is ~347 KB and its numbers move slowly, so the reduced
+// "<CODE> -> USD" map is cached and only refetched when stale. Cached, not
+// stored per price: basePrice + currency stay raw in the census, so re-rating is
+// always just a re-render.
+const FX_KEY = `${NS}:fx`
+
+/** @returns {Promise<null | { fetchedAt: string, count: number, rates: Record<string, number> }>} */
+export async function getExchangeRates() {
+  const stored = parseMaybe(await ensureRedis().get(FX_KEY))
+  return stored && typeof stored === 'object' ? stored : null
+}
+
+/** @param {{ fetchedAt: string, count: number, rates: Record<string, number> }} payload */
+export async function setExchangeRates(payload) {
+  await ensureRedis().set(FX_KEY, JSON.stringify(payload))
+}
+
+// ---------------------------------------------------------------------------
+// Rotation state
+// ---------------------------------------------------------------------------
+// Where the automatic refresh has got to: which category it is working on and
+// whether it is still crawling the listing or pulling reviews.
+//
+// Deliberately just a cursor into the work, not a schedule. Each tick reads it,
+// does ONE bounded slice, and writes it back — so a missed tick, an overlapping
+// tick, or a deploy mid-run costs at most a repeated slice. Nothing has to
+// detect that a category "finished"; the state says what is left to do.
+const ROTATION_KEY = `${NS}:rotation`
+
+/**
+ * @returns {Promise<null | { categoryID: string|null, phase: string, startedAt: string,
+ *   updatedAt: string, cycles: number, lastNote: string|null }>}
+ */
+export async function getRotation() {
+  const stored = parseMaybe(await ensureRedis().get(ROTATION_KEY))
+  return stored && typeof stored === 'object' ? stored : null
+}
+
+/** @param {object} state */
+export async function setRotation(state) {
+  await ensureRedis().set(ROTATION_KEY, JSON.stringify(state))
+}
+
+/** Stop the rotation entirely. */
+export async function clearRotation() {
+  await ensureRedis().del(ROTATION_KEY)
+}
+
+// ---------------------------------------------------------------------------
+// Legacy cleanup
+// ---------------------------------------------------------------------------
+// Keys written by the OLD flow (declare services one by one, then pull each
+// service's review feed). The category census replaces all of it: services now
+// arrive from the crawl, and artist names ride along in the listing instead of
+// needing their own lookup + cache.
+//
+// Everything still in use is deliberately absent from this list:
+//   vgsd:categories  the hand-curated category map (names + colours)
+//   vgsd:cat:*       the new census (chunks / meta / in-flight jobs)
+//   vgsd:fx          the cached exchange rates
+// Note `vgsd:meta:*` matches only the old per-service freshness records; the
+// census keys are `vgsd:cat:<id>:meta`, which that pattern does not touch.
+const LEGACY_PATTERNS = [
+  `${NS}:services`,
+  `${NS}:reviews:*`,
+  `${NS}:meta:*`,
+  `${NS}:artist:*`,
+]
+
+const SCAN_COUNT = 200
+
+async function scanKeys(pattern) {
+  const r = ensureRedis()
+  const found = []
+  let cursor = '0'
+  do {
+    const [next, keys] = await r.scan(cursor, {
+      match: pattern,
+      count: SCAN_COUNT,
+    })
+    cursor = String(next)
+    if (Array.isArray(keys)) found.push(...keys)
+    // Upstash returns '0' when the sweep is complete.
+  } while (cursor !== '0')
+  return found
+}
+
+/**
+ * Find (and optionally delete) every key left over from the pre-census flow.
+ *
+ * @param {object} [options]
+ * @param {boolean} [options.dryRun] when true, only report what WOULD go
+ * @returns {Promise<{ dryRun: boolean, deleted: number, byPattern: Record<string, number>, sample: string[] }>}
+ */
+export async function purgeLegacyServiceData(options = {}) {
+  const { dryRun = true } = options
+  const r = ensureRedis()
+
+  const byPattern = {}
+  const all = []
+  for (const pattern of LEGACY_PATTERNS) {
+    const keys = await scanKeys(pattern)
+    byPattern[pattern] = keys.length
+    all.push(...keys)
+  }
+
+  if (!dryRun) {
+    for (const key of all) await r.del(key)
+  }
+
+  return {
+    dryRun,
+    deleted: dryRun ? 0 : all.length,
+    found: all.length,
+    byPattern,
+    // A short sample so the caller can eyeball that nothing unexpected matched.
+    sample: all.slice(0, 10),
+  }
 }

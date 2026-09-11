@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="robots" content="noindex, nofollow" />
-    <title>VGen Service Data</title>
+    <title>VGen Data Tracker</title>
     <style>
       :root {
         --bg: #0b0d10;
@@ -50,8 +50,7 @@
         gap: 20px;
         flex-wrap: wrap;
         padding-bottom: 20px;
-        border-bottom: 1px solid var(--line);
-        margin-bottom: 26px;
+        margin-bottom: 6px;
       }
       .title-block h1 {
         font-size: clamp(1.6rem, 1rem + 2.4vw, 2.6rem);
@@ -72,19 +71,9 @@
         color: var(--accent-2);
         margin-bottom: 10px;
       }
-      .top-actions {
-        display: flex;
-        align-items: center;
-        gap: 10px;
-        flex-wrap: wrap;
-      }
-      .updated {
-        font-family: var(--mono);
-        font-size: 0.75rem;
-        color: var(--dim);
-        text-align: right;
-      }
-      .updated b { color: var(--muted); font-weight: 600; }
+      /* The freshness stamp moved onto the tab bar, so the header carries the
+         title alone; .top-actions and .updated went with it. */
+      .tab-note b { color: var(--muted); font-weight: 600; }
 
       button {
         font-family: var(--sans);
@@ -108,6 +97,35 @@
       button.primary:hover { border-color: var(--accent); }
       button.ghost { background: transparent; }
       button.tiny { padding: 4px 8px; font-size: 0.75rem; border-radius: 8px; }
+      /* Per-category fetch button. While a category is in flight its glyph
+         spins and the button stays clickable - clicking then cancels. */
+      .cat-load svg { display: block; }
+      .cat-load:disabled { opacity: 0.4; cursor: default; }
+      /* A running fetch stays clickable: hovering it swaps the spinner for an
+         X and turns it red, because the click cancels rather than re-runs. */
+      .cat-load .cat-x { display: none; }
+      .cat-load.is-loading:hover .cat-spin { display: none; }
+      .cat-load.is-loading:hover .cat-x { display: block; }
+      /* A crawl being run by the SERVER, not by this tab. It spins, because
+         work really is happening, but it must not offer the cancel-on-hover of
+         a local fetch: there is nothing here that can stop it. */
+      .cat-load.is-remote:hover .cat-spin { display: block; }
+      .cat-load.is-remote:hover .cat-x { display: none; }
+      .cat-load.is-remote:hover { color: inherit; border-color: var(--line); }
+      /* Disabled, but working - not the flat grey of a button with nothing
+         behind it. */
+      .cat-load.is-remote:disabled { opacity: 0.75; }
+      .cat-load.is-loading:hover { color: var(--bad); border-color: var(--bad); }
+      /* Emptying a category is destructive, so the trash reads as such on hover.
+         The row-remove ✕ next to it stays neutral: it drops a mapping, not data. */
+      .cat-purge:hover:not(:disabled) { color: var(--bad); }
+      .cat-purge:disabled { opacity: 0.4; cursor: default; }
+      .cat-purge svg { display: block; }
+      .cat-load.is-loading svg { animation: cat-spin 0.9s linear infinite; }
+      @keyframes cat-spin { to { transform: rotate(360deg); } }
+      @media (prefers-reduced-motion: reduce) {
+        .cat-load.is-loading svg { animation-duration: 2.4s; }
+      }
       button:disabled { opacity: 0.5; cursor: not-allowed; }
 
       .panel {
@@ -298,10 +316,118 @@
       /* Fixed table layout + explicit column widths; the single unsized column
          (Monthly flow) absorbs the leftover width. */
       #svcTable { table-layout: fixed; }
-      .col-name { width: 172px; }
-      .col-spacer { width: 74px; }
+      /* Per-category "kept / walked" in the map. Mono so the digits line up
+         down the column, and dimmed once it is only a denominator. */
+      .cat-count { font-family: var(--mono); font-size: 0.72rem; color: var(--muted); white-space: nowrap; }
+      .cat-count .of { color: var(--dim); }
+      .cat-count.none { color: var(--dim); }
+      /* A category in five figures takes hours to walk and would monopolise the
+         rotation, so the size is called out rather than just reported.
+         Used while a crawl is running, where the cell holds one number. */
+      .cat-count.huge { color: var(--bad); }
+      /* Once crawled the cell reads "1,000 / 218,812", and it is the SECOND
+         number that is the warning: the first is a constant the census always
+         keeps. Higher specificity than the .of rule above, which would
+         otherwise dim it back down. */
+      .cat-count .of.huge { color: var(--bad); }
+      /* The id is the primary key, so it is shown rather than edited. */
+      .cat-id { font-family: var(--mono); font-size: 0.72rem; color: var(--muted); }
+      .pager {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 4px;
+        padding: 12px 0 2px;
+        flex-wrap: wrap;
+      }
+      .pager button {
+        min-width: 30px;
+        padding: 4px 8px;
+        font-size: 0.78rem;
+        border-radius: 8px;
+      }
+      .pager button.current {
+        border-color: var(--accent);
+        color: var(--accent);
+        background: #202732;
+      }
+      .pager button:disabled { opacity: 0.35; cursor: default; }
+      .pager .gap { color: var(--dim); padding: 0 2px; }
+      .pager .range { color: var(--muted); font-size: 0.75rem; margin-left: 8px; }
+      /* Titles run long and the sub-line carries artist + category, so this
+         column gets the lion's share of the table. A percentage rather than a
+         fixed width: the sparkline column absorbs whatever is left, and it
+         degrades gracefully rather than clipping harder on a narrow window. */
+      .col-name { width: 42%; min-width: 340px; }
+      .type-name { font-weight: 600; }
+      /* Category tag trails the artist name. It repeats on every row of a
+         filtered view, so it stays thin and grey rather than competing. */
+      .type-tag { font-weight: 400; color: var(--dim); }
+      /* Titles are long and arbitrary. Clip both lines to the column so they
+         cannot overrun the next cell; the full text stays on hover. */
+      .type-name,
+      .sub-name {
+        display: block;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      /* Just a gutter now. It used to be wide enough to read as wasted space
+         while the name beside it was still being clipped. */
+      .col-spacer { width: 24px; }
       .col-n { width: 72px; }
-      .col-star { width: 48px; }
+      /* Base price needs more room than a plain count column: the header word is
+         wider, and amounts can run to "¥32000" / "$1,234.56". */
+      .col-price { width: 96px; }
+      /* Wider than the star it replaced: this holds "$12,345", not "4.9". */
+      .col-rev { width: 104px; }
+      /* Still used by the product table's rating column. It lost its rule when
+         the service table swapped the star out for Rev/mo, and under a fixed
+         layout an undeclared width is not harmless - it takes the remainder. */
+      .col-star { width: 52px; }
+      /* "Sales/mo" is a wider word than the counts beside it. */
+      .col-permo { width: 88px; }
+      /* The Auto column had its header left-aligned by the global th rule and
+         its checkbox centred by an inline style, so the two never lined up.
+         One class now owns both ends of the column, and it aligns LEFT like
+         every other column in this table - the header was the odd one out, not
+         the checkbox. */
+      .col-auto { width: 46px; text-align: left; }
+      /* The real reason this column looked centred, and it was never
+         text-align: `.decl-table input` sets width:100% and min-width:120px for
+         the NAME and ID text boxes, and a checkbox is an input too. The tick was
+         sitting inside a 120px-wide control that started correctly at the left
+         padding edge but drew its glyph in the middle of itself - so the column
+         measured as aligned while looking centred, and forced itself 144px wide
+         into the bargain. Give the checkbox its intrinsic size back.
+         The zeroed margin is the browser default, which would otherwise offset
+         it a few pixels from where the header text starts. */
+      .col-auto input[type='checkbox'] {
+        width: auto;
+        min-width: 0;
+        padding: 0;
+        margin: 0;
+        vertical-align: middle;
+      }
+      /* FIXED layout, and it matters here.
+         Under the default auto layout a column is sized from its CONTENT, so a
+         single very long product name - "Customizable Vtuber Model/Hachimi
+         Chibi(!!!Check the description for the free trial link)" - stretched
+         the name column from its declared 42% to 863px, pushed the table to
+         1291px inside an 1146px frame, and shoved Sales/mo, Reviews and the
+         rating clean off the right edge. text-overflow could not save it: an
+         ellipsis clips INSIDE whatever width the column already won, and the
+         column had already won too much.
+         Fixed layout makes the declared widths authoritative, so the name
+         ellipsizes and every other column keeps its place no matter what a
+         seller decides to call their listing. */
+      #prodTable { table-layout: fixed; }
+      /* A zero here is a MEASUREMENT - this listing earned nothing - and it
+         has to read as one. Dimming it to var(--dim) made it vanish into the
+         background, so a row of real zeros looked like a row of missing data
+         and the table appeared to fall apart when sorted by revenue ascending.
+         Muted is quiet enough to keep the eye on the numbers that matter. */
+      .rev-zero { color: var(--muted); }
       /* drag-to-reorder handle in the declaration editor */
       .drag-handle {
         cursor: grab;
@@ -406,6 +532,81 @@
         max-width: 260px;
       }
       .hdr-select:focus { outline: none; border-color: var(--accent); }
+
+      /* Service filter dropdown.
+         A native <select> renders each option as one run of text, so a count can
+         only ever trail its name at whatever offset that name happens to end -
+         there is no way to give the numbers a column. This is the same control
+         built from a button and a list, so the names sit left and the counts
+         line up right, the way a table of contents reads. */
+      .filter-drop { position: relative; display: inline-block; }
+      .filter-drop > .hdr-select {
+        display: inline-flex;
+        align-items: center;
+        gap: 10px;
+        width: 260px;
+        text-align: left;
+      }
+      .fd-label { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .fd-count {
+        flex: none;
+        font-family: var(--mono);
+        font-size: 0.72rem;
+        font-weight: 500;
+        color: var(--muted);
+        font-variant-numeric: tabular-nums;
+      }
+      .fd-caret { flex: none; color: var(--dim); font-size: 0.6rem; }
+      .filter-menu {
+        position: absolute;
+        z-index: 40;
+        top: calc(100% + 6px);
+        left: 0;
+        /* Free to be wider than the button it hangs off: the closed control is
+           narrow by design, but the open list has the whole page to spread into,
+           and long category names are the norm here. */
+        min-width: 100%;
+        width: max-content;
+        max-width: 420px;
+        max-height: 340px;
+        overflow-y: auto;
+        background: var(--panel-2);
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        padding: 5px;
+        box-shadow: 0 14px 34px rgba(0, 0, 0, 0.5);
+      }
+      .filter-menu[hidden] { display: none; }
+      .filter-opt {
+        display: flex;
+        align-items: baseline;
+        gap: 18px;
+        width: 100%;
+        background: none;
+        border: 0;
+        border-radius: 7px;
+        padding: 7px 9px;
+        cursor: pointer;
+        color: var(--text);
+        font-family: var(--sans);
+        font-size: 0.8rem;
+        font-weight: 500;
+        text-align: left;
+      }
+      .filter-opt:hover { background: rgba(110, 231, 255, 0.07); }
+      .filter-opt:focus-visible { outline: none; background: rgba(110, 231, 255, 0.07); }
+      .filter-opt[aria-selected='true'] { color: var(--accent); }
+      .filter-opt .fo-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      /* flex:none against a flexible name is what puts every count on the menu's
+         right edge instead of trailing its own name. */
+      .filter-opt .fo-count {
+        flex: none;
+        font-family: var(--mono);
+        font-size: 0.72rem;
+        color: var(--dim);
+        font-variant-numeric: tabular-nums;
+      }
+      .filter-opt[aria-selected='true'] .fo-count { color: var(--accent); }
       .status {
         font-family: var(--mono);
         font-size: 0.78rem;
@@ -436,6 +637,56 @@
       .seg { display: inline-flex; border: 1px solid var(--line); border-radius: 9px; overflow: hidden; }
       .seg button { border: none; border-radius: 0; background: transparent; padding: 7px 12px; }
       .seg button.active { background: var(--panel-2); color: var(--accent); }
+
+      /* Top-level tabs, one per VGen marketplace section. Bigger and flatter
+         than .seg, which is an in-panel control - these switch the whole page. */
+      .tabs {
+        display: flex;
+        gap: 4px;
+        border-bottom: 1px solid var(--line);
+        margin-bottom: 20px;
+      }
+      .tabs button {
+        border: none;
+        border-radius: 0;
+        background: transparent;
+        color: var(--muted);
+        font-size: 0.9rem;
+        font-weight: 600;
+        padding: 10px 16px;
+        border-bottom: 2px solid transparent;
+        margin-bottom: -1px;
+      }
+      .tabs button:hover { color: var(--text); }
+      .tabs button.active { color: var(--accent); border-bottom-color: var(--accent); }
+      .tabs .tab-note {
+        margin-left: auto;
+        align-self: center;
+        color: var(--dim);
+        font-family: var(--mono);
+        font-size: 0.72rem;
+        padding-right: 4px;
+      }
+      /* NOT the .hidden class: that one is opacity-only, for modals that must
+         keep their box. A tab panel has to leave the layout entirely. */
+      .tab-panel[hidden] { display: none; }
+
+      /* A panel whose data source does not exist yet. Says so plainly rather
+         than showing an empty table that looks broken. */
+      .pending {
+        border: 1px dashed var(--line);
+        border-radius: 10px;
+        padding: 22px 20px;
+        color: var(--muted);
+        font-size: 0.85rem;
+        line-height: 1.6;
+      }
+      .pending b { color: var(--text); font-weight: 650; }
+      .pending code {
+        font-family: var(--mono);
+        font-size: 0.78rem;
+        color: var(--accent-2);
+      }
 
       /* Full-viewport loading overlay (mirrors the site's LoadingScreen brand). */
       #loadingOverlay {
@@ -530,33 +781,45 @@
       <header class="top">
         <div class="title-block">
           <div class="kicker">VGen · Tools</div>
-          <h1>Service Data</h1>
+          <h1>VGen Data Tracker</h1>
           <p>
-            Where are VGen clients flowing? Public service reviews stand in for
-            completed commissions — track which services and artists capture
-            steady, repeat monthly business.
+            Where is money moving on VGen? Public reviews stand in for completed
+            orders — track which listings and creators hold steady, repeat
+            monthly business, across commission services and shop products.
           </p>
-        </div>
-        <div class="top-actions">
-          <div class="updated">
-            updated<br /><b id="lastUpdated">—</b>
-          </div>
-          <button id="addBtn" title="Declare a new service">+ Add</button>
-          <button id="syncBtn" title="Re-derive each service's category from its id (fills in any missing types)">⟳ Sync types</button>
-          <button id="refreshBtn" class="primary">↻ Refresh</button>
         </div>
       </header>
 
+      <!-- One tab per VGen marketplace section, named as VGen names them. -->
+      <div class="tabs" role="tablist">
+        <button type="button" id="tabBtnCommission" class="active" role="tab" aria-selected="true" aria-controls="tabCommission">Commission</button>
+        <button type="button" id="tabBtnShop" role="tab" aria-selected="false" aria-controls="tabShop">Shop</button>
+        <!-- The freshness stamp sits here rather than in the header: it is a
+             property of the DATA, so it belongs on the same line as the tabs
+             that choose which data you are looking at. -->
+        <span class="tab-note">updated <b id="lastUpdated">—</b></span>
+      </div>
+
       <div id="status" class="status"></div>
 
+      <div class="tab-panel" id="tabCommission" role="tabpanel" aria-labelledby="tabBtnCommission">
       <!-- Per-service -->
       <section class="panel">
         <div class="panel-head">
           <h2><span class="dot"></span>Service</h2>
           <div class="flow-tools">
-            <select id="svcFilter" class="hdr-select" title="Filter which service to show">
-              <option value="all">All services</option>
-            </select>
+            <div class="filter-drop" id="svcFilterWrap">
+              <button type="button" id="svcFilterBtn" class="hdr-select" aria-haspopup="listbox" aria-expanded="false" title="Filter which service to show">
+                <span class="fd-label" id="svcFilterLabel">All services</span>
+                <span class="fd-count" id="svcFilterCount">0</span>
+                <span class="fd-caret">&#9660;</span>
+              </button>
+              <div class="filter-menu" id="svcFilterMenu" role="listbox" hidden></div>
+            </div>
+            <label class="flow-check" title="Only compute services whose artist has at least this many reviews. The census still stores every service.">
+              <span class="sub">min reviews</span>
+              <input type="number" id="minReviews" min="0" step="1" value="10" style="width:56px" />
+            </label>
             <span class="sub">flow window</span>
             <span class="seg" id="flowSeg">
               <button data-w="all" class="active">All</button>
@@ -574,23 +837,21 @@
           <table id="svcTable">
             <thead>
               <tr>
-                <th class="col-name" data-k="_type">Type</th>
+                <th class="col-name" data-k="serviceName">Service</th>
                 <th class="no-sort col-spacer"></th>
-                <th class="num col-n" data-k="total">Reviews</th>
-                <th class="num col-n" data-k="uniqueClients">Unique</th>
+                <th class="num col-price" data-k="_priceUSD">Price</th>
+                <th class="num col-n" data-k="total">Total</th>
                 <th class="num col-n" data-k="repeatClients">Repeat</th>
-                <th class="num col-n" data-k="repeatRate">Repeat %</th>
-                <th class="num col-n" data-k="last90">90d</th>
-                <th class="num col-n" data-k="last30">30d</th>
-                <th class="num col-star" data-k="avgRating">★</th>
+                <th class="num col-n" data-k="last30">Month</th>
+                <th class="num col-rev" data-k="_revMonth" title="Price x orders in the last 30 days. An estimate of what this listing earned this month.">Rev/mo</th>
                 <th class="no-sort">Monthly flow</th>
-                <th class="no-sort col-actions"></th>
               </tr>
             </thead>
             <tbody id="svcBody"></tbody>
           </table>
         </div>
-        <div id="svcEmpty" class="empty">No services declared yet. Click “+ Add” up top to declare one.</div>
+        <div id="svcEmpty" class="empty">No services yet. Add a category below, then press its fetch button.</div>
+        <div id="svcPager" class="pager"></div>
       </section>
 
       <!-- Category map editor (GUI for searchCategoryID -> readable name) -->
@@ -610,7 +871,11 @@
                     <th class="no-sort" style="width:32px">#</th>
                     <th class="no-sort" style="width:56px">Color</th>
                     <th class="no-sort">Category Name</th>
-                    <th class="no-sort">Category ID</th>
+                    <th class="no-sort" style="width:170px">Category ID</th>
+                    <th class="no-sort col-auto" title="Include this category in the automatic rotation">Auto</th>
+                    <th class="no-sort" style="width:118px">Services</th>
+                    <th class="no-sort" style="width:48px"></th>
+                    <th class="no-sort" style="width:48px"></th>
                     <th class="no-sort" style="width:48px"></th>
                   </tr>
                 </thead>
@@ -620,6 +885,7 @@
             <div class="decl-foot">
               <div class="left">
                 <button id="addCatBtn" class="ghost">+ Add category</button>
+                <button id="discoverBtn" class="ghost" title="Read VGen&#39;s category list and show what is missing here">&#9906; Discover</button>
               </div>
               <div class="right">
                 <button id="revertCatBtn" class="icon-btn" title="Revert unsaved changes" disabled>&#8634;</button>
@@ -639,8 +905,147 @@
           </div>
         </details>
       </section>
+      </div><!-- /tabCommission -->
+
+      <div class="tab-panel" id="tabShop" role="tabpanel" aria-labelledby="tabBtnShop" hidden>
+        <!-- Per-product. Mirrors the Commission table: in Commission the unit is
+             a Service, in Shop it is a Product. Columns are provisional until
+             the Shop API is in hand - they are the Commission set, which is the
+             stated starting point, not a guess dressed up as a decision. -->
+        <!-- Columns differ from Commission because Shop measures different
+             things. A product publishes its real order count and its own star
+             rating, so nothing has to stand in for them; but the crawl carries
+             no per-review dates, so there is no monthly series to draw and no
+             repeat-client figure to compute. Sales/mo is the honest substitute
+             for a sparkline: lifetime sales over months listed. -->
+        <section class="panel">
+          <div class="panel-head">
+            <h2><span class="dot"></span>Product</h2>
+            <div class="flow-tools">
+              <div class="filter-drop" id="prodFilterWrap">
+                <button type="button" id="prodFilterBtn" class="hdr-select" aria-haspopup="listbox" aria-expanded="false" title="Filter which category to show">
+                  <span class="fd-label" id="prodFilterLabel">All products</span>
+                  <span class="fd-count" id="prodFilterCount">0</span>
+                  <span class="fd-caret">&#9660;</span>
+                </button>
+                <div class="filter-menu" id="prodFilterMenu" role="listbox" hidden></div>
+              </div>
+            </div>
+          </div>
+          <div class="table-scroll">
+            <table id="prodTable">
+              <thead>
+                <tr>
+                  <th class="col-name" data-k="productName">Product</th>
+                  <th class="no-sort col-spacer"></th>
+                  <th class="num col-price" data-k="_priceUSD">Price</th>
+                  <th class="num col-n" data-k="salesCount" title="Orders VGen reports for this product. A * means the seller does not show the number publicly.">Sales</th>
+                  <th class="num col-rev" data-k="_revenue" title="Base price x lifetime sales. An estimate: tiers and add-ons above the base price are not counted.">Revenue</th>
+                  <th class="num col-permo" data-k="_salesPerMonth" title="Lifetime sales divided by months listed.">Sales/mo</th>
+                  <th class="num col-n" data-k="reviewCount">Reviews</th>
+                  <th class="num col-star" data-k="avgRating">&#9733;</th>
+                </tr>
+              </thead>
+              <tbody id="prodBody"></tbody>
+            </table>
+          </div>
+          <div id="prodEmpty" class="empty">No products yet. Add a category in the map below, then press its fetch button.</div>
+          <div id="prodPager" class="pager"></div>
+        </section>
+
+        <!-- Shop category map. Same job and same row shape as the Commission
+             one, but a separate table, because VGen ships a separate Shop
+             taxonomy: 15 catalogues and 153 categories against Commission's 12
+             and 160, overlapping in 36 ids and diverging in the rest. -->
+        <section class="panel">
+          <details class="decl" id="shopCatWrap" open>
+            <summary>
+              <span class="chev">&#9654;</span>
+              Shop category map
+              <span class="count-badge" id="shopCatCount">0 categories</span>
+            </summary>
+            <div style="margin-top:16px">
+              <div class="table-scroll">
+                <table class="decl-table">
+                  <thead>
+                    <tr>
+                      <th class="no-sort" style="width:32px">#</th>
+                      <th class="no-sort" style="width:56px">Color</th>
+                      <th class="no-sort">Category Name</th>
+                      <th class="no-sort" style="width:170px">Category ID</th>
+                      <th class="no-sort col-auto" title="Include this category in the automatic rotation">Auto</th>
+                      <th class="no-sort" style="width:118px">Products</th>
+                      <th class="no-sort" style="width:48px"></th>
+                      <th class="no-sort" style="width:48px"></th>
+                      <th class="no-sort" style="width:48px"></th>
+                    </tr>
+                  </thead>
+                  <tbody id="shopCatBody"></tbody>
+                </table>
+              </div>
+              <div class="decl-foot">
+                <div class="left">
+                  <button id="shopAddCatBtn" class="ghost">+ Add category</button>
+                  <button id="shopDiscoverBtn" class="ghost" title="Read VGen&#39;s SHOP category list and show what is missing here">&#9906; Discover</button>
+                </div>
+                <div class="right">
+                  <button id="shopRevertCatBtn" class="icon-btn" title="Revert unsaved changes" disabled>&#8634;</button>
+                  <button id="shopSaveCatBtn" class="primary" disabled>Save</button>
+                </div>
+              </div>
+              <p class="foot-note">
+                Discover reads VGen&#39;s Shop taxonomy — a different table from the
+                Commission one, so a category that exists here may not exist there.
+                Adding only APPENDS; your names, colours and ordering stand. Leaving
+                a name blank parks the row with VGen&#39;s own name as its placeholder.
+              </p>
+              <p class="foot-note" id="shopCrawlNote">
+                Fetch walks every product in the category and keeps the busiest
+                1,000 by sales. Unlike Commission there is no second pass for
+                reviews: a product carries its own sales count and its own
+                rating. Shop and Commission share ONE fetch lock and one
+                bandwidth budget, so only one crawl runs at a time across both
+                tabs — and starting one here stands the rotation down.
+              </p>
+            </div>
+          </details>
+        </section>
+      </div><!-- /tabShop -->
 
       <!-- Import preview modal: review a harvested list before adding to the editor -->
+      <!-- Discovered categories: what VGen's taxonomy holds that the stored map
+           does not cover yet. Nothing is applied until Add is pressed, and adding
+           only APPENDS - existing names, colours and order stand. -->
+      <div id="discModal" class="modal hidden">
+        <div class="modal-card">
+          <div class="modal-head">
+            <h3>Discovered categories</h3>
+            <button id="discClose" class="tiny ghost" title="Close">&#10005;</button>
+          </div>
+          <p class="modal-sub" id="discSummary">&mdash;</p>
+          <div class="table-scroll modal-scroll">
+            <table class="decl-table">
+              <thead>
+                <tr>
+                  <th class="no-sort" style="width:36px"><input type="checkbox" id="discAll" title="Select all" /></th>
+                  <th class="no-sort">Name</th>
+                  <th class="no-sort" style="width:170px">Category ID</th>
+                  <th class="no-sort">Where it sits</th>
+                </tr>
+              </thead>
+              <tbody id="discBody"></tbody>
+            </table>
+          </div>
+          <div class="modal-foot">
+            <span class="foot-note" id="discHint"></span>
+            <div class="modal-actions">
+              <button id="discCancel" class="ghost">Cancel</button>
+              <button id="discConfirm" class="primary">Add selected</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
       <div id="importModal" class="modal hidden">
         <div class="modal-card">
           <div class="modal-head">
@@ -744,6 +1149,32 @@
 
       <!-- Overwrite prompt: raised when Add/Edit targets an already-declared id.
            Shows the entry about to be overwritten. -->
+      <!-- Purge prompt: emptying a category is not undoable in place, though a
+           fetch rebuilds it. Worth a confirmation, especially for a crawl that
+           took hours. -->
+      <div id="pgModal" class="modal hidden">
+        <div class="modal-card" style="width:min(480px,100%)">
+          <div class="modal-head">
+            <h3>Clear this category&#39;s data?</h3>
+            <button id="pgClose" class="tiny ghost" title="Close">&#10005;</button>
+          </div>
+          <p class="modal-sub">
+            Deletes the crawled services and any unfinished crawl for this
+            category, freeing the space they use. The category row itself &mdash;
+            its name, colour and position &mdash; stays exactly as it is, and
+            pressing fetch rebuilds the data.
+          </p>
+          <div id="pgInfo" class="confirm-info"></div>
+          <div class="modal-foot">
+            <span class="foot-note"></span>
+            <div class="modal-actions">
+              <button id="pgCancel" class="ghost">Cancel</button>
+              <button id="pgConfirm" class="primary">Clear data</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
       <div id="owModal" class="modal hidden">
         <div class="modal-card" style="width:min(480px,100%)">
           <div class="modal-head">
@@ -816,7 +1247,29 @@
         resync: '/api/vgen-service-data/services/resync',
         data: '/api/vgen-service-data/data',
         categories: '/api/vgen-service-data/categories',
+        exchangeRate: '/api/vgen-service-data/exchange-rate',
+        collect: '/api/vgen-service-data/categories/collect',
+        discover: '/api/vgen-service-data/categories/discover',
+        purge: '/api/vgen-service-data/categories/purge',
+        census: '/api/vgen-service-data/census',
+        fetchLock: '/api/vgen-service-data/fetch-lock',
+        shopCategories: '/api/vgen-shop-data/categories',
+        shopDiscover: '/api/vgen-shop-data/categories/discover',
+        shopCollect: '/api/vgen-shop-data/categories/collect',
+        shopPurge: '/api/vgen-shop-data/categories/purge',
+        shopCensus: '/api/vgen-shop-data/census',
+        shopData: '/api/vgen-shop-data/data',
+        reviews: '/api/vgen-service-data/reviews/collect',
       };
+
+      // categoryIDs currently being fetched, so their row button shows a spinner
+      // and stays disabled until the request settles.
+      const catLoading = new Set();
+
+      // Categories asked to stop. A run is cancelled between slices, never
+      // mid-request, so whatever the server already stored stays stored and the
+      // job keeps a valid cursor to resume from.
+      const catCancel = new Set();
 
       // ---- state ----
       // Declared services now store VGen's opaque categoryID (searchCategoryID),
@@ -834,7 +1287,16 @@
       let svcByID = {}; // { serviceID: analyzed metrics } for joins in modals
       let svcMissing = []; // serviceIDs with no cached reviews yet (from last load)
       let svcSort = { key: 'total', dir: -1 };
+      // Which marketplace section is on screen. Persisted, so a reload keeps
+      // you where you were rather than always dropping you on Commission.
+      let activeTab = 'commission'; // 'commission' | 'shop'
       let svcFilter = 'all'; // 'all' | 'TYPE::<name>' (which group to show)
+      let svcFilterOpts = []; // [{ value, name, count }] behind the filter menu
+      // The table pages rather than running to the bottom: a censused category
+      // returns up to a thousand rows, and rendering them all builds a very tall
+      // DOM for a view that only ever shows a screenful.
+      const SVC_PAGE_SIZE = 10;
+      let svcPage = 1;
       let dotTimer = null; // loading-overlay dot animation
 
       // Inline row-action icons (edit / delete). Kept as SVG so they read as
@@ -843,6 +1305,17 @@
         '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>';
       const ICON_DEL =
         '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg>';
+      // Per-category "fetch now" icon. The SAME glyph doubles as the busy
+      // spinner: the row adds .is-loading, which spins it via CSS.
+      // Shown in place of the spinner when you hover a running fetch, so the
+      // button reads as "stop" rather than "reload again".
+      // Empty a category's crawled data, distinct from removing the row itself.
+      const ICON_TRASH =
+        '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>';
+      const ICON_CANCEL =
+        '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>';
+      const ICON_RELOAD =
+        '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg>';
 
       // Persisted UI config so a refresh keeps the current view.
       const UI_KEY = 'vgsd:ui';
@@ -862,7 +1335,6 @@
         const el = $('status');
         el.textContent = msg;
         el.className = 'status show ' + (kind || 'info');
-        if (kind === 'ok') setTimeout(() => el.classList.remove('show'), 3500);
       }
 
       // ---- declaration lookup + legacy self-heal ----
@@ -909,6 +1381,8 @@
             categoryID: (r.categoryID || '').trim(),
             categoryName: (r.categoryName || '').trim(),
             color: (r.color || '').trim(),
+            defaultName: (r.defaultName || '').trim(),
+            auto: !!r.auto,
           }))
         );
       }
@@ -925,6 +1399,9 @@
           if (!raw) return;
           const c = JSON.parse(raw);
           if (!c || typeof c !== 'object') return;
+          if (c.activeTab === 'shop' || c.activeTab === 'commission') {
+            activeTab = c.activeTab;
+          }
           if (typeof c.svcFilter === 'string') svcFilter = c.svcFilter;
           if (typeof c.flowWindow === 'string') flowWindow = c.flowWindow;
           if (typeof c.justify === 'boolean') justify = c.justify;
@@ -937,9 +1414,32 @@
         try {
           localStorage.setItem(
             UI_KEY,
-            JSON.stringify({ svcFilter, flowWindow, justify, svcSort })
+            JSON.stringify({ activeTab, svcFilter, flowWindow, justify, svcSort })
           );
         } catch {}
+      }
+
+      // ---- tabs ----------------------------------------------------------
+      // Purely a view switch: both tabs stay in the DOM, so nothing is torn down
+      // or refetched when you move between them, and a crawl running under
+      // Commission keeps running while you look at Shop.
+      function renderTabs() {
+        const shop = activeTab === 'shop';
+        $('tabCommission').hidden = shop;
+        $('tabShop').hidden = !shop;
+        $('tabBtnCommission').classList.toggle('active', !shop);
+        $('tabBtnShop').classList.toggle('active', shop);
+        $('tabBtnCommission').setAttribute('aria-selected', String(!shop));
+        $('tabBtnShop').setAttribute('aria-selected', String(shop));
+        renderLastUpdated();
+      }
+
+      function setTab(tab) {
+        if (tab !== 'commission' && tab !== 'shop') return;
+        if (activeTab === tab) return;
+        activeTab = tab;
+        saveUiConfig();
+        renderTabs();
       }
 
       // ---- loading overlay (site-branded, mirrors the trending tool) ----
@@ -955,6 +1455,21 @@
           if (dots) dots.textContent = seq[i++ % 3];
         }, 400);
       }
+      // Several things can be loading at once — init, a filter change, the
+      // reload that follows a fetch — and each brackets its work with
+      // begin/endLoading. Counting rather than toggling means the last one to
+      // finish clears the overlay, instead of the first one hiding it while the
+      // table is still waiting on a request.
+      let loadingDepth = 0;
+      function beginLoading() {
+        loadingDepth++;
+        if (loadingDepth === 1) showOverlay();
+      }
+      function endLoading() {
+        loadingDepth = Math.max(0, loadingDepth - 1);
+        if (loadingDepth === 0) hideOverlay();
+      }
+
       function hideOverlay() {
         const o = $('loadingOverlay');
         if (o) o.classList.add('hidden');
@@ -1031,6 +1546,70 @@
         if (!total || total <= 0) return '0.0';
         return trunc1((count / total) * 100);
       }
+      // VGen stores basePrice in the currency's MINOR unit (cents): 700 -> $7,
+      // 38000 -> $380. Zero-decimal currencies (JPY and friends) have no minor
+      // unit, so their value is already the whole amount and must NOT be divided.
+      const ZERO_DECIMAL = new Set(['JPY', 'KRW', 'VND', 'CLP', 'ISK']);
+      // Every price renders in USD so the column is comparable at a glance.
+      // This table is only a FALLBACK for the very first paint (and for when the
+      // rate endpoint is unreachable): loadExchangeRates() replaces it with live
+      // rates from VGen at init. It is approximate on purpose - do not tune it.
+      // The raw basePrice + currency stay untouched in storage, so re-rating is
+      // only ever a re-render, never a re-crawl.
+      let USD_RATE = {
+        USD: 1,
+        EUR: 1.08,
+        GBP: 1.27,
+        JPY: 0.0067,
+        CAD: 0.73,
+        AUD: 0.66,
+        KRW: 0.00075,
+        VND: 0.00004,
+      };
+      // -> "$214.40". An unknown currency is NOT silently converted: it falls
+      // back to "<amount> <CODE>" so a missing rate can never look like USD.
+      function price(minor, currency) {
+        if (typeof minor !== 'number' || !isFinite(minor)) return '—';
+        const code = (currency || 'USD').toUpperCase();
+        const amount = ZERO_DECIMAL.has(code) ? minor : minor / 100;
+        const rate = USD_RATE[code];
+        // Whole units only: the cents are noise next to the spread between
+        // listings, and a column of ragged decimals is harder to scan.
+        if (rate == null) return Math.round(amount) + ' ' + code;
+        return '$' + Math.round(amount * rate);
+      }
+      // Pull live "<CODE> -> USD" rates from VGen (proxied + cached server-side,
+      // ~3 KB). Best-effort: on any failure the fallback table above stays in
+      // place, so prices still render, just less precisely.
+      async function loadExchangeRates() {
+        try {
+          const res = await fetch(API.exchangeRate, { cache: 'no-store' });
+          const json = await res.json();
+          if (!res.ok) throw new Error(json.error || 'HTTP ' + res.status);
+          if (json.rates && Object.keys(json.rates).length) {
+            USD_RATE = json.rates;
+            fxLoadedAt = json.fetchedAt || null;
+            fxStale = !!json.stale;
+          }
+        } catch (e) {
+          // Keep the fallback table; note it so the UI can say so.
+          fxError = e.message;
+        }
+      }
+      let fxLoadedAt = null;
+      let fxStale = false;
+      let fxError = null;
+
+      // Same conversion as price(), but as a NUMBER, so sorting the column
+      // compares real value instead of raw minor units (JPY 700 and USD 700 are
+      // not the same money). Annotated onto each row as `_priceUSD`.
+      function priceUSD(minor, currency) {
+        if (typeof minor !== 'number' || !isFinite(minor)) return null;
+        const code = (currency || 'USD').toUpperCase();
+        const amount = ZERO_DECIMAL.has(code) ? minor : minor / 100;
+        const rate = USD_RATE[code];
+        return rate == null ? null : amount * rate;
+      }
       // `monthTotals` maps each month -> orders across ALL services that month;
       // `monthMax` -> the busiest single service that month. The bar HEIGHT uses
       // whichever is the active denominator: totals (default) reads each bar as a
@@ -1091,18 +1670,60 @@
         });
       }
 
-      // Resolve a service's DISPLAY type from its DECLARED categoryID via the
-      // category map, live -> a rename reflects instantly with no data reload.
-      // Unmapped id shows the raw id; no id -> '' (Unclassified). Annotated onto
-      // each svcData row as `_type` so sort + group filtering use the readable name.
-      function typeNameForService(s) {
+      // Which category a service belongs to, in order of authority:
+      //   1. a declared entry, because that categoryID is the one you chose here;
+      //   2. the row's own categoryID - census rows carry the category they were
+      //      crawled under, and they are the overwhelming majority;
+      //   3. serviceType, kept for the oldest rows that predate both.
+      //
+      // Step 2 is not optional: census rows are not in declLookup, so without it
+      // every crawled service resolved to '' and the whole table grouped as
+      // Unclassified - which made the group filter look broken.
+      function categoryIdForService(s) {
         const row = declLookup[s.serviceID];
-        const cid = row ? (row.categoryID || '').trim() : (s.serviceType || '').trim();
+        const declared = row ? (row.categoryID || '').trim() : '';
+        if (declared) return declared;
+        return (s.categoryID || '').trim() || (s.serviceType || '').trim();
+      }
+
+      // Resolve a service's DISPLAY type from its categoryID via the category map,
+      // live -> a rename reflects instantly with no data reload. Unmapped id shows
+      // the raw id; no id -> '' (Unclassified). Annotated onto each svcData row as
+      // `_type` so sort + group filtering use the readable name.
+      function typeNameForService(s) {
+        const cid = categoryIdForService(s);
         if (!cid) return '';
         return resolveCategoryName(cid) || cid;
       }
       function annotateTypes() {
-        for (const s of svcData) s._type = typeNameForService(s);
+        for (const s of svcData) {
+          s._type = typeNameForService(s);
+          s._priceUSD = priceUSD(s.basePrice, s.currency);
+          s._revMonth = revMonth(s);
+        }
+      }
+
+      // What this listing took in over the last 30 days: its price times the
+      // orders it completed in that window.
+      //
+      // It is an ESTIMATE and reads high or low for real reasons. Price is the
+      // BASE price, so add-ons and tiers above it are missed; and `last30`
+      // counts reviews, not orders, so listings whose clients do not review are
+      // undercounted. Treat it as a ranking signal, not as revenue.
+      //
+      // null (not zero) when either half is unknown: a listing whose reviews
+      // have never been pulled has not earned nothing, it has not been measured.
+      function revMonth(s) {
+        const price = s._priceUSD ?? priceUSD(s.basePrice, s.currency);
+        if (price == null || typeof s.last30 !== 'number') return null;
+        return price * s.last30;
+      }
+
+      function revCell(s) {
+        const v = s._revMonth;
+        if (v == null) return '<span class="muted">—</span>';
+        if (v === 0) return '<span class="rev-zero">$0</span>';
+        return '$' + Math.round(v).toLocaleString('en-US');
       }
 
       // Turn a service title into a URL-safe slug for the vgen.co service link.
@@ -1115,6 +1736,73 @@
           .replace(/[^a-z0-9]+/g, '-')
           .replace(/^-+|-+$/g, '')
           .slice(0, 80);
+      }
+
+      // A service's display title: the census stores it on the row, while
+      // legacy declared rows keep theirs in declRows.
+      function svcTitle(s) {
+        const fromCensus = (s.serviceName || '').trim();
+        if (fromCensus) return fromCensus;
+        const decl = declLookup[s.serviceID];
+        return (decl && (decl.serviceName || '').trim()) || '';
+      }
+
+      // Numbered pager with prev/next. A thousand rows is a hundred pages, far
+      // too many to list, so it shows a window around the current page with the
+      // first and last always reachable.
+      function renderPager(total, pageCount, start, shown) {
+        const el = $('svcPager');
+        if (!el) return;
+        if (!total) {
+          el.innerHTML = '';
+          return;
+        }
+
+        const nums = [];
+        const WINDOW = 2; // pages either side of the current one
+        for (let p = 1; p <= pageCount; p++) {
+          const near = Math.abs(p - svcPage) <= WINDOW;
+          if (p === 1 || p === pageCount || near) nums.push(p);
+        }
+
+        let html =
+          '<button data-page="prev"' + (svcPage === 1 ? ' disabled' : '') +
+          ' title="Previous page">&lsaquo;</button>';
+        let prev = 0;
+        for (const p of nums) {
+          // An ellipsis standing in for a single page is worse than the page
+          // itself, so a one-page hole is filled rather than elided.
+          if (prev && p - prev === 2) {
+            html += '<button data-page="' + (p - 1) + '">' + (p - 1) + '</button>';
+          } else if (prev && p - prev > 2) {
+            html += '<span class="gap">…</span>';
+          }
+          html +=
+            '<button data-page="' + p + '"' +
+            (p === svcPage ? ' class="current"' : '') + '>' + p + '</button>';
+          prev = p;
+        }
+        html +=
+          '<button data-page="next"' + (svcPage === pageCount ? ' disabled' : '') +
+          ' title="Next page">&rsaquo;</button>';
+        html +=
+          '<span class="range">' + (start + 1) + '&ndash;' + (start + shown) +
+          ' of ' + total + '</span>';
+        el.innerHTML = html;
+
+        el.querySelectorAll('[data-page]').forEach((b) =>
+          b.addEventListener('click', () => {
+            const v = b.getAttribute('data-page');
+            if (v === 'prev') svcPage--;
+            else if (v === 'next') svcPage++;
+            else svcPage = +v;
+            renderServices();
+            // Jump back to the top of the table, otherwise page 7 opens
+            // mid-scroll wherever page 6 was left.
+            const table = $('svcTable');
+            if (table) table.scrollIntoView({ block: 'nearest' });
+          })
+        );
       }
 
       function renderServices() {
@@ -1134,11 +1822,20 @@
         empty.style.display = rows.length ? 'none' : 'block';
         empty.textContent = svcData.length
           ? 'No service matches the current filter.'
-          : 'No services declared yet. Click “+ Add” up top to declare one.';
-        // Shared month axis + vertical scale across the VISIBLE rows so every row's
-        // flow chart is directly comparable within the shown group (see buildFlowAxis).
+          : 'No services yet. Add a category below, then press its fetch button.';
+        // The axis and scale are built from EVERY filtered row, not just the
+        // page on screen: scoping them to the page would rescale the bars each
+        // time you move between pages, so nothing could be compared across them.
         const { axis, monthTotals, monthMax } = buildFlowAxis(rows);
-        body.innerHTML = rows
+
+        const pageCount = Math.max(1, Math.ceil(rows.length / SVC_PAGE_SIZE));
+        if (svcPage > pageCount) svcPage = pageCount;
+        if (svcPage < 1) svcPage = 1;
+        const start = (svcPage - 1) * SVC_PAGE_SIZE;
+        const pageRows = rows.slice(start, start + SVC_PAGE_SIZE);
+        renderPager(rows.length, pageCount, start, pageRows.length);
+
+        body.innerHTML = pageRows
           .map((s) => {
             const who = s.artistName
               ? esc(s.artistName)
@@ -1150,7 +1847,7 @@
             // works when we have no title — no need to store the service name.
             const handle = (s.artistHandle || '').trim();
             const declRow = declLookup[s.serviceID];
-            const slug = slugifyName(declRow && declRow.serviceName) || 's';
+            const slug = slugifyName(svcTitle(s)) || 's';
             const whoHtml = handle
               ? `<a class="artist-link" href="https://vgen.co/${encodeURIComponent(
                   handle
@@ -1161,35 +1858,27 @@
             const color = serviceTypeColor(s);
             const typeStyle = color ? ` style="color:${esc(color)}"` : '';
             return `<tr>
-              <td class="type-cell"><span class="type-name"${typeStyle}>${esc(
-              s._type || '—'
+              <td class="type-cell"><span class="type-name" title="${esc(
+              svcTitle(s)
+            )}"${typeStyle}>${esc(
+              svcTitle(s) || '—'
             )}</span><div class="sub-name" title="${esc(
               s.serviceID
-            )}">${whoHtml}</div></td>
+            )}">${whoHtml}${
+              s._type
+                ? ' <span class="type-tag">&middot; ' + esc(s._type) + '</span>'
+                : ''
+            }</div></td>
               <td class="col-spacer"></td>
+              <td class="num">${price(s.basePrice, s.currency)}</td>
               <td class="num">${num(s.total)}</td>
-              <td class="num">${num(s.uniqueClients)}</td>
               <td class="num">${num(s.repeatClients)}</td>
-              <td class="num">${repeatPill(s.repeatRate)}</td>
-              <td class="num">${num(s.last90)}</td>
               <td class="num">${num(s.last30)}</td>
-              <td class="num">${s.avgRating == null ? '—' : trunc1(s.avgRating)}</td>
+              <td class="num">${revCell(s)}</td>
               <td>${sparkline(serviceFlow(s, axis), monthTotals, monthMax)}</td>
-              <td>
-                <span class="row-act">
-                  <button class="sq" data-edit="${esc(s.serviceID)}" title="Edit">${ICON_EDIT}</button>
-                  <button class="sq danger" data-del="${esc(s.serviceID)}" title="Remove">${ICON_DEL}</button>
-                </span>
-              </td>
             </tr>`;
           })
           .join('');
-        body.querySelectorAll('[data-edit]').forEach((b) =>
-          b.addEventListener('click', () => openEditModal(b.getAttribute('data-edit')))
-        );
-        body.querySelectorAll('[data-del]').forEach((b) =>
-          b.addEventListener('click', () => askDelete(b.getAttribute('data-del')))
-        );
         updateSortIndicators('svcTable', svcSort);
       }
 
@@ -1204,8 +1893,8 @@
       //   3. then the Unclassified catch-all (services with no categoryID) last.
       // Selection is preserved, falling back to "all" if its group is gone.
       function populateServiceFilter() {
-        const sel = $('svcFilter');
-        if (!sel) return;
+        const menu = $('svcFilterMenu');
+        if (!menu) return;
         annotateTypes();
         const typeCounts = new Map();
         let unclassified = 0;
@@ -1215,36 +1904,41 @@
           else unclassified++;
         }
         // Named categories in category-map row order (dedupe, keep first order).
+        //
+        // The fallback to defaultName matters: Discover leaves categoryName empty
+        // and shows VGen's name as a placeholder, so reading categoryName alone
+        // left most categories out of this list entirely — they then appeared
+        // only if the loaded rows happened to include them, and vanished from the
+        // dropdown as soon as they did not.
         const mappedNames = [];
         const mappedSet = new Set();
         for (const r of catRows) {
-          const name = (r.categoryName || '').trim();
+          const name =
+            (r.categoryName || '').trim() || (r.defaultName || '').trim();
           if (name && !mappedSet.has(name)) {
             mappedSet.add(name);
             mappedNames.push(name);
           }
         }
-        const opts = ['<option value="all">All services</option>'];
+        const opts = [{ value: 'all', name: 'All services', count: svcData.length }];
         for (const name of mappedNames) {
-          opts.push(
-            `<option value="TYPE::${esc(name)}">${esc(name)} (${
-              typeCounts.get(name) || 0
-            })</option>`
-          );
+          opts.push({
+            value: 'TYPE::' + name,
+            name,
+            count: typeCounts.get(name) || 0,
+          });
         }
         // Unmapped groups (types not present as a named category) -> alphabetical.
         const leftovers = [...typeCounts.keys()]
           .filter((t) => !mappedSet.has(t))
           .sort((a, b) => a.localeCompare(b));
         for (const t of leftovers) {
-          opts.push(
-            `<option value="TYPE::${esc(t)}">${esc(t)} (${typeCounts.get(t)})</option>`
-          );
+          opts.push({ value: 'TYPE::' + t, name: t, count: typeCounts.get(t) });
         }
         if (unclassified) {
-          opts.push(`<option value="TYPE::">Unclassified (${unclassified})</option>`);
+          opts.push({ value: 'TYPE::', name: 'Unclassified', count: unclassified });
         }
-        sel.innerHTML = opts.join('');
+
         const key = svcFilter.startsWith('TYPE::') ? svcFilter.slice(6) : '';
         const valid =
           svcFilter === 'all' ||
@@ -1253,7 +1947,45 @@
               ? unclassified > 0
               : mappedSet.has(key) || typeCounts.has(key)));
         if (!valid) svcFilter = 'all';
-        sel.value = svcFilter;
+
+        svcFilterOpts = opts;
+        menu.innerHTML = opts
+          .map(
+            (o) =>
+              `<button type="button" class="filter-opt" role="option" data-v="${esc(
+                o.value
+              )}" aria-selected="${o.value === svcFilter}"><span class="fo-name" title="${esc(
+                o.name
+              )}">${esc(o.name)}</span><span class="fo-count">${num(
+                o.count
+              )}</span></button>`
+          )
+          .join('');
+        syncFilterButton();
+      }
+
+      // Mirror the current selection onto the closed control. The name is
+      // ellipsized and the count is not, so a long category name never pushes
+      // its own number out of sight.
+      function syncFilterButton() {
+        const cur =
+          svcFilterOpts.find((o) => o.value === svcFilter) || svcFilterOpts[0];
+        if (!cur) return;
+        const label = $('svcFilterLabel');
+        label.textContent = cur.name;
+        label.title = cur.name;
+        $('svcFilterCount').textContent = num(cur.count);
+      }
+
+      function openFilterMenu() {
+        $('svcFilterMenu').hidden = false;
+        $('svcFilterBtn').setAttribute('aria-expanded', 'true');
+      }
+      function closeFilterMenu() {
+        const menu = $('svcFilterMenu');
+        if (!menu || menu.hidden) return;
+        menu.hidden = true;
+        $('svcFilterBtn').setAttribute('aria-expanded', 'false');
       }
 
       function updateSortIndicators(tableId, sort) {
@@ -1278,6 +2010,7 @@
               if (s.key === key) s.dir *= -1;
               else { s.key = key; s.dir = -1; }
               setSort(s);
+              svcPage = 1; // re-sorted: page numbers no longer refer to the same rows
               render();
             });
           });
@@ -1293,7 +2026,9 @@
         const c = {};
         for (const r of catRows) {
           const id = (r.categoryID || '').trim();
-          const name = (r.categoryName || '').trim();
+          // An empty rename means "use VGen's name", not "no name": clearing
+          // the field falls back instead of blanking the row everywhere.
+          const name = (r.categoryName || '').trim() || (r.defaultName || '').trim();
           const color = (r.color || '').trim();
           if (id) {
             m[id] = name;
@@ -1313,10 +2048,25 @@
         const key = (id || '').trim();
         return key && categoryColorLookup[key] ? categoryColorLookup[key] : '';
       }
+      // Human label for a category, for status lines and dialogs. Falls
+      // through categoryName -> VGen's own name -> the raw id.
+      //
+      // The middle step is the point. Discover leaves categoryName empty and
+      // shows VGen's name as a placeholder, so a label that read only
+      // categoryName fell straight past it to the id - which is why a finished
+      // crawl announced itself as "Fetched rechY6VVD1EyfZbHe" rather than by
+      // name. One definition, because three copies of this had already drifted.
+      function categoryLabel(categoryID) {
+        const key = (categoryID || '').trim();
+        const row = catRows.find((r) => (r.categoryID || '').trim() === key);
+        if (!row) return key;
+        return (
+          (row.categoryName || '').trim() || (row.defaultName || '').trim() || key
+        );
+      }
+
       function serviceTypeColor(s) {
-        const row = declLookup[s.serviceID];
-        const cid = row ? (row.categoryID || '').trim() : (s.serviceType || '').trim();
-        return resolveCategoryColor(cid);
+        return resolveCategoryColor(categoryIdForService(s));
       }
       // Read-only summary of one declared entry, shown in the confirm / overwrite
       // modals so an action always states exactly which listing it affects. Joins
@@ -1534,43 +2284,615 @@
         }
       }
 
-      // ---- sync types (backfill categoryID + title from each serviceID) ----
-      // Restores the category for any declared service whose stored categoryID is
-      // empty (or all of them via force), by resolving each id server-side against
-      // VGen's service-detail endpoint. Used to heal older rows that lost their
-      // category, and any row that was added before auto-resolve existed.
-      async function syncTypes(force) {
-        const btn = $('syncBtn');
+
+      // Fetch ONE category's services straight from VGen, using the category
+      // crawl that replaces the old keyword harvest. It runs per category on
+      // purpose: a whole-marketplace pull is far too large for a single request,
+      // so one category is the unit we can actually watch and re-run.
+      // Crawl ONE category into the store. The server does a page-budgeted SLICE
+      // per call and hands back the resume point, so the loop lives HERE, in the
+      // browser. That is exactly why resumeRunningJobs() below exists: a reload
+      // stops this loop mid-crawl while the server still holds the cursor, and
+      // without a resume the next press would throw that progress away.
+      // POST that survives a non-JSON reply. A dead function returns an HTML
+      // error page; parsing it blind produces a confusing syntax error instead
+      // of the status that actually explains the failure.
+      async function postJson(url, body) {
+        const res = await fetch(url, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify(body),
+        });
+        const text = await res.text();
+        let json = null;
+        try {
+          json = JSON.parse(text);
+        } catch {
+          // not JSON: keep the raw text for the message below
+        }
+        if (!res.ok) {
+          // An HTML body means the function itself died rather than
+          // answering: quoting the markup back helps nobody, so name the
+          // condition instead.
+          const looksHtml = /^s*<(!doctype|html)/i.test(text || '');
+          const detail =
+            (json && json.error) ||
+            (looksHtml
+              ? 'the server returned an error page (the function crashed or timed out)'
+              : (text || '').slice(0, 120).replace(/s+/g, ' ').trim());
+          throw new Error('HTTP ' + res.status + (detail ? ' - ' + detail : ''));
+        }
+        if (!json) {
+          throw new Error('HTTP ' + res.status + ' returned a non-JSON body');
+        }
+        return json;
+      }
+      // Ask a running fetch to stop. The loops below check this between
+      // slices; the in-flight request is left to finish so nothing is half-written.
+      function cancelCollect(categoryID) {
+        if (!catLoading.has(categoryID)) return;
+        catCancel.add(categoryID);
+        status('Stopping after the current batch…', 'info');
+      }
+
+      async function runCollect(categoryID, label, force) {
+        if (!categoryID || catLoading.has(categoryID)) return;
+        // Refuse a second crawl outright, not only by greying the button: a
+        // keyboard press or a double click can land before the repaint does.
+        if (localFetchRunning()) {
+          status('One fetch at a time — wait for the running one to finish.', 'err');
+          return;
+        }
+        catLoading.add(categoryID);
+        // Repaint BOTH maps: this crawl disables the Shop rows too.
+        renderCatEditor();
+        renderShopCatEditor();
+        try {
+          // One fetch at a time, across every tab and the server's own
+          // rotation. This is also what pauses the rotation: it stands down
+          // once it sees the claim, at the end of whatever slice it is in.
+          if (!(await claimLease(categoryID, label))) {
+            status(
+              'Could not get the fetch lock — ' + leaseHolderLabel() +
+                ' is still holding it. Try again in a moment.',
+              'err'
+            );
+            return;
+          }
+          let guard = 0;
+          let result = null;
+          status('Fetching ' + label + '…', 'info');
+          do {
+            // Only an explicit force restarts from page 1; otherwise the
+            // server resumes whatever job it still holds for this category.
+            result = await postJson(API.collect, {
+              categoryID,
+              reset: force && guard === 0 ? 1 : 0,
+              // Renews the lease on every slice, so it never expires under a
+              // crawl that is still going.
+              holder: FETCH_HOLDER,
+              lockKind: 'manual',
+            });
+            status(
+              'Fetching ' + label + '… ' + result.stored + ' service(s), ' +
+                result.pages + ' page(s)' +
+                (result.resumed && guard === 0 ? ' (resumed)' : ''),
+              'info'
+            );
+            guard++;
+          } while (!result.done && guard < 400 && !catCancel.has(categoryID));
+
+          if (catCancel.has(categoryID)) {
+            status(
+              'Stopped ' + label + ' at ' + result.stored + ' service(s), ' +
+                result.pages + ' page(s). Press fetch again to carry on.',
+              'ok'
+            );
+            await loadData(false);
+            return;
+          }
+
+          // A reshuffle means VGen recomputed its sort key mid-crawl, which
+          // SKIPS services as well as repeating them. Any reshuffle means the run
+          // is holed, so say so rather than presenting the data as complete.
+          const holed = Number(result.reshuffles) > 0;
+
+          // Phase 2: the census carries no reviews, so the volume / repeat /
+          // monthly columns stay empty until each qualifying service's feed is
+          // pulled. That is one request per service, so the server works in
+          // batches and we loop. Services whose artist review total has not
+          // moved are skipped server-side, which is what keeps a repeat run
+          // cheap: only genuinely changed listings are refetched and rewritten.
+          let rGuard = 0;
+          let rResult = null;
+          let pulledTotal = 0;
+          do {
+            // No minReviews: that box filters the TABLE, and letting it decide
+            // what gets fetched is what used to make lowering it surface
+            // nothing. The server pulls the busiest topN of the category.
+            rResult = await postJson(API.reviews, {
+              categoryID,
+              holder: FETCH_HOLDER,
+              lockKind: 'manual',
+            });
+            pulledTotal += rResult.pulled || 0;
+            status(
+              'Reviews for ' + label + '… ' + pulledTotal + ' pulled, ' +
+                rResult.remaining + ' to go' +
+                (rResult.skipped
+                  ? ' (' + rResult.skipped + ' unchanged, skipped)'
+                  : '') +
+                (rResult.matched > rResult.candidates
+                  ? ' — top ' + rResult.candidates + ' of ' + rResult.matched + ' matching'
+                  : ''),
+              'info'
+            );
+            rGuard++;
+          } while (!rResult.done && rGuard < 600 && !catCancel.has(categoryID));
+
+          if (catCancel.has(categoryID)) {
+            status(
+              'Stopped ' + label + ' after ' + pulledTotal + ' review pull(s). ' +
+                'Press fetch again to carry on.',
+              'ok'
+            );
+            await loadData(false);
+            return;
+          }
+
+          status(
+            'Fetched ' + label + ': ' + result.stored + ' service(s) in ' +
+              result.pages + ' page(s); ' + pulledTotal + ' review pull(s), ' +
+              (rResult.skipped || 0) + ' unchanged' +
+              (holed
+                ? ' — VGen reshuffled ' + result.reshuffles +
+                  ' time(s) mid-crawl, so some services were skipped. Run this category again.'
+                : '.'),
+            holed ? 'err' : 'ok'
+          );
+          await loadData(false);
+        } catch (e) {
+          status('Fetch failed for ' + label + ': ' + e.message, 'err');
+        } finally {
+          catLoading.delete(categoryID);
+          catCancel.delete(categoryID);
+          // Hand it back immediately rather than letting the TTL run out, so
+          // the rotation can pick up again as soon as we are done.
+          await releaseLease();
+          renderCatEditor();
+          renderShopCatEditor();
+          loadCensusStats(); // the crawl just changed what this category holds
+        }
+      }
+
+      // ---- the single fetch lease ----------------------------------------
+      //
+      // Whether a fetch is running is NOT something this tab can know from its
+      // own memory. The tab that started one may have been closed, another tab
+      // may be driving it, or it may be the automatic rotation on the server.
+      // So the lease lives in Redis and the buttons start DISABLED on every
+      // load, enabling only once the server says it is free. The safe default
+      // is "someone might be fetching", never "nobody is".
+      //
+      // The holder id is stored, not generated per load, so reloading the page
+      // mid-crawl reclaims this browser's own lease instead of locking it out
+      // of a fetch it started itself.
+      const HOLDER_KEY = 'vgsd.fetchHolder';
+      let FETCH_HOLDER = '';
+      try {
+        FETCH_HOLDER = localStorage.getItem(HOLDER_KEY) || '';
+      } catch {
+        // Private mode: fall through to a per-load id. Worse after a reload,
+        // still correct.
+      }
+      if (!FETCH_HOLDER) {
+        FETCH_HOLDER = 'ui:' + Math.random().toString(36).slice(2) + Date.now().toString(36);
+        try { localStorage.setItem(HOLDER_KEY, FETCH_HOLDER); } catch { /* ignore */ }
+      }
+
+      // checked=false means "we have not heard back yet", which keeps buttons
+      // disabled. It is deliberately distinct from locked=false.
+      let fetchLease = { checked: false, locked: false, mine: false, lock: null };
+      let leasePollTimer = null;
+
+      const leaseWait = (ms) => new Promise((r) => setTimeout(r, ms));
+
+      // Is a crawl running in THIS tab? The lease alone cannot answer that:
+      // while we hold it, `mine` is true and leaseBlocked() is false, so every
+      // other row stayed clickable and a second press started a second crawl
+      // alongside the first. The server could not stop it either - both presses
+      // carry the same holder, so the second read as a renewal of the first.
+      function localFetchRunning() {
+        return catLoading.size > 0 || shopCatLoading.size > 0;
+      }
+
+      // Blocked by SOMEONE ELSE, or by not yet knowing who holds the lease.
+      function leaseBlocked() {
+        return !fetchLease.checked || (fetchLease.locked && !fetchLease.mine);
+      }
+
+      // Blocked for any reason at all - which is what a fetch button wants to
+      // know. One crawl at a time means one, including our own.
+      function fetchBlocked() {
+        return leaseBlocked() || localFetchRunning();
+      }
+
+      // Who is holding it, in words, for a button title or a status line.
+      function leaseHolderLabel() {
+        if (!fetchLease.checked) return 'checking whether a fetch is running';
+        const l = fetchLease.lock;
+        if (!l) return '';
+        if (l.kind === 'rotation') return 'the automatic rotation';
+        if (l.holder === FETCH_HOLDER) return 'this browser';
+        return 'another fetch';
+      }
+
+      // The category some OTHER driver is fetching right now, or ''. The lease
+      // record carries it because every slice renews the lease with its own
+      // categoryID, which is what lets this tab point at the right row without
+      // polling anything extra.
+      function remoteBusyCategory() {
+        const l = fetchLease.lock;
+        if (!l || !l.categoryID) return '';
+        if (l.holder === FETCH_HOLDER) return '';
+        return l.categoryID;
+      }
+
+      let lastCensusPoll = 0;
+      // Is any category mid-crawl, whether or not work is happening right now?
+      function anyCrawlOpen() {
+        for (const k of Object.keys(censusStats)) {
+          if (censusStats[k] && censusStats[k].running) return true;
+        }
+        return false;
+      }
+
+      // The map's per-category counts are the only live progress on the page,
+      // so keep them moving - at two speeds. Fast while a slice is actually
+      // running, because that is when the number changes; slow while a crawl is
+      // merely open between rotation ticks, because a large category can sit
+      // there for days and this should not become a background request loop.
+      function pollCensusIfRemote() {
+        const active = !!remoteBusyCategory();
+        if (!active && !anyCrawlOpen()) return;
+        const now = Date.now();
+        if (now - lastCensusPoll < (active ? 15000 : 60000)) return;
+        lastCensusPoll = now;
+        loadCensusStats();
+      }
+
+      async function refreshLease() {
+        try {
+          const res = await fetch(API.fetchLock, { cache: 'no-store' });
+          const json = await res.json();
+          if (!res.ok || !json.ok) throw new Error(json.error || 'HTTP ' + res.status);
+          fetchLease = {
+            checked: true,
+            locked: !!json.locked,
+            mine: !!(json.lock && json.lock.holder === FETCH_HOLDER),
+            lock: json.lock || null,
+          };
+        } catch {
+          // Unreachable server: stay locked. Concluding "free" here is how you
+          // get two crawls of the same category running at once.
+          fetchLease = { checked: false, locked: true, mine: false, lock: null };
+        }
+        renderCatEditor();
+        renderShopCatEditor();
+        pollCensusIfRemote();
+        scheduleLeasePoll();
+        return fetchLease;
+      }
+
+      // Poll only while it matters: something else holds it and we are waiting
+      // for that to end.
+      function scheduleLeasePoll() {
+        if (leasePollTimer) { clearTimeout(leasePollTimer); leasePollTimer = null; }
+        // Blocked: poll briskly, the buttons are waiting on this. Otherwise poll
+        // slowly but DO keep polling while a crawl is open, because that is the
+        // only thing that notices the next rotation tick starting.
+        const blocked = leaseBlocked();
+        if (!blocked && !anyCrawlOpen()) return;
+        leasePollTimer = setTimeout(refreshLease, blocked ? 6000 : 20000);
+      }
+
+      // Ask the rotation to stand down, then wait for the lease to come free.
+      // The rotation releases at the end of each tick and declines to take it
+      // again while a claim stands, so this is a wait of at most one slice -
+      // not of a whole rotation run.
+      async function claimLease(categoryID, label) {
+        try {
+          await postJson(API.fetchLock, {
+            action: 'claim', holder: FETCH_HOLDER, categoryID, label,
+          });
+        } catch {
+          // A claim is an optimisation, not a requirement: without it we simply
+          // wait for the rotation's current tick instead of jumping the queue.
+        }
+        for (let i = 0; i < 25; i++) {
+          await refreshLease();
+          if (!fetchLease.locked || fetchLease.mine) return true;
+          status(
+            'Waiting for ' + leaseHolderLabel() + ' to release the fetch lock…',
+            'info'
+          );
+          await leaseWait(3000);
+        }
+        return false;
+      }
+
+      async function releaseLease() {
+        try {
+          await postJson(API.fetchLock, { action: 'release', holder: FETCH_HOLDER });
+        } catch {
+          // The lease carries a TTL, so a missed release frees itself.
+        }
+        await refreshLease();
+      }
+
+      // Row button. Shift-click forces a restart from page 1; a plain click
+      // resumes an unfinished crawl instead of discarding it.
+      function collectCategory(index, force) {
+        const row = catRows[index];
+        if (!row) return;
+        const categoryID = (row.categoryID || '').trim();
+        return runCollect(categoryID, categoryLabel(categoryID), !!force);
+      }
+
+      // On load, pick up any crawl a previous PAGE-VIEW left half-finished, so a
+      // mid-crawl reload costs a few seconds instead of the whole run. Failures
+      // are swallowed: this is a convenience, never a reason to block startup.
+      //
+      // The rotation also leaves a job between its ticks, and that one is not
+      // abandoned - it is work in progress that the server owns. Adopting it
+      // meant every refresh silently started crawling in the tab, which is
+      // why the driver is checked rather than merely the job's existence.
+      async function resumeRunningJobs() {
+        const ids = catRows
+          .map((r) => (r.categoryID || '').trim())
+          .filter(Boolean);
+        if (!ids.length) return;
+        try {
+          const res = await fetch(
+            API.collect + '?ids=' + encodeURIComponent(ids.join(',')),
+            { cache: 'no-store' }
+          );
+          const json = await res.json();
+          if (!res.ok || !json.jobs) return;
+          // ONE job, not all of them: there is a single fetch lease, so
+          // starting several would leave the rest spinning in claimLease
+          // waiting for the first. The others are picked up on a later load,
+          // or by the rotation.
+          const pending = Object.keys(json.jobs).filter(
+            (id) => json.jobs[id] && json.jobs[id].driver !== 'rotation'
+          );
+          if (pending.length) {
+            const first = pending[0];
+            // Deliberately NOT awaited: the crawl runs alongside the first paint.
+            runCollect(first, categoryLabel(first), false);
+            if (pending.length > 1) {
+              status(
+                'Resuming ' + categoryLabel(first) + '. ' + (pending.length - 1) +
+                  ' other unfinished crawl(s) will wait their turn.',
+                'info'
+              );
+            }
+          }
+        } catch {}
+      }
+
+      // ---- category discovery -------------------------------------------
+      // VGen publishes no category endpoint, but it ships its whole tree in the
+      // client bundle, so the server usually answers in ONE call. Its per-page
+      // fallback is sliced, hence the loop.
+      let discFound = [];
+
+      // Which map a discovery run is filling. The modal is shared; the table
+      // behind it is not, because Commission and Shop have separate taxonomies.
+      let discTarget = 'commission';
+
+      async function discoverCategories(target) {
+        discTarget = target === 'shop' ? 'shop' : 'commission';
+        const shop = discTarget === 'shop';
+        const rows = shop ? shopCatRows : catRows;
+        const btn = $(shop ? 'shopDiscoverBtn' : 'discoverBtn');
         btn.disabled = true;
         try {
-          status('Syncing types\u2026', 'info');
-          const res = await fetch(API.resync, {
-            method: 'POST',
-            headers: { 'content-type': 'application/json' },
-            body: JSON.stringify({ force: !!force }),
-          });
-          const json = await res.json();
-          if (!res.ok) throw new Error(json.error || 'HTTP ' + res.status);
-          declRows = (json.services || []).map((s) => ({ ...s }));
-          reverseMapLegacyDecl();
-          buildDeclLookup();
-          const failed = (json.errors && json.errors.length) || 0;
+          const all = [];
+          let offset = 0;
+          let guard = 0;
+          let res = null;
+          let names = null;
+          status('Reading VGen categories…', 'info');
+          do {
+            const body = offset ? { offset } : {};
+            if (names) body.names = names;
+            res = await postJson(shop ? API.shopDiscover : API.discover, body);
+            if (res.names) names = res.names;
+            all.push(...(res.results || []));
+            offset = res.nextOffset;
+            if (!res.done) status('Reading VGen categories… ' + all.length + '/' + res.total, 'info');
+            guard++;
+          } while (!res.done && guard < 60);
+
+          discFound = all.filter((r) => r.categoryID && !r.known);
+
+          // Fill in VGen's name for rows that predate this field, so their
+          // placeholder stops showing the generic hint. This only ever writes
+          // defaultName, never categoryName: a rename you made stays yours.
+          const vgenName = {};
+          for (const r of all) {
+            if (r.categoryID) vgenName[r.categoryID] = r.name || r.label || '';
+          }
+          let backfilled = 0;
+          for (const row of rows) {
+            const id = (row.categoryID || '').trim();
+            const known = id ? vgenName[id] : '';
+            if (known && (row.defaultName || '').trim() !== known) {
+              row.defaultName = known;
+              backfilled++;
+            }
+          }
+          if (backfilled) {
+            if (shop) {
+              renderShopCatEditor();
+            } else {
+              buildCategoryLookup();
+              renderCatEditor();
+            }
+          }
+          const via = res.source === 'bundle' ? '' : ' (via page fallback)';
+          const what = shop ? ' VGen shop categories' : ' VGen categories';
+
+          if (!discFound.length) {
+            status(
+              'Nothing new: all ' + all.length + what + ' are already mapped' + via +
+                (backfilled ? ' — filled in VGen names for ' + backfilled + ' row(s), press Save to keep them.' : '.'),
+              'ok'
+            );
+            return;
+          }
+          $('discSummary').textContent =
+            discFound.length + ' new of ' + all.length + what + via;
+          $('discHint').textContent =
+            'Adding appends only. Your names, colours and ordering stay as they are.';
+          renderDiscover();
+          $('discModal').classList.remove('hidden');
           status(
-            'Synced ' + json.resolved + '/' + json.total + ' type(s)' +
-              (failed ? ' (' + failed + ' failed, retry later).' : '.'),
-            failed ? 'err' : 'ok'
+            'Found ' + discFound.length + ' new categor' + (discFound.length === 1 ? 'y' : 'ies') +
+              (backfilled ? '; filled in VGen names for ' + backfilled + ' existing row(s)' : '') + '.',
+            'ok'
           );
-          // Backfilling a category often means the service is freshly declared and
-          // has no cached reviews yet. Fetch live for exactly those uncached
-          // services (svcMissing from the last load) so their data + artist name
-          // appear too; otherwise just re-read the cache with the fresh types.
-          const toFetch = svcMissing.slice();
-          if (toFetch.length) await loadData(true, toFetch);
-          else await loadData(false);
         } catch (e) {
-          status('Sync failed: ' + e.message, 'err');
+          status('Discover failed: ' + e.message, 'err');
         } finally {
           btn.disabled = false;
+        }
+      }
+
+      function renderDiscover() {
+        $('discBody').innerHTML = discFound
+          .map((r, i) => {
+            const where = [r.catalogue, r.section].filter(Boolean).join(' / ');
+            return '<tr><td><input type="checkbox" data-disc="' + i + '" checked /></td>' +
+              '<td>' + esc(r.name || r.label || r.slug) + '</td>' +
+              '<td class="id-cell">' + esc(r.categoryID) + '</td>' +
+              '<td class="muted">' + esc(where || r.slug || '') + '</td></tr>';
+          })
+          .join('');
+        $('discAll').checked = true;
+        $('discBody').querySelectorAll('[data-disc]').forEach((c) =>
+          c.addEventListener('change', updateDiscCount)
+        );
+        updateDiscCount();
+      }
+
+      function discChecked() {
+        return [...$('discBody').querySelectorAll('[data-disc]:checked')].map(
+          (c) => discFound[+c.getAttribute('data-disc')]
+        );
+      }
+
+      function updateDiscCount() {
+        const n = discChecked().length;
+        $('discConfirm').textContent = 'Add ' + n + ' categor' + (n === 1 ? 'y' : 'ies');
+        $('discConfirm').disabled = n === 0;
+      }
+
+      // APPEND only. Existing rows keep their name, colour and position, which is
+      // the whole point: discovery must never undo hand-curation.
+      function applyDiscover() {
+        const shop = discTarget === 'shop';
+        const rows = shop ? shopCatRows : catRows;
+        const picked = discChecked();
+        const have = new Set(rows.map((r) => (r.categoryID || '').trim()));
+        let added = 0;
+        for (const r of picked) {
+          if (have.has(r.categoryID)) continue;
+          have.add(r.categoryID);
+          rows.push({
+            categoryID: r.categoryID,
+            // Left blank on purpose: the row shows VGen's name through the
+            // placeholder until you actually rename it, so an untouched row and
+            // a deliberately renamed one stay tellable apart.
+            categoryName: '',
+            defaultName: r.name || r.label || '',
+            color: '',
+            // Discovered rows join the rotation by default. A category you just
+            // went looking for is one you want crawled; ticking dozens of boxes
+            // by hand afterwards was the whole friction.
+            auto: true,
+          });
+          added++;
+        }
+        $('discModal').classList.add('hidden');
+        if (shop) {
+          renderShopCatEditor();
+        } else {
+          buildCategoryLookup();
+          renderCatEditor();
+          populateServiceFilter();
+        }
+        status('Added ' + added + ' categor' + (added === 1 ? 'y' : 'ies') + ' — press Save to keep them.', 'ok');
+      }
+
+      // ---- clear one category's crawled data -----------------------------
+      let pgTarget = null;
+
+      // Show what is about to go before it goes: a big crawl represents hours,
+      // and the count is the only cue for how much.
+      async function askPurge(index) {
+        const row = catRows[index];
+        if (!row) return;
+        const categoryID = (row.categoryID || '').trim();
+        if (!categoryID) return;
+        if (catLoading.has(categoryID)) {
+          status('That category is still fetching — cancel it first.', 'err');
+          return;
+        }
+        pgTarget = { categoryID, label: categoryLabel(categoryID) };
+
+        let detail = pgTarget.label;
+        try {
+          const res = await fetch(
+            API.census + '?categoryID=' + encodeURIComponent(categoryID),
+            { cache: 'no-store' }
+          );
+          const json = await res.json();
+          const c = json && json.categories && json.categories[0];
+          if (c) {
+            detail = pgTarget.label + ' — ' +
+              (c.crawled ? c.count + ' service(s) stored' : 'nothing crawled yet') +
+              (c.running ? ', plus an unfinished crawl at ' + c.jobStored + ' service(s)' : '');
+          }
+        } catch {
+          // Counting is a nicety; never block the action on it.
+        }
+        $('pgInfo').textContent = detail;
+        $('pgModal').classList.remove('hidden');
+      }
+
+      async function confirmPurge() {
+        if (!pgTarget) return;
+        const { categoryID, label } = pgTarget;
+        $('pgModal').classList.add('hidden');
+        try {
+          status('Clearing ' + label + '…', 'info');
+          const json = await postJson(API.purge, { categoryID });
+          const mb = (json.freedApprox || 0) / 1048576;
+          status(
+            'Cleared ' + label + ': ' + (json.removedServices || 0) + ' service(s), ' +
+              (json.removedChunks || 0) + ' chunk(s)' +
+              (json.hadJob ? ' and an unfinished crawl' : '') +
+              (mb >= 0.1 ? ' — about ' + mb.toFixed(1) + ' MB freed.' : '.'),
+            'ok'
+          );
+          await loadData(false);
+          loadCensusStats();
+        } catch (e) {
+          status('Clear failed for ' + label + ': ' + e.message, 'err');
+        } finally {
+          pgTarget = null;
         }
       }
 
@@ -1688,6 +3010,666 @@
         }
       }
 
+      // kept / walked per category, read from the census endpoint. Kept out of
+      // catRows on purpose: it is measured data about a crawl, not part of the
+      // map the user edits and saves.
+      let censusStats = {};
+
+      async function loadCensusStats() {
+        try {
+          const res = await fetch(API.census, { cache: 'no-store' });
+          const json = await res.json();
+          if (!res.ok || !json.categories) return;
+          const next = {};
+          for (const c of json.categories) next[c.categoryID] = c;
+          censusStats = next;
+          renderCatEditor();
+        } catch {
+          // Purely informational; a failure here must not disturb the editor.
+        }
+      }
+
+      // "1.000 / 2.721" once crawled, the running total while a crawl is in
+      // flight, and a dash when the category has never been fetched.
+      //
+      // Red means DATA WAS DISCARDED, not "this is expensive". The crawl keeps
+      // only the busiest CENSUS_KEEP rows, so the moment a category walks past
+      // that number the tail is thrown away and what you see is a sample, not
+      // the category. That is true whether or not the row is in the rotation,
+      // so unlike the old size warning this one does not look at `auto`.
+      // Serves both maps: `opts.stats` is whichever census this row belongs
+      // to, `opts.loading` whichever in-flight set. Defaults keep every
+      // existing commission call site working unchanged.
+      // Mirrors CENSUS_KEEP in categories/collect. Walking MORE than this many
+      // rows means the crawl dropped everything past it.
+      const CENSUS_KEEP = 1000;
+
+      function censusCell(categoryID, auto, opts) {
+        const stats = (opts && opts.stats) || censusStats;
+        const loading = (opts && opts.loading) || catLoading;
+        const c = categoryID ? stats[categoryID] : null;
+        if (!c) return '<span class="cat-count none">&mdash;</span>';
+        if (c.running) {
+          const so = c.jobStored || 0;
+          // Three states, not two. A rotation tick lasts about 25 seconds and
+          // the next one is a quarter of an hour away, so a crawl the rotation
+          // owns is NOT running almost all of the time - and saying "paused"
+          // for that read as though something had stopped it. It has not: it
+          // is between ticks and will carry on by itself.
+          //
+          // A crawl a browser tab walked away from is genuinely stopped, and
+          // deserves a different word, because nothing will resume it until
+          // someone presses fetch.
+          const active = remoteBusyCategory() === categoryID || loading.has(categoryID);
+          const byRotation = c.driver === 'rotation';
+          const word = active ? 'so far' : byRotation ? 'waiting' : 'stopped';
+          const why = active
+            ? 'Crawling now — ' + so.toLocaleString() + ' so far'
+            : byRotation
+            ? so.toLocaleString() + ' crawled so far. Between rotation ticks — ' +
+              'nothing is running this second, and the rotation carries on by ' +
+              'itself at its next tick.'
+            : so.toLocaleString() + ' crawled so far, then the crawl stopped. ' +
+              'Nothing will resume it until you press fetch on this row.';
+          return '<span class="cat-count' + (so > CENSUS_KEEP ? ' huge' : '') +
+            '" title="' + why + '">' + so.toLocaleString() +
+            '<span class="of"> ' + word + '</span></span>';
+        }
+        if (!c.crawled) return '<span class="cat-count none">&mdash;</span>';
+        const seenNum = c.seenTotal || c.count || 0;
+        const kept = (c.count || 0).toLocaleString();
+        const seen = seenNum.toLocaleString();
+        // Past the keep limit the crawl is discarding rows, so the pair stops
+        // being "kept / walked" and becomes "sample / population".
+        const huge = seenNum > CENSUS_KEEP;
+        // The warning goes on the WALKED total, not on the kept count. The kept
+        // count is always CENSUS_KEEP, so colouring it says nothing; the number
+        // that makes this category expensive is the one behind the slash.
+        return '<span class="cat-count' +
+          '" title="Keeping the busiest ' + kept + ' of ' + seen +
+          ' services walked' +
+          (huge
+            ? ' — the other ' + (seenNum - (c.count || 0)).toLocaleString() +
+              ' were discarded, so this row is a sample of the category'
+            : '') +
+          '">' + kept + '<span class="of' + (huge ? ' huge' : '') +
+          '"> / ' + seen + '</span></span>';
+      }
+
+      // ---- Product table --------------------------------------------------
+      // The Shop counterpart of the service table. It shows different columns
+      // because Shop measures different things: a product publishes its real
+      // order count and its own star rating, so there is no stand-in metric to
+      // compute — but it publishes no per-review dates in the crawl, so there
+      // is no monthly series to draw either. Showing the columns that exist and
+      // leaving out the ones that do not beats faking a sparkline.
+      // One stamp, two datasets. Each tab reports when ITS data was last
+      // refreshed; showing the commission timestamp while looking at Shop would
+      // be a quietly wrong number rather than a missing one.
+      let commissionFetchedAt = null;
+      let shopFetchedAt = null;
+
+      function renderLastUpdated() {
+        const el = $('lastUpdated');
+        if (!el) return;
+        const at = activeTab === 'shop' ? shopFetchedAt : commissionFetchedAt;
+        el.textContent = at ? new Date(at).toLocaleString() : 'never';
+      }
+
+      let prodData = [];
+      let prodPage = 1;
+      let prodSort = { key: '_revenue', dir: -1 };
+      const PROD_PAGE_SIZE = 10;
+
+      // Months a product has been listed, floored at one so a listing published
+      // yesterday does not report a year's worth of sales per month.
+      function monthsListed(created) {
+        const t = Date.parse(created || '');
+        if (!isFinite(t)) return null;
+        const months = (Date.now() - t) / (1000 * 60 * 60 * 24 * 30.44);
+        return Math.max(1, months);
+      }
+
+      function annotateProducts() {
+        for (const p of prodData) {
+          p._priceUSD = priceUSD(p.basePrice, p.currency);
+          const sales = typeof p.salesCount === 'number' ? p.salesCount : null;
+          // Lifetime take: what this listing has earned since it went up.
+          // An ESTIMATE — base price only, so tiers and add-ons are missed.
+          p._revenue = p._priceUSD == null || sales == null ? null : p._priceUSD * sales;
+          const m = monthsListed(p.created);
+          p._salesPerMonth = sales == null || m == null ? null : sales / m;
+          p._category = resolveShopCategoryName(p.categoryID);
+        }
+      }
+
+      function resolveShopCategoryName(categoryID) {
+        const key = (categoryID || '').trim();
+        const row = shopCatRows.find((r) => (r.categoryID || '').trim() === key);
+        if (!row) return key;
+        return (row.categoryName || '').trim() || (row.defaultName || '').trim() || key;
+      }
+
+      function prodTitle(p) {
+        return (p.productName || '').trim();
+      }
+
+      // ---- Product filter -------------------------------------------------
+      // Same control as the Commission side: a button and a listbox, so the
+      // count can sit in its own right-hand column instead of trailing each
+      // name. Built from the Shop MAP rather than from the loaded rows, so a
+      // category stays selectable even when the current filter has hidden
+      // every one of its products.
+      let prodFilter = 'all'; // 'all' | 'CAT::<name>'
+      let prodFilterOpts = [];
+
+      function populateProdFilter() {
+        const menu = $('prodFilterMenu');
+        if (!menu) return;
+        annotateProducts();
+
+        const counts = new Map();
+        for (const p of prodData) {
+          const t = (p._category || '').trim();
+          if (t) counts.set(t, (counts.get(t) || 0) + 1);
+        }
+        // Map order first, so the list reads the way the editor does.
+        const named = [];
+        const seen = new Set();
+        for (const r of shopCatRows) {
+          const name =
+            (r.categoryName || '').trim() || (r.defaultName || '').trim();
+          if (name && !seen.has(name)) { seen.add(name); named.push(name); }
+        }
+        const opts = [{ value: 'all', name: 'All products', count: prodData.length }];
+        for (const name of named) {
+          opts.push({ value: 'CAT::' + name, name, count: counts.get(name) || 0 });
+        }
+        // Anything present in the data but missing from the map, alphabetically.
+        for (const t of [...counts.keys()].filter((t) => !seen.has(t)).sort((a, b) => a.localeCompare(b))) {
+          opts.push({ value: 'CAT::' + t, name: t, count: counts.get(t) });
+        }
+
+        const key = prodFilter.startsWith('CAT::') ? prodFilter.slice(5) : '';
+        const valid = prodFilter === 'all' || seen.has(key) || counts.has(key);
+        if (!valid) prodFilter = 'all';
+
+        prodFilterOpts = opts;
+        menu.innerHTML = opts
+          .map(
+            (o) =>
+              `<button type="button" class="filter-opt" role="option" data-v="${esc(
+                o.value
+              )}" aria-selected="${o.value === prodFilter}"><span class="fo-name" title="${esc(
+                o.name
+              )}">${esc(o.name)}</span><span class="fo-count">${num(o.count)}</span></button>`
+          )
+          .join('');
+        syncProdFilterButton();
+      }
+
+      function syncProdFilterButton() {
+        const cur =
+          prodFilterOpts.find((o) => o.value === prodFilter) || prodFilterOpts[0];
+        if (!cur) return;
+        const label = $('prodFilterLabel');
+        label.textContent = cur.name;
+        label.title = cur.name;
+        $('prodFilterCount').textContent = num(cur.count);
+      }
+
+      function openProdFilterMenu() {
+        $('prodFilterMenu').hidden = false;
+        $('prodFilterBtn').setAttribute('aria-expanded', 'true');
+      }
+      function closeProdFilterMenu() {
+        const menu = $('prodFilterMenu');
+        if (!menu || menu.hidden) return;
+        menu.hidden = true;
+        $('prodFilterBtn').setAttribute('aria-expanded', 'false');
+      }
+
+      function renderProducts() {
+        annotateProducts();
+        const body = $('prodBody');
+        const empty = $('prodEmpty');
+        if (!prodData.length) {
+          body.innerHTML = '';
+          $('prodPager').innerHTML = '';
+          empty.style.display = '';
+          empty.textContent =
+            'No products yet. Add a category in the map below, then press its fetch button.';
+          return;
+        }
+        empty.style.display = 'none';
+        populateProdFilter();
+
+        // Filtering is a VIEW: everything stays loaded, the dropdown only
+        // decides what is drawn, so switching categories costs no request and
+        // cannot shrink the list of categories on offer.
+        const scoped =
+          prodFilter === 'all'
+            ? prodData
+            : prodData.filter((p) => (p._category || '') === prodFilter.slice(5));
+        const rows = sortRows(scoped, prodSort);
+        if (!rows.length) {
+          body.innerHTML = '';
+          $('prodPager').innerHTML = '';
+          empty.style.display = '';
+          empty.textContent = 'Nothing crawled in this category yet.';
+          return;
+        }
+        const pageCount = Math.max(1, Math.ceil(rows.length / PROD_PAGE_SIZE));
+        if (prodPage > pageCount) prodPage = pageCount;
+        if (prodPage < 1) prodPage = 1;
+        const start = (prodPage - 1) * PROD_PAGE_SIZE;
+        const pageRows = rows.slice(start, start + PROD_PAGE_SIZE);
+
+        body.innerHTML = pageRows
+          .map((p) => {
+            const who = p.displayName || p.username || shortId(p.userID);
+            const handle = (p.username || '').trim();
+            const whoHtml = handle
+              ? `<a class="artist-link" href="https://vgen.co/${encodeURIComponent(handle)}/product/${
+                  slugifyName(prodTitle(p)) || 'p'
+                }/${encodeURIComponent(p.productID)}" target="_blank" rel="noopener noreferrer" title="Open this product on vgen.co">${esc(who)}</a>`
+              : esc(who);
+            const color = resolveCategoryColor(p.categoryID);
+            const titleStyle = color ? ` style="color:${esc(color)}"` : '';
+            // A seller can hide the number publicly; the API returns it either
+            // way, so say when the figure is not one they chose to show.
+            const salesCell =
+              typeof p.salesCount !== 'number'
+                ? '<span class="muted">&mdash;</span>'
+                : num(p.salesCount) + (p.isNumberOfSalesPublic ? '' : '<span class="of">*</span>');
+            return `<tr>
+              <td class="type-cell"><span class="type-name" title="${esc(prodTitle(p))}"${titleStyle}>${esc(
+              prodTitle(p) || '—'
+            )}</span><div class="sub-name" title="${esc(p.productID)}">${whoHtml}${
+              p._category ? ' <span class="type-tag">&middot; ' + esc(p._category) + '</span>' : ''
+            }</div></td>
+              <td class="col-spacer"></td>
+              <td class="num">${price(p.basePrice, p.currency)}</td>
+              <td class="num">${salesCell}</td>
+              <td class="num">${moneyCell(p._revenue)}</td>
+              <td class="num">${
+                p._salesPerMonth == null ? '<span class="muted">—</span>' : trunc1(p._salesPerMonth)
+              }</td>
+              <td class="num">${p.reviewCount == null ? '<span class="muted">—</span>' : num(p.reviewCount)}</td>
+              <td class="num">${p.avgRating == null ? '<span class="muted">—</span>' : trunc1(p.avgRating)}</td>
+            </tr>`;
+          })
+          .join('');
+
+        renderProdPager(rows.length, pageCount, start, pageRows.length);
+        updateSortIndicators('prodTable', prodSort);
+      }
+
+      function moneyCell(v) {
+        if (v == null) return '<span class="muted">&mdash;</span>';
+        if (v === 0) return '<span class="rev-zero">$0</span>';
+        return '$' + Math.round(v).toLocaleString('en-US');
+      }
+
+      function renderProdPager(total, pageCount, start, shown) {
+        const el = $('prodPager');
+        if (!el) return;
+        if (!total) { el.innerHTML = ''; return; }
+        const nums = [];
+        for (let p = 1; p <= pageCount; p++) {
+          if (p === 1 || p === pageCount || Math.abs(p - prodPage) <= 2) nums.push(p);
+        }
+        let html =
+          '<button data-pp="prev"' + (prodPage === 1 ? ' disabled' : '') + ' title="Previous page">&lsaquo;</button>';
+        let prev = 0;
+        for (const p of nums) {
+          if (prev && p - prev > 1) html += '<span class="gap">…</span>';
+          html += '<button data-pp="' + p + '"' + (p === prodPage ? ' class="current"' : '') + '>' + p + '</button>';
+          prev = p;
+        }
+        html +=
+          '<button data-pp="next"' + (prodPage === pageCount ? ' disabled' : '') + ' title="Next page">&rsaquo;</button>';
+        html +=
+          '<span class="range">' + (start + 1) + '–' + (start + shown) + ' of ' + num(total) + '</span>';
+        el.innerHTML = html;
+        el.querySelectorAll('[data-pp]').forEach((b) => {
+          b.addEventListener('click', () => {
+            const v = b.getAttribute('data-pp');
+            if (v === 'prev') prodPage = Math.max(1, prodPage - 1);
+            else if (v === 'next') prodPage = Math.min(pageCount, prodPage + 1);
+            else prodPage = Number(v);
+            renderProducts();
+          });
+        });
+      }
+
+      async function loadShopData() {
+        try {
+          const res = await fetch(API.shopData, { cache: 'no-store' });
+          const json = await res.json();
+          if (!res.ok) throw new Error(json.error || 'HTTP ' + res.status);
+          prodData = Array.isArray(json.products) ? json.products : [];
+          shopFetchedAt = json.lastFetchedAt || null;
+          renderLastUpdated();
+          // No kept/walked summary here: the category map below reports it per
+          // category, which is where it is actually actionable - one total
+          // cannot say WHICH category is only a slice of itself.
+          renderProducts();
+        } catch (e) {
+          status('Shop products failed to load: ' + e.message, 'err');
+        }
+      }
+
+      // ---- Shop category map ---------------------------------------------
+      // A SEPARATE table from the Commission map, because VGen keeps separate
+      // taxonomies: 15 catalogues / 153 categories here against 12 / 160 there,
+      // sharing 36 ids and differing in the rest. The row shape is identical on
+      // purpose, so the editor, the crawl and the one rotation can treat a row
+      // from either table the same way.
+      let shopCatRows = [];
+      let shopCatBaseline = '[]';
+
+      // ---- Shop crawl driver ---------------------------------------------
+      // The Shop twin of runCollect, and deliberately shorter: a product row
+      // carries its own sales count and its own review stats, so there is no
+      // second phase to run. One pass and the category is done.
+      //
+      // It takes the SAME fetch lease as the commission crawl, because the two
+      // marketplaces share one bandwidth budget: starting a Shop crawl stands
+      // the rotation down and blocks a Commission fetch, exactly as it should.
+      const shopCatLoading = new Set();
+      const shopCatCancel = new Set();
+      let shopCensusStats = {};
+
+      async function loadShopCensusStats() {
+        try {
+          const res = await fetch(API.shopCensus, { cache: 'no-store' });
+          const json = await res.json();
+          if (!res.ok || !json.categories) return;
+          const next = {};
+          for (const c of json.categories) next[c.categoryID] = c;
+          shopCensusStats = next;
+          renderShopCatEditor();
+        } catch {
+          // Purely informational; never disturb the editor over it.
+        }
+      }
+
+      function cancelShopCollect(categoryID) {
+        if (!shopCatLoading.has(categoryID)) return;
+        shopCatCancel.add(categoryID);
+        status('Stopping after this slice…', 'info');
+      }
+
+      async function runShopCollect(categoryID, label, force) {
+        if (!categoryID || shopCatLoading.has(categoryID)) return;
+        if (localFetchRunning()) {
+          status('One fetch at a time — wait for the running one to finish.', 'err');
+          return;
+        }
+        shopCatLoading.add(categoryID);
+        renderShopCatEditor();
+        renderCatEditor();
+        try {
+          if (!(await claimLease(categoryID, label))) {
+            status(
+              'Could not get the fetch lock — ' + leaseHolderLabel() +
+                ' is still holding it. Try again in a moment.',
+              'err'
+            );
+            return;
+          }
+          let guard = 0;
+          let result = null;
+          status('Fetching ' + label + '…', 'info');
+          do {
+            result = await postJson(API.shopCollect, {
+              categoryID,
+              reset: force && guard === 0 ? 1 : 0,
+              holder: FETCH_HOLDER,
+              lockKind: 'manual',
+            });
+            status(
+              'Fetching ' + label + '… ' + result.stored + ' product(s), ' +
+                result.pages + ' page(s)' +
+                (result.resumed && guard === 0 ? ' (resumed)' : ''),
+              'info'
+            );
+            guard++;
+          } while (!result.done && guard < 400 && !shopCatCancel.has(categoryID));
+
+          if (shopCatCancel.has(categoryID)) {
+            status(
+              'Stopped ' + label + ' at ' + result.stored + ' product(s), ' +
+                result.pages + ' page(s). Press fetch again to carry on.',
+              'ok'
+            );
+            return;
+          }
+
+          // A reshuffle means VGen recomputed its sort key mid-crawl, which
+          // SKIPS products as well as repeating them. Say so rather than
+          // presenting a holed run as complete.
+          const holed = Number(result.reshuffles) > 0;
+          status(
+            'Fetched ' + label + ': ' + result.stored + ' product(s) in ' +
+              result.pages + ' page(s), keeping the busiest ' + result.kept +
+              (holed
+                ? ' — VGen reshuffled ' + result.reshuffles +
+                  ' time(s) mid-crawl, so some products were skipped. Run this category again.'
+                : '.'),
+            holed ? 'err' : 'ok'
+          );
+        } catch (e) {
+          status('Fetch failed for ' + label + ': ' + e.message, 'err');
+        } finally {
+          shopCatLoading.delete(categoryID);
+          shopCatCancel.delete(categoryID);
+          await releaseLease();
+          renderShopCatEditor();
+          renderCatEditor();
+          loadShopCensusStats();
+          loadShopData(); // the crawl just changed what this table shows
+        }
+      }
+
+      function shopCategoryLabel(categoryID) {
+        const key = (categoryID || '').trim();
+        const row = shopCatRows.find((r) => (r.categoryID || '').trim() === key);
+        if (!row) return key;
+        return (
+          (row.categoryName || '').trim() || (row.defaultName || '').trim() || key
+        );
+      }
+
+      async function purgeShopCategory(categoryID) {
+        const label = shopCategoryLabel(categoryID);
+        const c = shopCensusStats[categoryID];
+        const held = c && c.crawled ? c.count + ' product(s)' : 'nothing crawled yet';
+        // A crawl of a large category is hours of work; say what is about to go.
+        if (!window.confirm('Clear ' + label + '?\n\nStored: ' + held +
+          '\n\nThis only clears the Shop copy. Commission data for the same ' +
+          'category id is untouched.')) return;
+        try {
+          status('Clearing ' + label + '…', 'info');
+          const json = await postJson(API.shopPurge, { categoryID });
+          const mb = (json.freedApprox || 0) / 1048576;
+          status(
+            'Cleared ' + label + ': ' + (json.removedProducts || 0) + ' product(s), ' +
+              (json.removedChunks || 0) + ' chunk(s)' +
+              (json.hadJob ? ' and an unfinished crawl' : '') +
+              (mb >= 0.1 ? ' — about ' + mb.toFixed(1) + ' MB freed.' : '.'),
+            'ok'
+          );
+          loadShopCensusStats();
+          loadShopData();
+        } catch (e) {
+          status('Clear failed for ' + label + ': ' + e.message, 'err');
+        }
+      }
+
+      function updateShopCatButtons() {
+        const dirty = catSnapshot(shopCatRows) !== shopCatBaseline;
+        $('shopSaveCatBtn').disabled = !dirty;
+        $('shopRevertCatBtn').disabled = !dirty;
+      }
+
+      function renderShopCatEditor() {
+        $('shopCatCount').textContent =
+          shopCatRows.length + ' categor' + (shopCatRows.length === 1 ? 'y' : 'ies');
+        const body = $('shopCatBody');
+        body.innerHTML = shopCatRows
+          .map((r, i) => {
+            const color = (r.color || '').trim();
+            const swatchStyle = color ? `background:${esc(color)}` : 'background:transparent';
+            const swatchCls = color ? 'cat-swatch' : 'cat-swatch is-empty';
+            const catId = (r.categoryID || '').trim();
+            const busy = shopCatLoading.has(catId);
+            const remote = !busy && !!catId && remoteBusyCategory() === catId;
+            const blocked = !busy && fetchBlocked();
+            const loadCls =
+              'tiny ghost cat-load' +
+              (busy || remote ? ' is-loading' : '') +
+              (remote ? ' is-remote' : '');
+            const who = leaseHolderLabel();
+            const loadTitle = busy
+              ? 'Fetching… click to cancel'
+              : remote
+              ? who.charAt(0).toUpperCase() + who.slice(1) + ' is crawling this category'
+              : blocked
+              ? 'Locked: ' + who + ' — only one fetch runs at a time'
+              : catId
+              ? 'Fetch this category from VGen (shift-click to restart from scratch)'
+              : 'Enter a category ID first';
+            return `<tr data-shoprow="${i}">
+              <td class="muted">${i + 1}</td>
+              <td><button type="button" class="${swatchCls}" data-shopcolor="${i}" style="${swatchStyle}" title="${
+                color ? 'Text color ' + esc(color) : 'No color — click to pick'
+              }"></button></td>
+              <td><input data-si="${i}" data-sf="categoryName" placeholder="${esc(
+                (r.defaultName || '').trim() || 'e.g. YCH Bases'
+              )}" value="${esc(r.categoryName)}" /></td>
+              <td>${
+                catId
+                  ? '<span class="cat-id" title="' + esc(catId) + '">' + esc(catId) + '</span>'
+                  : '<input class="id-input" data-si="' + i + '" data-sf="categoryID" placeholder="rec…" value="" />'
+              }</td>
+              <td class="col-auto"><input type="checkbox" data-shopauto="${i}"${
+                r.auto ? ' checked' : ''
+              }${catId ? '' : ' disabled'} title="${
+                catId ? 'Refresh this category automatically' : 'Enter a category ID first'
+              }" /></td>
+              <td>${censusCell(catId, !!r.auto, { stats: shopCensusStats, loading: shopCatLoading })}</td>
+              <td><button class="${loadCls}" data-shopload="${i}"${
+                (!busy && !catId) || blocked ? ' disabled' : ''
+              } title="${loadTitle}"><span class="cat-spin">${ICON_RELOAD}</span><span class="cat-x">${ICON_CANCEL}</span></button></td>
+              <td><button class="tiny ghost cat-purge" data-shoppurge="${i}"${
+                !catId || fetchBlocked() ? ' disabled' : ''
+              } title="${
+                !catId
+                  ? 'Enter a category ID first'
+                  : fetchBlocked()
+                  ? 'Locked: ' + leaseHolderLabel() + ' is fetching'
+                  : 'Clear this category&#39;s crawled products'
+              }">${ICON_TRASH}</button></td>
+              <td><button class="tiny ghost" data-shopdel="${i}" title="Remove this row from the map">&#10005;</button></td>
+            </tr>`;
+          })
+          .join('');
+
+        body.querySelectorAll('input[data-si]').forEach((el) => {
+          el.addEventListener('input', (e) => {
+            const i = Number(e.target.getAttribute('data-si'));
+            shopCatRows[i][e.target.getAttribute('data-sf')] = e.target.value;
+            updateShopCatButtons();
+          });
+        });
+        body.querySelectorAll('[data-shopauto]').forEach((el) => {
+          el.addEventListener('change', (e) => {
+            shopCatRows[Number(e.target.getAttribute('data-shopauto'))].auto = e.target.checked;
+            updateShopCatButtons();
+          });
+        });
+        body.querySelectorAll('[data-shopload]').forEach((el) => {
+          el.addEventListener('click', (e) => {
+            const i = Number(e.currentTarget.getAttribute('data-shopload'));
+            const id = (shopCatRows[i].categoryID || '').trim();
+            if (!id) return;
+            // A running row stays clickable, and that click cancels it.
+            if (shopCatLoading.has(id)) return cancelShopCollect(id);
+            runShopCollect(id, shopCategoryLabel(id), e.shiftKey);
+          });
+        });
+        body.querySelectorAll('[data-shoppurge]').forEach((el) => {
+          el.addEventListener('click', (e) => {
+            const i = Number(e.currentTarget.getAttribute('data-shoppurge'));
+            const id = (shopCatRows[i].categoryID || '').trim();
+            if (id) purgeShopCategory(id);
+          });
+        });
+        body.querySelectorAll('[data-shopdel]').forEach((el) => {
+          el.addEventListener('click', (e) => {
+            shopCatRows.splice(Number(e.currentTarget.getAttribute('data-shopdel')), 1);
+            renderShopCatEditor();
+            updateShopCatButtons();
+          });
+        });
+        body.querySelectorAll('[data-shopcolor]').forEach((el) => {
+          el.addEventListener('click', (e) => {
+            const i = Number(e.currentTarget.getAttribute('data-shopcolor'));
+            const picker = document.createElement('input');
+            picker.type = 'color';
+            picker.value = (shopCatRows[i].color || '').trim() || '#6ee7ff';
+            picker.addEventListener('input', () => {
+              shopCatRows[i].color = picker.value;
+              renderShopCatEditor();
+              updateShopCatButtons();
+            });
+            picker.click();
+          });
+        });
+        updateShopCatButtons();
+      }
+
+      async function loadShopCategories() {
+        try {
+          const res = await fetch(API.shopCategories, { cache: 'no-store' });
+          const json = await res.json();
+          if (!res.ok) throw new Error(json.error || 'HTTP ' + res.status);
+          shopCatRows = Array.isArray(json.categories) ? json.categories : [];
+          shopCatBaseline = catSnapshot(shopCatRows);
+          renderShopCatEditor();
+        } catch (e) {
+          status('Shop category map failed to load: ' + e.message, 'err');
+        }
+      }
+
+      async function saveShopCategories() {
+        const btn = $('shopSaveCatBtn');
+        btn.disabled = true;
+        try {
+          const payload = shopCatRows
+            .filter((r) => (r.categoryID || '').trim())
+            .map((r) => ({
+              categoryID: (r.categoryID || '').trim(),
+              categoryName: (r.categoryName || '').trim(),
+              color: (r.color || '').trim(),
+              defaultName: (r.defaultName || '').trim(),
+              auto: !!r.auto,
+            }));
+          const json = await postJson(API.shopCategories, { categories: payload });
+          shopCatRows = json.categories || payload;
+          shopCatBaseline = catSnapshot(shopCatRows);
+          renderShopCatEditor();
+          status('Saved ' + shopCatRows.length + ' shop categor' +
+            (shopCatRows.length === 1 ? 'y' : 'ies') + '.', 'ok');
+        } catch (e) {
+          status('Save failed: ' + e.message, 'err');
+        } finally {
+          updateShopCatButtons();
+        }
+      }
+
       function renderCatEditor() {
         $('catCount').textContent =
           catRows.length + ' categor' + (catRows.length === 1 ? 'y' : 'ies');
@@ -1699,19 +3681,66 @@
               ? `background:${esc(color)}`
               : 'background:transparent';
             const swatchCls = color ? 'cat-swatch' : 'cat-swatch is-empty';
+            // Fetch button: disabled while this category is in flight, and also
+            // when the row has no id yet (nothing to fetch).
+            const catId = (r.categoryID || '').trim();
+            const busy = catLoading.has(catId);
+            // Being crawled right now, but by the rotation on the server rather
+            // than by this tab. Without this the row looked identical to every
+            // other locked row, so there was no way to see WHAT was being
+            // fetched - only that something was.
+            const remote = !busy && !!catId && remoteBusyCategory() === catId;
+            // A row that is itself running stays clickable, because that
+            // click cancels it. Everything else is blocked while ANY crawl is
+            // in flight, this tab's included.
+            const blocked = !busy && fetchBlocked();
+            const loadCls =
+              'tiny ghost cat-load' +
+              (busy || remote ? ' is-loading' : '') +
+              (remote ? ' is-remote' : '');
+            const who = leaseHolderLabel();
+            const loadTitle = busy
+              ? 'Fetching… click to cancel'
+              : remote
+              ? who.charAt(0).toUpperCase() + who.slice(1) + ' is crawling this category'
+              : blocked
+              ? 'Locked: ' + leaseHolderLabel() + ' — only one fetch runs at a time'
+              : catId
+              ? 'Fetch this category from VGen (shift-click to restart from scratch)'
+              : 'Enter a category ID first';
             return `<tr data-rowidx="${i}">
             <td class="drag-handle" draggable="true" data-drag="${i}" title="Drag to reorder">&#9776;</td>
             <td class="muted">${i + 1}</td>
             <td><button type="button" class="${swatchCls}" data-catcolor="${i}" style="${swatchStyle}" title="${
               color ? 'Text color ' + esc(color) : 'No color — click to pick'
             }"></button></td>
-            <td><input data-ci="${i}" data-cf="categoryName" placeholder="e.g. 2D Animation" value="${esc(
+            <td><input data-ci="${i}" data-cf="categoryName" placeholder="${esc((r.defaultName || '').trim() || 'e.g. 2D Animation')}" value="${esc(
               r.categoryName
             )}" /></td>
-            <td><input class="id-input" data-ci="${i}" data-cf="categoryID" placeholder="rechY6..." value="${esc(
-              r.categoryID
-            )}" /></td>
-            <td><button class="tiny ghost" data-catdel="${i}" title="Remove">✕</button></td>
+            <td>${
+              catId
+                ? '<span class="cat-id" title="' + esc(catId) + '">' + esc(catId) + '</span>'
+                : '<input class="id-input" data-ci="' + i + '" data-cf="categoryID" placeholder="rechY6..." value="" />'
+            }</td>
+            <td class="col-auto"><input type="checkbox" data-catauto="${i}"${
+              r.auto ? ' checked' : ''
+            }${catId ? '' : ' disabled'} title="${
+              catId ? 'Refresh this category automatically' : 'Enter a category ID first'
+            }" /></td>
+            <td>${censusCell(catId, !!r.auto)}</td>
+            <td><button class="${loadCls}" data-catload="${i}"${
+              (!busy && !catId) || blocked ? ' disabled' : ''
+            } title="${loadTitle}"><span class="cat-spin">${ICON_RELOAD}</span><span class="cat-x">${ICON_CANCEL}</span></button></td>
+            <td><button class="tiny ghost cat-purge" data-catpurge="${i}"${
+              !catId || fetchBlocked() ? ' disabled' : ''
+            } title="${
+              !catId
+                ? 'Enter a category ID first'
+                : fetchBlocked()
+                ? 'Locked: ' + leaseHolderLabel() + ' is fetching'
+                : 'Clear this category&#39;s crawled data'
+            }">${ICON_TRASH}</button></td>
+            <td><button class="tiny ghost" data-catdel="${i}" title="Remove this row from the map">✕</button></td>
           </tr>`;
           })
           .join('');
@@ -1728,6 +3757,30 @@
           b.addEventListener('click', (e) => {
             openColorPicker(+e.currentTarget.getAttribute('data-catcolor'));
           })
+        );
+        body.querySelectorAll('[data-catload]').forEach((b) =>
+          b.addEventListener('click', (e) => {
+            const idx = +e.currentTarget.getAttribute('data-catload');
+            const row = catRows[idx];
+            const id = row ? (row.categoryID || '').trim() : '';
+            // While a run is in flight the same button means "stop".
+            if (id && catLoading.has(id)) cancelCollect(id);
+            else collectCategory(idx, e.shiftKey);
+          })
+        );
+        body.querySelectorAll('[data-catauto]').forEach((c) =>
+          c.addEventListener('change', (e) => {
+            const i = +e.currentTarget.getAttribute('data-catauto');
+            if (catRows[i]) catRows[i].auto = e.currentTarget.checked;
+            // Repaint so the size warning appears or clears with the tick;
+            // renderCatEditor also refreshes the Save/Revert buttons.
+            renderCatEditor();
+          })
+        );
+        body.querySelectorAll('[data-catpurge]').forEach((b) =>
+          b.addEventListener('click', (e) =>
+            askPurge(+e.currentTarget.getAttribute('data-catpurge'))
+          )
         );
         body.querySelectorAll('[data-catdel]').forEach((b) =>
           b.addEventListener('click', (e) => {
@@ -1799,6 +3852,10 @@
             categoryID: (r.categoryID || '').trim(),
             categoryName: (r.categoryName || '').trim(),
             color: (r.color || '').trim(),
+            // VGen's own name, kept so an empty rename can fall back to it.
+            defaultName: (r.defaultName || '').trim(),
+            // Whether the automatic rotation includes this category.
+            auto: !!r.auto,
           }))
           .filter((r) => r.categoryID);
         try {
@@ -1982,13 +4039,13 @@
 
       function applyData(json) {
         svcData = json.services || [];
+        svcPage = 1; // fresh data, fresh paging
         svcMissing = Array.isArray(json.missing) ? json.missing.slice() : [];
         svcByID = {};
         for (const s of svcData) svcByID[s.serviceID] = s;
         buildDeclLookup(); // keep the id join fresh for modals + type resolution
-        $('lastUpdated').textContent = json.lastFetchedAt
-          ? new Date(json.lastFetchedAt).toLocaleString()
-          : 'never';
+        commissionFetchedAt = json.lastFetchedAt || null;
+        renderLastUpdated();
         populateServiceFilter();
         renderServices();
         if (json.refreshErrors && json.refreshErrors.length) {
@@ -2002,17 +4059,29 @@
         }
       }
 
+      // Read the analysis. `refresh` still pulls live review data, but it is no
+      // longer driven by a global button: the per-category fetch and Sync types
+      // are what call it now, so there is no button state to toggle here.
       async function loadData(refresh, ids) {
-        const btn = $('refreshBtn');
+        // The table used to sit on stale rows for the seconds this takes, which
+        // reads as missing data rather than as loading.
+        beginLoading();
         try {
-          let url = API.data;
+          const params = new URLSearchParams();
+          // The floor travels with every read: it decides what the server
+          // computes, not just what the table hides.
+          const minEl = $('minReviews');
+          if (minEl && minEl.value !== '') params.set('minReviews', minEl.value);
+          // Deliberately NOT narrowed by category. The row cap that once made
+          // server-side narrowing necessary is gone, and asking the server for one
+          // category meant the response only ever described that category — which
+          // then became the only option the filter could offer. Load the lot; the
+          // dropdown is a view over it.
           if (refresh) {
-            url += '?refresh=1';
+            params.set('refresh', '1');
             // Narrow the live pull to specific services when given (e.g. only the
             // service just added), so we don't re-fetch the whole watchlist.
-            if (ids && ids.length) url += '&ids=' + encodeURIComponent(ids.join(','));
-            btn.disabled = true;
-            btn.textContent = '↻ Fetching...';
+            if (ids && ids.length) params.set('ids', ids.join(','));
             status(
               ids && ids.length
                 ? 'Fetching reviews for ' + ids.length + ' new service(s)...'
@@ -2020,26 +4089,98 @@
               'info'
             );
           }
-          const res = await fetch(url, { cache: 'no-store' });
+          const qs = params.toString();
+          const res = await fetch(API.data + (qs ? '?' + qs : ''), {
+            cache: 'no-store',
+          });
           const json = await res.json();
           if (!res.ok) throw new Error(json.error || 'HTTP ' + res.status);
           applyData(json);
         } catch (e) {
           status((refresh ? 'Refresh' : 'Load') + ' failed: ' + e.message, 'err');
         } finally {
-          btn.disabled = false;
-          btn.textContent = '↻ Refresh';
+          endLoading();
         }
       }
 
       // ---- wire up ----
-      $('refreshBtn').addEventListener('click', () => loadData(true));
+      // The global "+ Add" and "↻ Refresh" buttons are gone: services now arrive
+      // from the per-category fetch button in the Category map, not one at a time.
+      // openEditModal() is still reachable from a row's inline Edit button.
+      // A menu that outlives the click that opened it is a menu you cannot
+      // dismiss, so close on anything outside it.
+      document.addEventListener('click', (e) => {
+        if (!e.target.closest('#svcFilterWrap')) closeFilterMenu();
+        if (!e.target.closest('#prodFilterWrap')) closeProdFilterMenu();
+      });
+      document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') { closeFilterMenu(); closeProdFilterMenu(); }
+      });
 
-      // Add / Edit popup (declare one service; opened by "+ Add" or a row Edit).
-      $('addBtn').addEventListener('click', () => openEditModal(null));
-      // Sync types: backfill missing categories. Shift-click forces re-resolve of
-      // ALL services (also refreshes titles), not just the ones missing a type.
-      $('syncBtn').addEventListener('click', (e) => syncTypes(e.shiftKey));
+      $('prodFilterBtn').addEventListener('click', (e) => {
+        e.stopPropagation();
+        if ($('prodFilterMenu').hidden) openProdFilterMenu();
+        else closeProdFilterMenu();
+      });
+      $('prodFilterMenu').addEventListener('click', (e) => {
+        const opt = e.target.closest('.filter-opt');
+        if (!opt) return;
+        prodFilter = opt.getAttribute('data-v');
+        closeProdFilterMenu();
+        prodPage = 1; // a different group is a different list
+        $('prodFilterMenu')
+          .querySelectorAll('.filter-opt')
+          .forEach((el) =>
+            el.setAttribute('aria-selected', el.getAttribute('data-v') === prodFilter)
+          );
+        syncProdFilterButton();
+        renderProducts();
+      });
+
+      $('prodTable')
+        .querySelectorAll('thead th[data-k]')
+        .forEach((th) => {
+          th.addEventListener('click', () => {
+            const key = th.getAttribute('data-k');
+            if (prodSort.key === key) prodSort.dir *= -1;
+            else prodSort = { key, dir: -1 };
+            prodPage = 1; // re-sorted: page numbers no longer mean the same rows
+            renderProducts();
+          });
+        });
+
+      $('shopDiscoverBtn').addEventListener('click', () => discoverCategories('shop'));
+      $('shopSaveCatBtn').addEventListener('click', saveShopCategories);
+      $('shopRevertCatBtn').addEventListener('click', () => {
+        shopCatRows = JSON.parse(shopCatBaseline);
+        renderShopCatEditor();
+      });
+      $('shopAddCatBtn').addEventListener('click', () => {
+        shopCatRows.push({ categoryID: '', categoryName: '', color: '', defaultName: '', auto: false });
+        renderShopCatEditor();
+      });
+
+      $('tabBtnCommission').addEventListener('click', () => setTab('commission'));
+      $('tabBtnShop').addEventListener('click', () => setTab('shop'));
+
+      $('minReviews').addEventListener('change', () => loadData(false));
+      $('discoverBtn').addEventListener('click', () => discoverCategories('commission'));
+      $('pgConfirm').addEventListener('click', confirmPurge);
+      $('pgCancel').addEventListener('click', () => $('pgModal').classList.add('hidden'));
+      $('pgClose').addEventListener('click', () => $('pgModal').classList.add('hidden'));
+      $('pgModal').addEventListener('click', (e) => {
+        if (e.target === $('pgModal')) $('pgModal').classList.add('hidden');
+      });
+      $('discConfirm').addEventListener('click', applyDiscover);
+      $('discCancel').addEventListener('click', () => $('discModal').classList.add('hidden'));
+      $('discClose').addEventListener('click', () => $('discModal').classList.add('hidden'));
+      $('discAll').addEventListener('change', (e) => {
+        $('discBody').querySelectorAll('[data-disc]').forEach((c) => (c.checked = e.target.checked));
+        updateDiscCount();
+      });
+      $('discModal').addEventListener('click', (e) => {
+        if (e.target === $('discModal')) $('discModal').classList.add('hidden');
+      });
       $('editSave').addEventListener('click', saveEdit);
       $('editCancel').addEventListener('click', closeEditModal);
       $('editClose').addEventListener('click', closeEditModal);
@@ -2126,8 +4267,26 @@
       });
 
       // Service filter: pick which service to show; persisted so a refresh keeps it.
-      $('svcFilter').addEventListener('change', (e) => {
-        svcFilter = e.target.value;
+      $('svcFilterBtn').addEventListener('click', (e) => {
+        e.stopPropagation();
+        if ($('svcFilterMenu').hidden) openFilterMenu();
+        else closeFilterMenu();
+      });
+      $('svcFilterMenu').addEventListener('click', (e) => {
+        const opt = e.target.closest('.filter-opt');
+        if (!opt) return;
+        svcFilter = opt.getAttribute('data-v');
+        closeFilterMenu();
+        svcPage = 1; // a different group is a different list
+        // No re-fetch: everything is already loaded, so choosing a group is just
+        // a re-render. Only the selected state and the button caption change, so
+        // the menu is not rebuilt - the counts it shows are still correct.
+        $('svcFilterMenu')
+          .querySelectorAll('.filter-opt')
+          .forEach((el) =>
+            el.setAttribute('aria-selected', el.getAttribute('data-v') === svcFilter)
+          );
+        syncFilterButton();
         saveUiConfig();
         renderServices();
       });
@@ -2196,21 +4355,31 @@
 
       // ---- boot ----
       (async function init() {
-        showOverlay();
-        loadUiConfig(); // restore saved filter / flow window / sort first
+        beginLoading();
+        loadUiConfig(); // restore saved tab / filter / flow window / sort first
+        renderTabs();
+        // Before anything else: find out whether a fetch is already running.
+        // Until this answers, every fetch button stays disabled.
+        await refreshLease();
         // Reflect the restored flow window in the segmented control.
         $('flowSeg')
           .querySelectorAll('button')
           .forEach((b) => b.classList.toggle('active', b.getAttribute('data-w') === flowWindow));
         $('justifyChk').checked = justify; // reflect restored justify toggle
         try {
+          await loadExchangeRates(); // live FX before the first price renders
           await loadCategories(); // build the map first so decl dropdowns populate
           await loadServices();
           await loadData(false); // page-load read = cached, no VGen hit
+          loadCensusStats(); // per-category counts for the map
+        loadShopCategories(); // the Shop tab's own map
+        loadShopCensusStats(); // and its per-category counts
+        loadShopData(); // and the products themselves
+          resumeRunningJobs(); // continue any crawl a reload interrupted
         } catch (e) {
           status('Init failed: ' + e.message, 'err');
         } finally {
-          hideOverlay(); // only reveal data after the first load settles
+          endLoading(); // the table's own load is counted too, so this waits for it
         }
       })();
     </script>
