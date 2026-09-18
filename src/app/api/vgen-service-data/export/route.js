@@ -151,7 +151,9 @@ function readme(mode) {
           'The STARTING price of a listing -- the cheapest tier the artist will ' +
           'take. It is a floor, not a transaction price: real commissions add ' +
           'options and rush fees, so basePrice systematically UNDERSTATES what ' +
-          'the listing earns. On shop it is much closer to the real price.',
+          'the listing earns. On shop it is much closer to the real price. ' +
+          'Carried in MINOR UNITS exactly as VGen stores it -- see money_units ' +
+          'before you quote any figure.',
         artistReviewStats:
           'VGen\'s name for stats covering the WHOLE ARTIST. Exposed here as the ' +
           'artist-prefixed fields so the scope is visible at the point of use.',
@@ -171,18 +173,20 @@ function readme(mode) {
         serviceName: 'Listing title, verbatim.',
         type: 'VGen service type string.',
         basePrice:
-          'Starting price in `currency` (a plain number, NOT minor units). See ' +
-          '`basePrice` in vgen_vocabulary: it is a floor, not what an order costs.',
+          'Starting price in `currency`, in that currency\'s MINOR UNITS (USD ' +
+          '3500 means $35.00). Divide by the exponent in money_units before ' +
+          'quoting or multiplying. See `basePrice` in vgen_vocabulary: it is a ' +
+          'floor, not what an order costs.',
         currency:
           'ISO currency code the artist prices in. Rows in one category mix ' +
           'several currencies -- never sum or rank basePrice without converting.',
         created: 'When the listing was first published (ISO 8601).',
         modified: 'When the artist last edited it (ISO 8601).',
         artistTotalReviews:
-          'Reviews across ALL of this artist\'s services. NOT this listing\'s ' +
-          'review count -- VGen does not publish a per-service one on the ' +
-          'commission side. Using it as a per-listing figure is the single ' +
-          'most common mistake with this dataset.',
+          'Reviews across ALL of this artist\'s services, taken from the ' +
+          'category crawl. Using it as a per-listing figure is the single most ' +
+          'common mistake with this dataset -- reviewsTotal is the per-listing ' +
+          'one.',
         artistAvgRating: 'Average rating across all of the artist\'s services.',
         serviceCompletedComms:
           'Completed commissions for THIS listing, but only present when the ' +
@@ -194,9 +198,16 @@ function readme(mode) {
         displayName: 'Artist display name.',
         tags: 'The artist\'s own search keywords, verbatim. VGen caps these at 5.',
         reviewsTotal:
-          'Reviews on THIS listing, counted from its own public review feed. ' +
-          'This is the per-listing number artistTotalReviews is NOT. null means ' +
-          'the feed has not been pulled for this listing (see review_windows).',
+          'Reviews on THIS listing, counted from its own public review feed ' +
+          '(GET reviews/service/<serviceID>). This is the per-listing number ' +
+          'artistTotalReviews is NOT. null means the feed has not been pulled ' +
+          'for this listing (see review_windows). Expect it to sit CLOSE to ' +
+          'artistTotalReviews on most rows, and do not read that as a copy: the ' +
+          'census keeps only the busiest ~1000 listings per category, so for ' +
+          'most artists the single row stored here is their flagship listing, ' +
+          'which carries nearly all their reviews. Where an artist has several ' +
+          'listings in one category the values diverge sharply, which is the ' +
+          'proof it is measured per listing.',
         reviewsLast30:
           'Reviews on this listing in the 30 days before `reviewsAsOf`. The ' +
           'closest thing to a recent-activity signal in this dataset.',
@@ -211,7 +222,9 @@ function readme(mode) {
         userID: 'VGen id for the seller.',
         categoryID: 'The category this product was crawled under.',
         productName: 'Product title, verbatim.',
-        basePrice: 'Price in `currency`, a plain number. Same currency warning as above.',
+        basePrice:
+          'Price in `currency`, in MINOR UNITS. Same money_units and currency ' +
+          'warnings as the commission side.',
         currency: 'ISO currency code the seller prices in.',
         pricingType: 'VGen pricing mode for the product.',
         created: 'When the product was first listed (ISO 8601).',
@@ -232,6 +245,31 @@ function readme(mode) {
         displayName: 'Seller display name.',
         tags: 'Seller keywords, verbatim. Shop allows up to 20.',
       },
+      // basePrice is passed through byte-for-byte from VGen, which prices in
+      // Stripe-style minor units. Saying "divide by 100" would be wrong for the
+      // zero-decimal currencies, and a listing priced in JPY or CLP would come
+      // out 100x too small -- so the exponent is spelled out per currency.
+      money_units: {
+        what:
+          'Every basePrice in this export -- commission and shop alike -- is in ' +
+          'its currency\'s MINOR UNITS, the raw integer VGen stores. It is not a ' +
+          'display price. USD 3500 is $35.00, not $3,500.',
+        how_to_convert:
+          'amount = basePrice / (10 ** exponent), where exponent comes from ' +
+          'zero_decimal_currencies below: 0 for the currencies listed there, 2 ' +
+          'for every other currency in this dataset. Do this BEFORE multiplying ' +
+          'by any order count and before converting between currencies.',
+        zero_decimal_currencies:
+          'JPY, KRW, VND, CLP, ISK -- exponent 0, so the stored integer already ' +
+          'IS the amount. Do NOT divide these by 100. Blanket-dividing every row ' +
+          'by 100 is the most damaging single mistake available here: it leaves ' +
+          'USD right and makes JPY and CLP listings look 100x cheaper than they ' +
+          'are, which silently reorders any cross-currency ranking.',
+        sanity_check:
+          'A converted commission basePrice should land roughly in the $5-$500 ' +
+          'band, with a median near $35. If your figures come out in the tens of ' +
+          'thousands of dollars per listing, the division was skipped.',
+      },
       // The one part of this dataset that is NOT a lifetime total, which makes
       // it the one part a reader is most likely to misuse.
       review_windows: {
@@ -248,6 +286,13 @@ function readme(mode) {
           'category, so not every row has them. null means the feed was never ' +
           'pulled; it does NOT mean zero. Exclude nulls from a ranking rather ' +
           'than treating them as the quietest listings.',
+        check_coverage_first:
+          'Do not assume these are populated. Every category response carries a ' +
+          '`coverage` object counting the non-null values in the rows it just ' +
+          'returned. Read it before planning a windowed answer: the windows are ' +
+          'written when a feed is pulled, so a rotation that has not reached a ' +
+          'category yet leaves them null across the board even though ' +
+          'reviewsTotal and reviewsAsOf are present.',
         reviews_stand_in_for_orders:
           'Reviews are this dataset\'s order-count proxy on the commission side, ' +
           'and the only one that exists per listing. Use them as such -- that is ' +
@@ -288,10 +333,23 @@ function readme(mode) {
           'a one-line note ("estimated from starting prices") and move on; the ' +
           'understatement applies to every listing alike, so comparisons and ' +
           'rankings between them stand.',
-        currency_is_not_optional:
-          'basePrice is denominated in each listing\'s own `currency`. Convert ' +
-          'to a single currency BEFORE ranking -- comparing a JPY price against ' +
-          'a USD one is the one error that genuinely breaks the result.',
+        scale_then_convert:
+          'basePrice is a MINOR-UNIT integer denominated in each listing\'s own ' +
+          '`currency`. Two steps, in this order, before any arithmetic: divide ' +
+          'by the exponent from money_units, then convert to a single currency. ' +
+          'Skipping either is the one class of error that genuinely breaks the ' +
+          'result -- ranking a raw JPY integer against a raw USD one is not a ' +
+          'rounding problem, it is a wrong answer.',
+        when_the_window_is_null:
+          'If reviewsLast30 is null for a row, that row has no 30-day figure and ' +
+          'you must not manufacture one. Do not substitute reviewsTotal or ' +
+          'serviceCompletedComms into a 30-day formula -- those are LIFETIME ' +
+          'counts and the result would be wrong by years. Drop those rows from ' +
+          'the windowed ranking and say how many you dropped. Check the ' +
+          '`coverage` block on the response first: if coverage.reviewsLast30 is ' +
+          '0, no 30/90/365-day question can be answered from this pull at all, ' +
+          'and the correct reply is to say so and offer the lifetime figures ' +
+          'from commission_lifetime instead.',
         do_not:
           'Do not use artistTotalReviews for a per-listing revenue figure: it is ' +
           'artist-wide, so for an artist with several listings it double-counts ' +
@@ -520,6 +578,37 @@ async function attachReviewWindows(rows) {
   })
 }
 
+// Which derived fields actually arrived, counted over the page just built. A
+// reader cannot tell "this field is empty for these rows" from "this field is
+// empty everywhere" without scanning the whole export, and guessing wrong in
+// either direction produces a confidently wrong answer: either a windowed
+// ranking silently computed from three surviving rows, or a refusal to answer a
+// question the data supports. Cheap to produce -- the rows are already in hand.
+const COVERAGE_FIELDS = {
+  commission: [
+    'reviewsLast30',
+    'reviewsLast90',
+    'reviewsLast365',
+    'reviewsTotal',
+    'reviewsAsOf',
+    'serviceCompletedComms',
+    'basePrice',
+  ],
+  shop: ['paidSalesCount', 'salesCount', 'reviewCount', 'basePrice'],
+}
+
+function countCoverage(rows, market) {
+  const fields = COVERAGE_FIELDS[market] || COVERAGE_FIELDS.commission
+  const counts = { rows: rows.length }
+  for (const field of fields) {
+    counts[field] = rows.reduce(
+      (n, row) => n + (row[field] === null || row[field] === undefined ? 0 : 1),
+      0
+    )
+  }
+  return counts
+}
+
 export async function GET(request) {
   const authorized = isMaster(request) || (await resolveReadToken(request))
   if (!authorized) return deny('A read token is required.')
@@ -557,6 +646,7 @@ export async function GET(request) {
           // `returned < limit` has to infer it, and inferring it wrongly means
           // either a missed page or an endless loop.
           hasMore: offset + rows.length < ((meta && meta.count) || 0),
+          coverage: countCoverage(withWindows, market),
           rows: withWindows,
         },
         { headers: CACHEABLE }

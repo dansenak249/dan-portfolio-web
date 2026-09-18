@@ -409,7 +409,7 @@
       /* Wider than the star it replaced: this holds "$12,345", not "4.9". */
       .col-rev { width: 104px; }
       /* Still used by the product table's rating column. It lost its rule when
-         the service table swapped the star out for Rev/mo, and under a fixed
+         the service table swapped the star out for REV30, and under a fixed
          layout an undeclared width is not harmless - it takes the remainder. */
       .col-star { width: 52px; }
       /* "Sales/mo" is a wider word than the counts beside it. */
@@ -876,7 +876,7 @@
                 <th class="num col-n" data-k="total">Total</th>
                 <th class="num col-n" data-k="repeatClients">Repeat</th>
                 <th class="num col-n" data-k="last30">Month</th>
-                <th class="num col-rev" data-k="_revMonth" title="Price x orders in the last 30 days. An estimate of what this listing earned this month.">Rev/mo</th>
+                <th class="num col-rev" data-k="_revMonth" title="Finished USD figure, already converted -- do not rescale it. Base price x reviews received in the trailing 30 days (not a monthly average, and reviews stand in for orders). A floor: tiers and add-ons above the base price are not counted. Blank means reviews were never pulled, which is not the same as zero.">REV30</th>
                 <th class="no-sort">Monthly flow</th>
               </tr>
             </thead>
