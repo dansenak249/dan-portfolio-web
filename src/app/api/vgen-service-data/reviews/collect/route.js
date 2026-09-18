@@ -109,13 +109,15 @@ async function censusFor(categoryID) {
 // Would a fresh pull tell us anything the cache does not already say?
 function needsPull(row, cached, now) {
   if (!cached) return true
-  // Records written before the trailing-review windows existed. The windows are
-  // derived at WRITE time from the reviews in hand, so a code change alone never
-  // backfills them -- and without this the skip rules above would hold every old
-  // record for up to MAX_CACHE_AGE_MS, leaving every window null in the meantime.
+  // Records written before 30-day review bins existed. reviewBins is derived at
+  // WRITE time from the reviews in hand, so a code change alone never backfills
+  // it -- and without this the skip rules above would hold every old record for
+  // up to MAX_CACHE_AGE_MS, leaving it null in the meantime. That is precisely
+  // how the last30/last90/last365 counters two designs ago stayed null across
+  // all 160 categories without anyone noticing.
   // Self-limiting: once a record is rewritten the field is present and this stops
   // matching it.
-  if (cached.last30 === undefined) return true
+  if (cached.reviewBins === undefined) return true
   if (cached.sourceTotalReviews !== (row.artistTotalReviews ?? null)) return true
   const age = now - new Date(cached.fetchedAt || 0).getTime()
   return !isFinite(age) || age < 0 || age > MAX_CACHE_AGE_MS

@@ -37,6 +37,8 @@ import {
   setExportSnapshot,
   iterateCategoryChunks,
   shopKey,
+  REVIEW_BIN_DAYS,
+  REVIEW_BIN_COUNT,
 } from '@/lib/vgenServiceData/store'
 
 export const runtime = 'nodejs'
@@ -209,10 +211,16 @@ function readme(mode) {
           'listings in one category the values diverge sharply, which is the ' +
           'proof it is measured per listing.',
         reviewsLast30:
-          'Reviews on this listing in the 30 days before `reviewsAsOf`. The ' +
-          'closest thing to a recent-activity signal in this dataset.',
-        reviewsLast90: 'Same, over 90 days.',
-        reviewsLast365: 'Same, over 365 days.',
+          'Reviews on this listing in the 30 days before `reviewsAsOf`. Equal ' +
+          'to reviewBins[0]; longer spans are derived from reviewBins -- see ' +
+          'review_windows.deriving_windows.',
+        reviewBins:
+          'Array of `reviewBinCount` integers; bin i counts reviews left ' +
+          'between i*30 and (i+1)*30 days before `reviewsAsOf`. Covers ' +
+          '`reviewBinDays` * `reviewBinCount` days, so sum(reviewBins) can be ' +
+          'smaller than reviewsTotal. null means the feed was never pulled; ' +
+          'all-zeros means it was pulled and nothing landed. See ' +
+          'review_windows.',
         reviewsAsOf:
           'When the review feed was pulled (ISO 8601). The windows are measured ' +
           'backwards from THIS, not from now -- see review_windows.',
@@ -274,29 +282,76 @@ function readme(mode) {
       // it the one part a reader is most likely to misuse.
       review_windows: {
         what:
-          'reviewsLast30 / reviewsLast90 / reviewsLast365 count reviews left on ' +
-          'THIS listing inside that trailing window. Commission rows only.',
-        measured_from:
-          'Each window is measured backwards from that row\'s `reviewsAsOf`, not ' +
-          'from now. If reviewsAsOf is ten days old, reviewsLast30 describes days ' +
-          '-40 to -10. Check reviewsAsOf before calling a number "the last 30 ' +
-          'days", and prefer comparing rows whose reviewsAsOf are close together.',
+          'reviewsLast30 counts reviews left on THIS listing in the 30 days ' +
+          'before its reviewsAsOf. Every longer span is DERIVED from ' +
+          'reviewBins -- see deriving_windows.',
+        reviewBins:
+          'An array of reviewBinCount integers (see the response field, ' +
+          'default 24). Bin i counts the reviews left between i*30 and ' +
+          '(i+1)*30 days before reviewsAsOf, so bin 0 is the freshest and the ' +
+          'array reaches back reviewBinDays * reviewBinCount days (default ' +
+          '720). Reviews older than that are in none of the bins, so ' +
+          'sum(reviewBins) can be smaller than reviewsTotal. null means the ' +
+          'review feed was never pulled for this listing; an array of zeros ' +
+          'means it was pulled and no review landed in any bin. These are ' +
+          'different -- do not treat null as zero.',
+        deriving_windows:
+          'For any N that is a MULTIPLE of reviewBinDays: reviewsLastN = ' +
+          'sum(reviewBins[:N // reviewBinDays]). That is the whole method. ' +
+          '90-day and 365-day figures are NOT stored; compute them this way. ' +
+          'Do not fall back to reviewsTotal for a windowed question -- it is a ' +
+          'lifetime count.',
+        how_to:
+          'reviews_in_window = lambda bins, n: None if bins is None else ' +
+          'sum(bins[: n // 30])',
+        worked_example:
+          'reviewBins = [4, 2, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, ' +
+          '0, 0, 0, 0, 0, 0, 0] -> reviewsLast30 = 4 (bin 0), reviewsLast90 = ' +
+          '7 (bins 0-2), reviewsLast360 = 9 (bins 0-11). The review in bin 10 ' +
+          'is inside the array but outside the 90-day window.',
+        spans_that_are_not_multiples_of_30:
+          'A 7-day, 45-day or 365-day figure CANNOT be derived from bins, ' +
+          'because a bin cannot be split. Do not interpolate inside a bin and ' +
+          'do not round a bin boundary to the span you were asked for. Answer ' +
+          'with the nearest whole-bin span and name it: 360 days is the ' +
+          'closest thing to a year here, and calling it "the last year" ' +
+          'without saying it is 360 days is the error this note exists to ' +
+          'prevent.',
+        beyond_the_window:
+          'For a span longer than reviewBinDays * reviewBinCount, no exact ' +
+          'answer exists here. Use reviewsTotal and say it is lifetime, not a ' +
+          'window.',
+        re_anchoring_to_today:
+          'Bins are measured from reviewsAsOf, not from now, and a bin CANNOT ' +
+          'be shifted to re-anchor it -- that is the one thing this shape ' +
+          'gives up. If reviewsAsOf is stale by S days, bin 0 describes days ' +
+          'S to S+30 in the past, NOT the last 30 days, and the most recent S ' +
+          'days are not covered by this pull at all. When S is a meaningful ' +
+          'fraction of the span you were asked about, say so rather than ' +
+          'quoting the number as if it were current. Check reviewsAsOf before ' +
+          'calling any figure recent.',
+        monthly_series:
+          'reviewBins IS the monthly series, already bucketed: bin i is the ' +
+          '30-day period ending i*30 days before reviewsAsOf. Note these are ' +
+          'rolling 30-day periods anchored to reviewsAsOf, NOT calendar ' +
+          'months, so they will not line up with the dashboard MONTHLY FLOW ' +
+          'chart, which buckets by calendar month. Say which one you used.',
         coverage:
           'Review feeds are pulled for roughly the busiest 1000 listings per ' +
           'category, so not every row has them. null means the feed was never ' +
           'pulled; it does NOT mean zero. Exclude nulls from a ranking rather ' +
           'than treating them as the quietest listings.',
         check_coverage_first:
-          'Do not assume these are populated. Every category response carries a ' +
+          'Do not assume reviewsLast30, reviewBins, reviewsTotal or ' +
+          'reviewsAsOf are populated. Every category response carries a ' +
           '`coverage` object counting the non-null values in the rows it just ' +
-          'returned. Read it before planning a windowed answer: the windows are ' +
+          'returned. Read it before planning a windowed answer: these are ' +
           'written when a feed is pulled, so a rotation that has not reached a ' +
-          'category yet leaves them null across the board even though ' +
-          'reviewsTotal and reviewsAsOf are present.',
+          'category yet leaves them null across the board.',
         reviews_stand_in_for_orders:
-          'Reviews are this dataset\'s order-count proxy on the commission side, ' +
-          'and the only one that exists per listing. Use them as such -- that is ' +
-          'what estimating_revenue does.',
+          'Reviews are this dataset\'s order-count proxy on the commission ' +
+          'side, and the only one that exists per listing. Use them as such -- ' +
+          'that is what estimating_revenue does.',
       },
       // The whole point of this block is PERMISSION. Revenue is the question
       // this dataset exists to answer, and an earlier version of these notes was
@@ -311,10 +366,12 @@ function readme(mode) {
           'export", and do not invent a different formula: the numbers are only ' +
           'comparable across listings because everyone uses these.',
         revenue_30d:
-          'basePrice * reviewsLast30, converted to one currency. This IS what ' +
-          '"30-day revenue" means here -- there is no other definition in play. ' +
-          'Use reviewsLast90 for 90-day and reviewsLast365 for yearly. Sort on ' +
-          'it, rank on it, quote it in dollars.',
+          'revenue_30d = basePrice * reviewsLast30, scaled and converted per ' +
+          'money_units. This IS what "30-day revenue" means here -- there is ' +
+          'no other definition in play. Sort on it, rank on it, quote it in ' +
+          'dollars. For a longer span, derive the review count from ' +
+          'reviewBins first (review_windows.deriving_windows), then multiply ' +
+          'by the same basePrice. Only multiples of 30 days are derivable.',
         shop_lifetime:
           'basePrice * paidSalesCount, after converting basePrice to one ' +
           'currency. Use paidSalesCount, not salesCount -- free orders earn ' +
@@ -341,15 +398,16 @@ function readme(mode) {
           'result -- ranking a raw JPY integer against a raw USD one is not a ' +
           'rounding problem, it is a wrong answer.',
         when_the_window_is_null:
-          'If reviewsLast30 is null for a row, that row has no 30-day figure and ' +
-          'you must not manufacture one. Do not substitute reviewsTotal or ' +
-          'serviceCompletedComms into a 30-day formula -- those are LIFETIME ' +
-          'counts and the result would be wrong by years. Drop those rows from ' +
-          'the windowed ranking and say how many you dropped. Check the ' +
-          '`coverage` block on the response first: if coverage.reviewsLast30 is ' +
-          '0, no 30/90/365-day question can be answered from this pull at all, ' +
-          'and the correct reply is to say so and offer the lifetime figures ' +
-          'from commission_lifetime instead.',
+          'If reviewsLast30 and reviewBins are both null for a row, that row ' +
+          'has no windowed figure at all and you must not manufacture one. Do ' +
+          'not substitute reviewsTotal or serviceCompletedComms into a ' +
+          'windowed formula -- those are LIFETIME counts and the result would ' +
+          'be wrong by years. Drop those rows from the windowed ranking and ' +
+          'say how many you dropped. Check the `coverage` block on the ' +
+          'response first: if coverage.reviewBins is 0 then NO time-bounded ' +
+          'question can be answered from this pull, not even a 30-day one, and ' +
+          'the correct reply is to say so and offer the lifetime figures from ' +
+          'commission_lifetime instead.',
         do_not:
           'Do not use artistTotalReviews for a per-listing revenue figure: it is ' +
           'artist-wide, so for an artist with several listings it double-counts ' +
@@ -367,10 +425,11 @@ function readme(mode) {
           'formulas in estimating_revenue, which are this dataset\'s definition ' +
           'of the word. Compute it.',
         windowed_anything_else:
-          'The review windows above are the ONLY time-bounded numbers here. ' +
-          'Prices, sales counts, ratings and completed-commission counts are all ' +
-          'lifetime totals as of the category\'s finishedAt. There is no monthly ' +
-          'series and no per-review timestamp in this export.',
+          'Binned review activity IS exported, as reviewBins, so any window ' +
+          'that is a multiple of reviewBinDays -- and a rolling 30-day series ' +
+          '-- are both derivable. Spans that are not a multiple of 30 days ' +
+          'are not. Prices, sales counts, ratings and completed-commission ' +
+          'counts remain lifetime totals as of the category\'s finishedAt.',
         shop_recent_activity:
           'Shop rows have no windowed counts at all -- salesCount and reviewCount ' +
           'are lifetime. "Best selling shop product this month" cannot be ' +
@@ -421,10 +480,11 @@ function readme(mode) {
         'columns as if they measured the same thing.',
       'null means "VGen did not publish this", which is different from zero.',
       'Almost every figure here is a LIFETIME total. The ONLY time-bounded ones ' +
-        'anywhere are the commission review windows (reviewsLast30/90/365) on ' +
-        'the category endpoint, which is also where 30-day revenue is computed ' +
-        'from. Shop has none at all, so "best selling product this month" is ' +
-        'unanswerable; say so rather than substituting a lifetime count.',
+        'anywhere are reviewsLast30 plus whatever is derived from reviewBins, ' +
+        'both on the category endpoint, which is also where 30-day revenue is ' +
+        'computed from. Shop has none at all, so "best selling product this ' +
+        'month" is unanswerable; say so rather than substituting a lifetime ' +
+        'count.',
     ],
     next_call:
       'This summary carries no listing-level data at all -- only per-category ' +
@@ -561,17 +621,34 @@ async function attachReviewWindows(rows) {
       return {
         ...row,
         reviewsLast30: null,
-        reviewsLast90: null,
-        reviewsLast365: null,
+        reviewBins: null,
         reviewsTotal: null,
         reviewsAsOf: null,
       }
     }
+    // null (never pulled) and an all-zero array (pulled, nothing landed in any
+    // bin) are different findings, so an absent array must not become zeros.
+    // The length is checked too: a short array would silently under-report the
+    // oldest spans, which reads as a listing that went quiet rather than as a
+    // malformed record.
+    const reviewBins =
+      Array.isArray(meta.reviewBins) && meta.reviewBins.length === REVIEW_BIN_COUNT
+        ? meta.reviewBins
+        : null
+    const reviewsLast30 = meta.last30 ?? null
+    // reviewsLast30 is stored, and it is also bin 0. Two sources for one number
+    // is a bug waiting to be quoted, so the disagreement is surfaced here
+    // instead of being served silently -- a consumer that checks the documented
+    // invariant would otherwise be the one to find it.
+    if (reviewBins && reviewsLast30 !== null && reviewBins[0] !== reviewsLast30) {
+      console.error(
+        `[vgsd:export] reviewsLast30 disagrees with reviewBins[0] for ${row.serviceID}: stored=${reviewsLast30} bin0=${reviewBins[0]}`
+      )
+    }
     return {
       ...row,
-      reviewsLast30: meta.last30 ?? null,
-      reviewsLast90: meta.last90 ?? null,
-      reviewsLast365: meta.last365 ?? null,
+      reviewsLast30,
+      reviewBins,
       reviewsTotal: meta.count ?? null,
       reviewsAsOf: meta.fetchedAt || null,
     }
@@ -587,8 +664,7 @@ async function attachReviewWindows(rows) {
 const COVERAGE_FIELDS = {
   commission: [
     'reviewsLast30',
-    'reviewsLast90',
-    'reviewsLast365',
+    'reviewBins',
     'reviewsTotal',
     'reviewsAsOf',
     'serviceCompletedComms',
@@ -646,6 +722,16 @@ export async function GET(request) {
           // `returned < limit` has to infer it, and inferring it wrongly means
           // either a missed page or an endless loop.
           hasMore: offset + rows.length < ((meta && meta.count) || 0),
+          // The bin geometry. Stated per response rather than left to the readme
+          // so a consumer that dropped the readme still knows what one bin means
+          // and where the array stops being authoritative. Sent as width and
+          // count rather than a total span because summing a prefix needs both.
+          ...(market === 'shop'
+            ? {}
+            : {
+                reviewBinDays: REVIEW_BIN_DAYS,
+                reviewBinCount: REVIEW_BIN_COUNT,
+              }),
           coverage: countCoverage(withWindows, market),
           rows: withWindows,
         },

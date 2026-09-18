@@ -118,32 +118,61 @@ export async function setShopCategoryMap(list) {
 
 const DAY_MS = 24 * 60 * 60 * 1000
 
-// Trailing-window review counts, measured at the moment of the pull.
+// Review activity is stored as fixed-width 30-day bins rather than one counter
+// per question. 24 bins reach back 720 days, which covers every span anyone has
+// asked for.
 //
-// Computed HERE, at write time, rather than by whoever reads the data later. The
-// reviews are already in hand, so it costs nothing; deriving it on read means
-// loading every review payload, which is exactly the megabytes-per-batch problem
-// the lightweight meta record exists to avoid. Anything that wants "how busy is
-// this listing lately" can now answer it from a ~200 byte record.
+// 30 is not an arbitrary bin width: it makes bin 0 EXACTLY the trailing 30 days,
+// so the figure the dashboard sorts on and the figure a consumer derives are the
+// same arithmetic rather than two definitions that drift apart.
+export const REVIEW_BIN_DAYS = 30
+export const REVIEW_BIN_COUNT = 24
+
+// Review counts per 30-day bin, measured at the moment of the pull.
 //
-// Windows are relative to `asOf`, NOT to when someone reads them. A pull from
-// ten days ago describes days -40..-10, so a reader must age it themselves; that
-// is why asOf travels with the counts instead of being left implicit.
+// Computed HERE, at write time, rather than by whoever reads the data later.
+// The reviews are already in hand, so it costs nothing; deriving it on read
+// means loading every review payload, which is exactly the megabytes-per-batch
+// problem the lightweight meta record exists to avoid.
+//
+// This replaced a set of fixed last30/last90/last365 counters. Storing one
+// counter per window meant every NEW question needed a schema change AND a full
+// rotation sweep to backfill it -- and until that sweep finished the field read
+// null everywhere, which is indistinguishable from "quiet listing" to anyone
+// downstream. Bins answer any multiple of 30 days by summing a prefix, so the
+// next question of that shape costs nothing.
+//
+// It also replaced a per-review offset array, which could answer ANY span but
+// grew with the review count -- unbounded on heavy listings, on a record whose
+// entire purpose is to stay small enough to MGET 200 at a time. Bins are a fixed
+// 24 numbers whether the listing has two reviews or a thousand. The price is
+// resolution: spans that are not a multiple of 30 days are no longer derivable.
+//
+// last30 stays stored alongside because the dashboard sorts on it and
+// recomputing it per row on every render is wasted work. It is redundant BY
+// DESIGN -- it is exactly bin 0 -- and the export asserts the two agree rather
+// than trusting either.
+//
+// Bins are relative to `asOf`, NOT to when someone reads them, and unlike the
+// offsets they replaced a bin CANNOT be shifted exactly to re-anchor on today.
+// That is why asOf travels with them instead of being left implicit.
 function reviewWindows(reviews, asOf) {
   const now = Date.parse(asOf)
-  const out = { last30: 0, last90: 0, last365: 0 }
+  const out = { last30: 0, reviewBins: new Array(REVIEW_BIN_COUNT).fill(0) }
   if (!Array.isArray(reviews) || !Number.isFinite(now)) return out
   for (const review of reviews) {
     const created = Date.parse(review && review.created)
     if (!Number.isFinite(created)) continue
     const age = now - created
     // Future-dated reviews are clock skew, not activity; counting them would
-    // inflate the freshest window, which is the one most likely to be quoted.
+    // inflate the freshest bin, which is the one most likely to be quoted.
     if (age < 0) continue
-    if (age <= 30 * DAY_MS) out.last30++
-    if (age <= 90 * DAY_MS) out.last90++
-    if (age <= 365 * DAY_MS) out.last365++
+    const bin = Math.floor(Math.floor(age / DAY_MS) / REVIEW_BIN_DAYS)
+    if (bin >= REVIEW_BIN_COUNT) continue
+    out.reviewBins[bin]++
   }
+  // Bin 0 IS the trailing 30 days, so this is a copy rather than a second count.
+  out.last30 = out.reviewBins[0]
   return out
 }
 
