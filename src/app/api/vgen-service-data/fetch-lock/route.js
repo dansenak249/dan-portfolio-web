@@ -13,8 +13,9 @@
 // mid-slice; it just means the rotation declines to take the lease again when
 // its current tick ends, which frees it for the person within one slice.
 //
-// AUTH: open, mirroring the sibling service-data routes. The lease is a
-// coordination aid for one operator, not a security boundary.
+// AUTH: GET is open — the dashboard needs it to decide whether to enable its
+// buttons, before anyone signs in. POST is not: an open claim would let a
+// stranger park the lease and keep the rotation standing down indefinitely.
 
 import { NextResponse } from 'next/server'
 import {
@@ -24,6 +25,7 @@ import {
   clearFetchClaim,
   FETCH_LOCK_TTL_SEC,
 } from '@/lib/vgenServiceData/store'
+import { requireWriter } from '@/lib/vgenServiceData/writeAuth'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -51,6 +53,9 @@ export async function GET() {
 }
 
 export async function POST(request) {
+  const auth = await requireWriter(request)
+  if (auth.response) return auth.response
+
   let body = {}
   try {
     body = (await request.json()) || {}

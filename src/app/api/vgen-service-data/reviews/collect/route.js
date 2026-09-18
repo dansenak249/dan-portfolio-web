@@ -30,7 +30,9 @@
 //
 // `force: 1` ignores all of that and re-pulls the batch regardless.
 //
-// AUTH: intentionally open for now, mirroring the sibling service-data routes.
+// AUTH: a signed-in bot-config account or a machine token; the rotation passes
+// its own bearer straight through. See lib/vgenServiceData/writeAuth.js.
+//
 // EVERY call takes the single fetch lease first. It is renewed per slice and
 // carries a TTL, so a caller that disappears mid-crawl frees it by itself.
 // Callers that supply no `holder` get an ephemeral one, which still serialises
@@ -42,11 +44,12 @@ import { acquireFetchLock } from '@/lib/vgenServiceData/store'
 import { serviceScore } from '@/lib/vgenServiceData/fetchCategory'
 import {
   getCategoryMap,
-  getCategoryMeta,
-  listCategoryServices,
+  getCategoryMetaMany,
+  listCategoryServicesMany,
   getMetaMany,
   setCachedReviews,
 } from '@/lib/vgenServiceData/store'
+import { requireWriter } from '@/lib/vgenServiceData/writeAuth'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -91,14 +94,15 @@ async function censusFor(categoryID) {
   const wanted = categoryID
     ? map.filter((c) => c.categoryID === categoryID)
     : map
+  const ids = wanted
+    .map((entry) => (entry.categoryID || '').trim())
+    .filter(Boolean)
+  // Batched: this runs on every rotation tick, so a command per category here
+  // was a standing charge against the Upstash budget rather than a one-off.
+  const metas = await getCategoryMetaMany(ids)
+  const byCategory = await listCategoryServicesMany(ids, metas)
   const rows = []
-  for (const entry of wanted) {
-    const id = (entry.categoryID || '').trim()
-    if (!id) continue
-    const meta = await getCategoryMeta(id)
-    if (!meta || !meta.chunks) continue
-    rows.push(...(await listCategoryServices(id)))
-  }
+  for (const id of ids) rows.push(...(byCategory.get(id) || []))
   return rows
 }
 
@@ -111,6 +115,9 @@ function needsPull(row, cached, now) {
 }
 
 export async function POST(request) {
+  const auth = await requireWriter(request)
+  if (auth.response) return auth.response
+
   let body = {}
   try {
     body = (await request.json()) || {}

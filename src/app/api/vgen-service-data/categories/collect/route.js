@@ -41,9 +41,9 @@
 // The trade: raising CENSUS_KEEP later means re-crawling, because the tail is
 // discarded as we go rather than stored and sorted afterwards.
 //
-// AUTH: intentionally open for now, mirroring the sibling service-data routes.
-// This is a personal, noindex research tool; auth arrives with a unified /tools
-// login.
+// AUTH: a signed-in bot-config account or a machine token; the rotation passes
+// its own bearer straight through. See lib/vgenServiceData/writeAuth.js.
+//
 // EVERY call takes the single fetch lease first. It is renewed per slice and
 // carries a TTL, so a caller that disappears mid-crawl frees it by itself.
 // Callers that supply no `holder` get an ephemeral one, which still serialises
@@ -65,6 +65,7 @@ import {
   setCategoryMeta,
   deleteCategoryChunks,
 } from '@/lib/vgenServiceData/store'
+import { requireWriter } from '@/lib/vgenServiceData/writeAuth'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -127,6 +128,9 @@ function couldChangeTop(rows, topCount, topMin) {
 const CATEGORY_ID = /^rec[A-Za-z0-9]{10,20}$/
 
 export async function POST(request) {
+  const auth = await requireWriter(request)
+  if (auth.response) return auth.response
+
   let body
   try {
     body = await request.json()

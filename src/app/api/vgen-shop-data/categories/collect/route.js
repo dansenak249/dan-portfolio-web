@@ -26,7 +26,8 @@
 // but leaves the stored census alone, so the table keeps showing the previous
 // result until this run has something to replace it with.
 //
-// AUTH: intentionally open, mirroring the sibling routes.
+// AUTH: a signed-in bot-config account or a machine token; the rotation passes
+// its own bearer straight through. See lib/vgenServiceData/writeAuth.js.
 
 import { NextResponse } from 'next/server'
 import {
@@ -49,6 +50,7 @@ import {
   deleteCategoryChunks,
   shopKey,
 } from '@/lib/vgenServiceData/store'
+import { requireWriter } from '@/lib/vgenServiceData/writeAuth'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -80,6 +82,9 @@ function couldChangeTop(rows, topCount, topMin) {
 }
 
 export async function POST(request) {
+  const auth = await requireWriter(request)
+  if (auth.response) return auth.response
+
   let body
   try {
     body = await request.json()

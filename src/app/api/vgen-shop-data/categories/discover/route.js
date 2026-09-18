@@ -19,7 +19,8 @@
 // what to call it, because the stored map holds hand-picked names, colours and
 // ordering that a discovery run must not clobber.
 //
-// AUTH: intentionally open, mirroring the sibling service-data routes.
+// AUTH: a signed-in bot-config account or a machine token. It stores nothing,
+// but it pulls VGen's client bundle, so it is not left open.
 
 import { NextResponse } from 'next/server'
 import {
@@ -28,6 +29,7 @@ import {
   TAXONOMY_SHOP,
 } from '@/lib/vgenServiceData/fetchTaxonomyChunk'
 import { getShopCategoryMap } from '@/lib/vgenServiceData/store'
+import { requireWriter } from '@/lib/vgenServiceData/writeAuth'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -36,7 +38,10 @@ export const maxDuration = 60
 
 const NO_STORE = { 'Cache-Control': 'no-store' }
 
-export async function POST() {
+export async function POST(request) {
+  const auth = await requireWriter(request)
+  if (auth.response) return auth.response
+
   try {
     const rows = flattenTaxonomy(
       await fetchTaxonomy({ occurrence: TAXONOMY_SHOP })

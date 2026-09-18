@@ -713,6 +713,129 @@ export async function clearRotation() {
 }
 
 // ---------------------------------------------------------------------------
+// Export snapshot
+// ---------------------------------------------------------------------------
+// A pre-built, whole-census summary served to outside readers, so an export call
+// costs ONE command instead of walking every category. Upstash bills per command
+// and the census spans ~200 categories across both marketplaces; without this a
+// colleague refreshing a dashboard would burn more quota in a minute than the
+// rotation does in a day.
+//
+// Held with a TTL rather than rebuilt on write: the data behind it changes on
+// every rotation tick, so a snapshot is stale the moment it is made. The TTL
+// bounds HOW stale, and the rebuild is cheap because it reads in batches.
+const EXPORT_SNAPSHOT_KEY = `${NS}:export:snapshot`
+
+/** @returns {Promise<object|null>} */
+export async function getExportSnapshot() {
+  const stored = parseMaybe(await ensureRedis().get(EXPORT_SNAPSHOT_KEY))
+  return stored && typeof stored === 'object' ? stored : null
+}
+
+/**
+ * @param {object} snapshot
+ * @param {number} ttlSec how long before the next reader rebuilds it
+ */
+export async function setExportSnapshot(snapshot, ttlSec) {
+  await ensureRedis().set(EXPORT_SNAPSHOT_KEY, JSON.stringify(snapshot), {
+    ex: ttlSec,
+  })
+}
+
+/**
+ * Census summaries for many categories in ONE round trip.
+ *
+ * getCategoryMeta() is fine for a single category and ruinous for a list: the
+ * readers that loop over the whole map pay a command per category. MGET turns
+ * that into one. Keys are already namespaced by shopKey() where needed, so this
+ * serves both marketplaces.
+ *
+ * @param {string[]} categoryKeys
+ * @returns {Promise<(object|null)[]>} aligned with `categoryKeys`
+ */
+export async function getCategoryMetaMany(categoryKeys) {
+  if (!categoryKeys.length) return []
+  const values = await ensureRedis().mget(
+    ...categoryKeys.map((key) => catMetaKey(key))
+  )
+  return values.map((value) => {
+    const parsed = parseMaybe(value)
+    return parsed && typeof parsed === 'object' ? parsed : null
+  })
+}
+
+/**
+ * In-progress crawl state for many categories in ONE round trip. Same reasoning
+ * as getCategoryMetaMany(); the census views read meta and job side by side.
+ *
+ * @param {string[]} categoryKeys
+ * @returns {Promise<(object|null)[]>} aligned with `categoryKeys`
+ */
+export async function getCategoryJobMany(categoryKeys) {
+  if (!categoryKeys.length) return []
+  const values = await ensureRedis().mget(
+    ...categoryKeys.map((key) => catJobKey(key))
+  )
+  return values.map((value) => {
+    const parsed = parseMaybe(value)
+    return parsed && typeof parsed === 'object' ? parsed : null
+  })
+}
+
+/**
+ * Read every stored row for MANY categories, batched across category boundaries.
+ *
+ * listCategoryServices() already batches the chunks of ONE category, but a reader
+ * that walks the whole map still pays at least one round trip per category — with
+ * ~160 commission categories that is the single largest command cost in the tool.
+ * This flattens every chunk key of every category into one list and reads it in
+ * CHUNK_READ_BATCH slices, so the cost follows the amount of DATA rather than the
+ * number of categories.
+ *
+ * De-duplication stays PER CATEGORY (a row may legitimately appear in two
+ * categories) and output order is unchanged: categories in the order given,
+ * chunks in index order.
+ *
+ * @param {string[]} categoryKeys already namespaced (see shopKey) where needed
+ * @param {(object|null)[]} metas aligned with `categoryKeys`, from getCategoryMetaMany
+ * @returns {Promise<Map<string, object[]>>} category key -> rows (crawled ones only)
+ */
+export async function listCategoryServicesMany(categoryKeys, metas) {
+  const out = new Map()
+  // One entry per chunk to read, in the order the rows must come back out.
+  const plan = []
+  categoryKeys.forEach((key, i) => {
+    const meta = metas[i]
+    if (!meta || !meta.chunks) return
+    out.set(key, [])
+    for (let c = 0; c < meta.chunks; c++) {
+      plan.push({ key, redisKey: catChunkKey(key, c) })
+    }
+  })
+  if (!plan.length) return out
+
+  const r = ensureRedis()
+  const seen = new Map(Array.from(out.keys(), (key) => [key, new Set()]))
+  for (let start = 0; start < plan.length; start += CHUNK_READ_BATCH) {
+    const slice = plan.slice(start, start + CHUNK_READ_BATCH)
+    const values = await r.mget(...slice.map((entry) => entry.redisKey))
+    slice.forEach((entry, i) => {
+      const rows = parseMaybe(values[i])
+      if (!Array.isArray(rows)) return
+      const bucket = out.get(entry.key)
+      const ids = seen.get(entry.key)
+      for (const row of rows) {
+        const id = rowID(row)
+        if (!id || ids.has(id)) continue
+        ids.add(id)
+        bucket.push(row)
+      }
+    })
+  }
+  return out
+}
+
+// ---------------------------------------------------------------------------
 // Legacy cleanup
 // ---------------------------------------------------------------------------
 // Keys written by the OLD flow (declare services one by one, then pull each

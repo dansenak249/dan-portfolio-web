@@ -75,6 +75,38 @@
          title alone; .top-actions and .updated went with it. */
       .tab-note b { color: var(--muted); font-weight: 600; }
 
+      /* Sign-in state. Deliberately quiet: reading is the common case and needs
+         no account, so this must not read as a wall in front of the page. */
+      .auth-block { display: flex; align-items: center; gap: 10px; }
+      .auth-who {
+        font-family: var(--mono);
+        font-size: 0.74rem;
+        color: var(--muted);
+        white-space: nowrap;
+      }
+      .auth-who.in { color: var(--accent-2); }
+      .login-field { display: block; margin-bottom: 10px; }
+      .login-field span {
+        display: block;
+        font-family: var(--mono);
+        font-size: 0.72rem;
+        text-transform: uppercase;
+        letter-spacing: 0.14em;
+        color: var(--muted);
+        margin-bottom: 5px;
+      }
+      .login-field input {
+        width: 100%;
+        background: var(--bg);
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        color: var(--text);
+        padding: 9px 10px;
+        font-family: var(--mono);
+        font-size: 0.85rem;
+      }
+      .login-field input:focus { outline: none; border-color: var(--accent); }
+
       button {
         font-family: var(--sans);
         font-size: 0.85rem;
@@ -788,6 +820,12 @@
             monthly business, across commission services and shop products.
           </p>
         </div>
+        <!-- Who is signed in. Reading needs nobody; every action that WRITES
+             (crawl, save, purge) asks for an account. -->
+        <div class="auth-block">
+          <span id="authWho" class="auth-who">Not signed in</span>
+          <button type="button" id="authBtn" class="tiny ghost">Sign in</button>
+        </div>
       </header>
 
       <!-- One tab per VGen marketplace section, named as VGen names them. -->
@@ -1232,6 +1270,38 @@
         </div>
       </div>
 
+      <!-- Sign-in. Raised by the first write action of a session, or by the
+           header button. The account is the SAME one the Discord bot config
+           uses; there is no separate password to remember. -->
+      <div id="loginModal" class="modal hidden">
+        <div class="modal-card" style="width:min(400px,100%)">
+          <div class="modal-head">
+            <h3>Sign in</h3>
+            <button id="loginClose" class="tiny ghost" title="Close">&#10005;</button>
+          </div>
+          <p class="modal-sub" id="loginReason">
+            Reading is open to everyone. Crawling, saving and clearing need an
+            account.
+          </p>
+          <label class="login-field">
+            <span>Username</span>
+            <input id="loginUser" type="text" autocomplete="username" spellcheck="false" />
+          </label>
+          <label class="login-field">
+            <span>Password</span>
+            <input id="loginPass" type="password" autocomplete="current-password" />
+          </label>
+          <div id="loginError" class="confirm-info" style="display:none"></div>
+          <div class="modal-foot">
+            <span class="foot-note">Press Enter to sign in.</span>
+            <div class="modal-actions">
+              <button id="loginCancel" class="ghost">Cancel</button>
+              <button id="loginSubmit" class="primary">Sign in</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
       <p class="foot-note" style="text-align:center">
         Read-only survey of PUBLIC review data. Anonymous reviews count toward
         total volume but are excluded from unique / repeat-client math. Fetch is
@@ -1335,6 +1405,139 @@
         const el = $('status');
         el.textContent = msg;
         el.className = 'status show ' + (kind || 'info');
+      }
+
+      // ---- session ----
+      // Reading stays open; every WRITE route now wants a bot-config account.
+      // The browser holds that account's durable pollerSecret, which is exactly
+      // what /api/bot-config/login hands back — so this tool introduces no
+      // credential of its own and revoking a person is a bot-config user edit.
+      //
+      // localStorage, not a cookie: the token is sent as an explicit
+      // Authorization header, so it can never ride along on a cross-site
+      // request the way an ambient cookie would.
+      const SESSION_KEY = 'vgsd:session';
+      let session = null;
+
+      function loadSession() {
+        try {
+          const raw = localStorage.getItem(SESSION_KEY);
+          const parsed = raw ? JSON.parse(raw) : null;
+          session = parsed && parsed.token ? parsed : null;
+        } catch {
+          session = null;
+        }
+        renderAuth();
+      }
+
+      function saveSession(next) {
+        session = next;
+        try {
+          if (next) localStorage.setItem(SESSION_KEY, JSON.stringify(next));
+          else localStorage.removeItem(SESSION_KEY);
+        } catch {
+          // A blocked localStorage costs persistence across reloads, nothing more.
+        }
+        renderAuth();
+      }
+
+      function renderAuth() {
+        const who = $('authWho');
+        const btn = $('authBtn');
+        if (!who || !btn) return;
+        if (session) {
+          who.textContent =
+            (session.displayName || session.username || 'signed in') +
+            (session.role === 'admin' ? ' · admin' : '');
+          who.className = 'auth-who in';
+          btn.textContent = 'Sign out';
+        } else {
+          who.textContent = 'Not signed in';
+          who.className = 'auth-who';
+          btn.textContent = 'Sign in';
+        }
+      }
+
+      // Headers for a write call. Absent when signed out, which lets the server
+      // answer 401 and the dialog open in response — rather than the client
+      // guessing at permissions it does not own.
+      function authHeaders() {
+        return session ? { authorization: 'Bearer ' + session.token } : {};
+      }
+
+      // The dialog resolves the promise: true once signed in, false if the
+      // person backs out. Kept as a single pending resolver so a burst of failed
+      // writes queues behind one prompt instead of stacking dialogs.
+      let loginResolve = null;
+
+      function openLogin(reason) {
+        $('loginReason').textContent =
+          reason ||
+          'Reading is open to everyone. Crawling, saving and clearing need an account.';
+        $('loginError').style.display = 'none';
+        $('loginPass').value = '';
+        if (session) $('loginUser').value = session.username || '';
+        $('loginModal').classList.remove('hidden');
+        setTimeout(() => {
+          const field = $('loginUser').value ? $('loginPass') : $('loginUser');
+          field.focus();
+        }, 0);
+        return new Promise((resolve) => {
+          // A second call while the dialog is open joins the first one.
+          const prev = loginResolve;
+          loginResolve = (ok) => {
+            if (prev) prev(ok);
+            resolve(ok);
+          };
+        });
+      }
+
+      function closeLogin(ok) {
+        $('loginModal').classList.add('hidden');
+        const resolve = loginResolve;
+        loginResolve = null;
+        if (resolve) resolve(!!ok);
+      }
+
+      async function submitLogin() {
+        const username = $('loginUser').value.trim();
+        const password = $('loginPass').value;
+        const err = $('loginError');
+        if (!username || !password) {
+          err.textContent = 'Enter both a username and a password.';
+          err.style.display = '';
+          return;
+        }
+        $('loginSubmit').disabled = true;
+        try {
+          const res = await fetch('/api/bot-config/login', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ username, password }),
+          });
+          const json = await res.json().catch(() => null);
+          if (!res.ok || !json || !json.token) {
+            throw new Error((json && json.error) || 'HTTP ' + res.status);
+          }
+          saveSession({
+            token: json.token,
+            username: json.username || username,
+            displayName: json.displayName || '',
+            role: json.role || 'member',
+          });
+          closeLogin(true);
+          status('Signed in as ' + (json.displayName || json.username || username) + '.', 'ok');
+        } catch (e) {
+          err.textContent = e.message;
+          err.style.display = '';
+        } finally {
+          $('loginSubmit').disabled = false;
+        }
+      }
+
+      function signOut() {
+        saveSession(null);
+        status('Signed out. Reading still works; writing will ask again.', 'info');
       }
 
       // ---- declaration lookup + legacy self-heal ----
@@ -2263,13 +2466,9 @@
           .filter((id) => !prevIDs.has(id));
         try {
           status('Saving\u2026', 'info');
-          const res = await fetch(API.services, {
-            method: 'POST',
-            headers: { 'content-type': 'application/json' },
-            body: JSON.stringify({ services: clean }),
-          });
-          const json = await res.json();
-          if (!res.ok) throw new Error(json.error || 'HTTP ' + res.status);
+          // postJson, not a bare fetch: it carries the account and re-prompts
+          // once on a 401 instead of losing the edit.
+          const json = await postJson(API.services, { services: clean });
           declRows = json.services.map((s) => ({ ...s }));
           reverseMapLegacyDecl();
           buildDeclLookup();
@@ -2297,10 +2496,16 @@
       // POST that survives a non-JSON reply. A dead function returns an HTML
       // error page; parsing it blind produces a confusing syntax error instead
       // of the status that actually explains the failure.
-      async function postJson(url, body) {
+      //
+      // EVERY write goes through here, which is also where the account is
+      // attached. A 401 is not treated as a failure: the dialog opens, and the
+      // SAME request is replayed once with the new token, so a session that
+      // expired mid-crawl costs a password and not the crawl. The retry happens
+      // at most once — a second 401 means the account genuinely cannot do this.
+      async function postJson(url, body, retried) {
         const res = await fetch(url, {
           method: 'POST',
-          headers: { 'content-type': 'application/json' },
+          headers: { 'content-type': 'application/json', ...authHeaders() },
           body: JSON.stringify(body),
         });
         const text = await res.text();
@@ -2309,6 +2514,19 @@
           json = JSON.parse(text);
         } catch {
           // not JSON: keep the raw text for the message below
+        }
+        if (res.status === 401 && !retried) {
+          const signedIn = await openLogin(
+            'This action writes to the database. Sign in to continue.'
+          );
+          if (!signedIn) throw new Error('Cancelled: not signed in.');
+          return postJson(url, body, true);
+        }
+        if (res.status === 403) {
+          // Re-prompting would not help: the account is known, just not allowed.
+          throw new Error(
+            (json && json.error) || 'This action needs an admin account.'
+          );
         }
         if (!res.ok) {
           // An HTML body means the function itself died rather than
@@ -2623,7 +2841,12 @@
 
       async function releaseLease() {
         try {
-          await postJson(API.fetchLock, { action: 'release', holder: FETCH_HOLDER });
+          // Never prompt on the way out. This is cleanup after a finished crawl;
+          // the lease carries a TTL, so a skipped release frees itself and a
+          // sign-in dialog here would be a question about work already done.
+          if (session) {
+            await postJson(API.fetchLock, { action: 'release', holder: FETCH_HOLDER });
+          }
         } catch {
           // The lease carries a TTL, so a missed release frees itself.
         }
@@ -3860,13 +4083,7 @@
           .filter((r) => r.categoryID);
         try {
           status('Saving category map...', 'info');
-          const res = await fetch(API.categories, {
-            method: 'POST',
-            headers: { 'content-type': 'application/json' },
-            body: JSON.stringify({ categories: clean }),
-          });
-          const json = await res.json();
-          if (!res.ok) throw new Error(json.error || 'HTTP ' + res.status);
+          const json = await postJson(API.categories, { categories: clean });
           catRows = json.categories.map((c) => ({ ...c }));
           catBaseline = catSnapshot(catRows);
           buildCategoryLookup();
@@ -4209,9 +4426,23 @@
         if (e.target === $('owModal')) closeOwModal();
       });
 
+      // Sign in / out. Closing the dialog any other way counts as a cancel, so
+      // the write that raised it is abandoned rather than left hanging.
+      $('authBtn').addEventListener('click', () => {
+        if (session) signOut();
+        else openLogin();
+      });
+      $('loginSubmit').addEventListener('click', submitLogin);
+      $('loginCancel').addEventListener('click', () => closeLogin(false));
+      $('loginClose').addEventListener('click', () => closeLogin(false));
+      $('loginModal').addEventListener('click', (e) => {
+        if (e.target === $('loginModal')) closeLogin(false);
+      });
+
       // Keyboard: Enter confirms the top-most open modal; Escape closes any modal.
       document.addEventListener('keydown', (e) => {
         if (e.key === 'Escape') {
+          if (!$('loginModal').classList.contains('hidden')) closeLogin(false);
           closeOwModal();
           closeDelModal();
           closeEditModal();
@@ -4220,7 +4451,11 @@
           return;
         }
         if (e.key !== 'Enter') return;
-        if (!$('colorModal').classList.contains('hidden')) {
+        // Login sits on top of whatever raised it, so it answers Enter first.
+        if (!$('loginModal').classList.contains('hidden')) {
+          e.preventDefault();
+          submitLogin();
+        } else if (!$('colorModal').classList.contains('hidden')) {
           e.preventDefault();
           applyColorPicker();
         } else if (!$('owModal').classList.contains('hidden')) {
@@ -4356,6 +4591,7 @@
       // ---- boot ----
       (async function init() {
         beginLoading();
+        loadSession(); // restore the signed-in account, if any
         loadUiConfig(); // restore saved tab / filter / flow window / sort first
         renderTabs();
         // Before anything else: find out whether a fetch is already running.

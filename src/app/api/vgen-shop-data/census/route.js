@@ -17,8 +17,8 @@
 
 import { NextResponse } from 'next/server'
 import {
-  getCategoryMeta,
-  getCategoryJob,
+  getCategoryMetaMany,
+  getCategoryJobMany,
   getShopCategoryMap,
   shopKey,
 } from '@/lib/vgenServiceData/store'
@@ -60,12 +60,18 @@ export async function GET(request) {
     let totalProducts = 0
     let crawledCount = 0
 
-    for (const entry of wanted) {
-      const key = shopKey(entry.categoryID)
-      const [meta, job] = await Promise.all([
-        getCategoryMeta(key),
-        getCategoryJob(key),
-      ])
+    // Two commands for the whole map instead of two per category. This view is
+    // polled while a crawl runs, so a command apiece added up fast.
+    const keys = wanted.map((entry) => shopKey(entry.categoryID))
+    const [metas, jobs] = await Promise.all([
+      getCategoryMetaMany(keys),
+      getCategoryJobMany(keys),
+    ])
+
+    for (let i = 0; i < wanted.length; i++) {
+      const entry = wanted[i]
+      const meta = metas[i]
+      const job = jobs[i]
       if (meta) {
         crawledCount++
         totalProducts += meta.count || 0

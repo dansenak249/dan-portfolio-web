@@ -91,11 +91,18 @@ async function autoCategories() {
   return [...pick(commission, 'commission'), ...pick(shop, 'shop')]
 }
 
+// The collect endpoints are themselves authenticated now, so the tick's own
+// bearer is forwarded rather than a second secret being introduced. It has
+// already been verified above, and it is the machine token, so the sub-call
+// costs no extra Redis lookup.
 async function callSlice(request, path, body) {
   const base = new URL(request.url).origin
   const res = await fetch(base + path, {
     method: 'POST',
-    headers: { 'content-type': 'application/json' },
+    headers: {
+      'content-type': 'application/json',
+      authorization: request.headers.get('authorization') || '',
+    },
     body: JSON.stringify(body),
     cache: 'no-store',
   })

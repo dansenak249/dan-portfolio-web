@@ -7,7 +7,8 @@
 // the void, and it only ever touches the "shop:" key prefix — a category id
 // shared with the Commission taxonomy keeps its commission census untouched.
 //
-// AUTH: intentionally open, mirroring the sibling routes.
+// AUTH: ADMIN only, like its Commission twin -- re-crawling a purged category
+// costs days of metered rotation ticks.
 
 import { NextResponse } from 'next/server'
 import {
@@ -16,6 +17,7 @@ import {
   purgeCategory,
   shopKey,
 } from '@/lib/vgenServiceData/store'
+import { requireWriter } from '@/lib/vgenServiceData/writeAuth'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -29,6 +31,9 @@ const CATEGORY_ID = /^rec[A-Za-z0-9]{10,20}$/
 const BYTES_PER_PRODUCT = 618
 
 export async function POST(request) {
+  const auth = await requireWriter(request, { admin: true })
+  if (auth.response) return auth.response
+
   let body
   try {
     body = await request.json()

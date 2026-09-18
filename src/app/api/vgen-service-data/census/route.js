@@ -21,8 +21,8 @@
 import { NextResponse } from 'next/server'
 import {
   getCategoryMap,
-  getCategoryMeta,
-  getCategoryJob,
+  getCategoryMetaMany,
+  getCategoryJobMany,
   listCategoryServices,
 } from '@/lib/vgenServiceData/store'
 
@@ -53,12 +53,20 @@ export async function GET(request) {
     let totalDuplicates = 0
     let crawledCount = 0
 
-    for (const entry of wanted) {
+    // Two commands for the whole map instead of two per category. This view is
+    // polled while a crawl runs, so the per-category version was quietly the
+    // second-largest consumer of the Upstash command budget.
+    const ids = wanted.map((entry) => entry.categoryID)
+    const [metas, jobs] = await Promise.all([
+      getCategoryMetaMany(ids),
+      getCategoryJobMany(ids),
+    ])
+
+    for (let i = 0; i < wanted.length; i++) {
+      const entry = wanted[i]
       const categoryID = entry.categoryID
-      const [meta, job] = await Promise.all([
-        getCategoryMeta(categoryID),
-        getCategoryJob(categoryID),
-      ])
+      const meta = metas[i]
+      const job = jobs[i]
       if (meta) {
         crawledCount++
         totalServices += meta.count || 0

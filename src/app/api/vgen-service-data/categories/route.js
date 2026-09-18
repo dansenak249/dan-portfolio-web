@@ -15,13 +15,13 @@
 // dashboard. Empty/invalid colors are dropped (stored as '') so the UI falls back
 // to its default text color.
 //
-// AUTH: intentionally open for now, mirroring the services endpoint. This is a
-// personal, noindex research tool; auth will be added later as part of a unified
-// /tools login.
+// AUTH: GET is open (a public research view). POST requires a signed-in
+// bot-config account or a machine token -- see lib/vgenServiceData/writeAuth.js.
 
 import { NextResponse } from 'next/server'
 import { getCategoryMap, setCategoryMap } from '@/lib/vgenServiceData/store'
 import { sanitizeCategories } from '@/lib/vgenServiceData/categoryMap'
+import { requireWriter } from '@/lib/vgenServiceData/writeAuth'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -48,6 +48,9 @@ export async function GET() {
 }
 
 export async function POST(request) {
+  const auth = await requireWriter(request)
+  if (auth.response) return auth.response
+
   let body
   try {
     body = await request.json()

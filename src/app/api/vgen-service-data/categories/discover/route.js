@@ -13,7 +13,8 @@
 // what to call it — the stored map holds hand-picked names, colours and ordering
 // that a discovery run must not clobber.
 //
-// AUTH: intentionally open for now, mirroring the sibling service-data routes.
+// AUTH: a signed-in bot-config account or a machine token. It stores nothing,
+// but it spends ~160 outbound fetches, so it is not left open.
 
 import { NextResponse } from 'next/server'
 import {
@@ -26,6 +27,7 @@ import {
   resolveCategorySlice,
 } from '@/lib/vgenServiceData/fetchCategoryTaxonomy'
 import { getCategoryMap } from '@/lib/vgenServiceData/store'
+import { requireWriter } from '@/lib/vgenServiceData/writeAuth'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -83,6 +85,9 @@ async function discoverFromPages(body) {
 }
 
 export async function POST(request) {
+  const auth = await requireWriter(request)
+  if (auth.response) return auth.response
+
   let body = {}
   try {
     body = (await request.json()) || {}

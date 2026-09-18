@@ -32,8 +32,8 @@ import {
   getArtistNamesMany,
   setArtistName,
   getCategoryMap,
-  getCategoryMeta,
-  listCategoryServices,
+  getCategoryMetaMany,
+  listCategoryServicesMany,
 } from '@/lib/vgenServiceData/store'
 import { analyzeService, aggregateByArtist } from '@/lib/vgenServiceData/analyze'
 import { serviceScore } from '@/lib/vgenServiceData/fetchCategory'
@@ -84,20 +84,27 @@ const MAX_REFRESH_PER_CALL = 40
  */
 async function listCensusServices() {
   const map = await getCategoryMap()
+  const ids = map
+    .map((entry) => (entry.categoryID || '').trim())
+    .filter(Boolean)
+  // Two batched reads for the whole map instead of three commands per category:
+  // Upstash bills per command, and walking ~160 categories one at a time made
+  // this route the most expensive thing the tool does.
+  const metas = await getCategoryMetaMany(ids)
+  const byCategory = await listCategoryServicesMany(ids, metas)
+
   const rows = []
   // What the crawls actually walked, before each was trimmed to its busiest.
   // Without it "1000 services" reads the same whether the category holds 2,700
   // or 200,000 - and those mean very different things about how representative
   // the sample is.
   let seenTotal = 0
-  for (const entry of map) {
-    const categoryID = (entry.categoryID || '').trim()
-    if (!categoryID) continue
-    const meta = await getCategoryMeta(categoryID)
-    if (!meta || !meta.chunks) continue // never crawled: nothing to read
+  ids.forEach((categoryID, i) => {
+    const meta = metas[i]
+    if (!meta || !meta.chunks) return // never crawled: nothing to read
     seenTotal += meta.seenTotal || meta.count || 0
-    rows.push(...(await listCategoryServices(categoryID)))
-  }
+    rows.push(...(byCategory.get(categoryID) || []))
+  })
   return { rows, seenTotal }
 }
 

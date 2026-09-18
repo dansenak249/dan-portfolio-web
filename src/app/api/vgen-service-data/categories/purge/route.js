@@ -7,9 +7,9 @@
 // name, colour and position all stay, so this is "empty this category" rather
 // than "forget this category".
 //
-// Everything it deletes is re-fetchable by pressing fetch again, which is why
-// this is scoped to one category and left open like its siblings, while the
-// bulk purge-legacy route requires the admin secret.
+// AUTH: ADMIN only. Everything it deletes is re-fetchable, but re-fetching a
+// large category costs days of metered rotation ticks, so a member account
+// cannot trigger it -- a machine token or an `admin` user can.
 //
 // The reason it exists: an abandoned crawl of a very large category leaves a job
 // record holding every serviceID it has seen — over a megabyte for a category in
@@ -21,6 +21,7 @@ import {
   getCategoryJob,
   purgeCategory,
 } from '@/lib/vgenServiceData/store'
+import { requireWriter } from '@/lib/vgenServiceData/writeAuth'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -33,6 +34,9 @@ const CATEGORY_ID = /^rec[A-Za-z0-9]{10,20}$/
 const BYTES_PER_SERVICE = 404
 
 export async function POST(request) {
+  const auth = await requireWriter(request, { admin: true })
+  if (auth.response) return auth.response
+
   let body
   try {
     body = await request.json()

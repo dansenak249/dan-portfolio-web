@@ -24,6 +24,7 @@
 
 import { useEffect, useState } from 'react'
 import LoadingScreen from '../../../components/LoadingScreen'
+import TokenPanel from './TokenPanel'
 import {
   ENDPOINT,
   USERS_ENDPOINT,
@@ -197,6 +198,9 @@ export default function AdminView({ session, onLogout }) {
       {!loading && adminRecord && (
         <NotificationChannelPanel record={adminRecord} authFetch={authFetch} onSaved={replaceRecord} />
       )}
+
+      {/* Read tokens: outward-facing keys, unrelated to the member cards above */}
+      {!loading && <TokenPanel authFetch={authFetch} />}
     </div>
   )
 }

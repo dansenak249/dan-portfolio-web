@@ -12,11 +12,13 @@
 // "Sync types" repair the whole watchlist. Per-service fetches use allSettled so
 // one service's Cloudflare 403 is isolated instead of failing the whole sync.
 //
-// AUTH: intentionally open for now, mirroring the sibling service-data routes.
+// AUTH: a signed-in bot-config account or a machine token -- see
+// lib/vgenServiceData/writeAuth.js.
 
 import { NextResponse } from 'next/server'
 import { fetchServiceDetail } from '@/lib/vgenServiceData/fetchReviews'
 import { getServices, setServices } from '@/lib/vgenServiceData/store'
+import { requireWriter } from '@/lib/vgenServiceData/writeAuth'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -27,6 +29,9 @@ const NO_STORE = { 'Cache-Control': 'no-store' }
 const FETCH_BATCH = 4
 
 export async function POST(request) {
+  const auth = await requireWriter(request)
+  if (auth.response) return auth.response
+
   let force = false
   try {
     const body = await request.json()

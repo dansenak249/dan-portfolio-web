@@ -15,7 +15,8 @@
 // single rotation can treat a row from either table the same way. The shared
 // rules live in lib/vgenServiceData/categoryMap.js.
 //
-// AUTH: intentionally open, mirroring the sibling service-data routes.
+// AUTH: GET is open; POST requires a signed-in bot-config account or a machine
+// token -- see lib/vgenServiceData/writeAuth.js.
 
 import { NextResponse } from 'next/server'
 import {
@@ -23,6 +24,7 @@ import {
   setShopCategoryMap,
 } from '@/lib/vgenServiceData/store'
 import { sanitizeCategories } from '@/lib/vgenServiceData/categoryMap'
+import { requireWriter } from '@/lib/vgenServiceData/writeAuth'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -44,6 +46,9 @@ export async function GET() {
 }
 
 export async function POST(request) {
+  const auth = await requireWriter(request)
+  if (auth.response) return auth.response
+
   let body
   try {
     body = await request.json()

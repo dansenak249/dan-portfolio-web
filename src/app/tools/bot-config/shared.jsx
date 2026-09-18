@@ -10,6 +10,12 @@ export const ENDPOINT = '/api/bot-config'
 export const LOGIN_ENDPOINT = '/api/bot-config/login'
 export const USERS_ENDPOINT = '/api/bot-config/users'
 export const VERIFY_COOKIE_ENDPOINT = '/api/bot-config/verify-cookie'
+export const TOKENS_ENDPOINT = '/api/bot-config/tokens'
+
+// Where a read token is spent. Shown next to each token so the admin can copy a
+// ready-to-send URL instead of assembling one, and so it is obvious that these
+// tokens read the competitor census and nothing else.
+export const EXPORT_PATH = '/api/vgen-service-data/export'
 
 // localStorage key for the last-used login username, so a returning user only
 // needs to re-enter their password. Never stores the password itself.

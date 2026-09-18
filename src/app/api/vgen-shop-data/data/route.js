@@ -18,8 +18,8 @@
 import { NextResponse } from 'next/server'
 import {
   getShopCategoryMap,
-  getCategoryMeta,
-  listCategoryServices,
+  getCategoryMetaMany,
+  listCategoryServicesMany,
   shopKey,
 } from '@/lib/vgenServiceData/store'
 
@@ -39,6 +39,16 @@ const MAX_PRODUCTS_RETURNED = 20000
 export async function GET() {
   try {
     const map = await getShopCategoryMap()
+    const keys = map
+      .map((entry) => (entry.categoryID || '').trim())
+      .filter(Boolean)
+      .map((categoryID) => shopKey(categoryID))
+    // Two batched reads for the whole map rather than a command per category.
+    // Upstash bills per round trip, so reading ~40 shop categories one at a time
+    // cost more than the data itself is worth.
+    const metas = await getCategoryMetaMany(keys)
+    const byCategory = await listCategoryServicesMany(keys, metas)
+
     const products = []
     // What the crawls actually walked, before each was trimmed to its busiest.
     // Without it "1000 products" reads the same whether the category holds
@@ -46,17 +56,14 @@ export async function GET() {
     let seenTotal = 0
     let lastFetchedAt = null
 
-    for (const entry of map) {
-      const categoryID = (entry.categoryID || '').trim()
-      if (!categoryID) continue
-      const key = shopKey(categoryID)
-      const meta = await getCategoryMeta(key)
+    for (let i = 0; i < keys.length; i++) {
+      const meta = metas[i]
       if (!meta || !meta.chunks) continue // never crawled: nothing to read
       seenTotal += meta.seenTotal || meta.count || 0
       if (meta.finishedAt && (!lastFetchedAt || meta.finishedAt > lastFetchedAt)) {
         lastFetchedAt = meta.finishedAt
       }
-      products.push(...(await listCategoryServices(key)))
+      products.push(...(byCategory.get(keys[i]) || []))
       if (products.length >= MAX_PRODUCTS_RETURNED) break
     }
 
