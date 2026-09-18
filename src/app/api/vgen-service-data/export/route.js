@@ -26,6 +26,7 @@
 import { NextResponse } from 'next/server'
 import { resolveReadToken } from '@/lib/botConfig/tokenStore'
 import { isMaster } from '@/lib/botConfig/store'
+import { serviceScore } from '@/lib/vgenServiceData/fetchCategory'
 import {
   getCategoryMap,
   getShopCategoryMap,
@@ -35,6 +36,10 @@ import {
   getRotation,
   getExportSnapshot,
   setExportSnapshot,
+  getRankSnapshot,
+  setRankSnapshot,
+  getExchangeRates,
+  listCategoryServicesMany,
   iterateCategoryChunks,
   shopKey,
 } from '@/lib/vgenServiceData/store'
@@ -50,6 +55,25 @@ const SNAPSHOT_TTL_SEC = 300
 
 const DEFAULT_LIMIT = 500
 const MAX_LIMIT = 5000
+
+// The leaderboard is the one answer that cannot be assembled from the other two
+// endpoints: "busiest lately, across the whole catalogue" needs every category
+// at once, and a caller working one category per request would need ~160 of them
+// and then a merge. So the walk happens here, once, and only the top slice is
+// sent -- which is also the only version that fits in a model's context.
+//
+// A rebuild is ~50 commands against Upstash, an order more than the summary, so
+// the TTL is correspondingly longer. It costs nothing in accuracy: the rotation
+// takes hours to come back to any one category, so half an hour is still far
+// finer-grained than the data underneath it moves.
+const RANK_TTL_SEC = 1800
+const RANK_DEFAULT_LIMIT = 50
+const RANK_MAX_LIMIT = 500
+// Listings that get a review-feed lookup. Reading a window for all ~160k stored
+// listings would be 800 round trips per rebuild; this is the shortlist that
+// earns one, chosen by the busy-ness score the census already carries.
+const RANK_CANDIDATES = 3000
+const RANK_WINDOWS = { 30: 'last30', 90: 'last90', 365: 'last365' }
 
 const NO_STORE = { 'Cache-Control': 'no-store' }
 // Served from a snapshot that is itself capped at SNAPSHOT_TTL_SEC, so letting
@@ -90,6 +114,11 @@ function readme(mode) {
       category:
         'GET /api/vgen-service-data/export?categoryID=<recXXXX>&market=commission|shop' +
         '&limit=<1-5000>&offset=<n>',
+      ranking:
+        'GET /api/vgen-service-data/export?rank=30|90|365&limit=<1-500>  -- the ' +
+        'busiest commission listings across EVERY category, already ranked. Use ' +
+        'this for any "top N lately" question instead of paging the categories ' +
+        'yourself; it is the only call that sees the whole catalogue at once.',
     },
     two_marketplaces:
       'VGen has two separate catalogues. "commission" is custom work ordered ' +
@@ -279,6 +308,79 @@ function readme(mode) {
     }
   }
 
+  if (mode === 'rank') {
+    return {
+      ...shared,
+      rows_are:
+        'Commission listings across every crawled category, sorted by ' +
+        'estRevenueUSD descending. Already ranked -- do not re-sort by a ' +
+        'different field and call the result the same thing.',
+      // The number has a money-shaped name and a money-shaped magnitude, and is
+      // not money. Saying so first, before the field list, because a reader that
+      // skims will take whatever the first line implies.
+      what_estRevenueUSD_is: {
+        formula: 'basePriceUSD * reviewsInWindow',
+        it_is:
+          'A comparable BUSY-NESS SCORE in dollar units. Good for "who is doing ' +
+          'the most trade lately", because the same understatement applies to ' +
+          'every row, so the ORDER is meaningful.',
+        it_is_not:
+          'Earnings. VGen publishes no revenue figure and this is not one. Two ' +
+          'independent biases push it below reality: basePrice is the cheapest ' +
+          'tier an artist offers (real orders add options and rush fees), and ' +
+          'only some clients leave a review. Quote it as a score or as a floor, ' +
+          'never as "this artist earned $X".',
+        how_to_say_it:
+          'Prefer "highest estimated activity" or "busiest by price-weighted ' +
+          'review volume" over "top earners".',
+      },
+      rank_fields: {
+        market: 'Always "commission" here -- see commission_only below.',
+        serviceID: 'VGen id for the listing.',
+        title: 'Listing title, verbatim (the same value as serviceName elsewhere).',
+        categoryID: 'The category it was crawled under.',
+        categoryName: 'That category\'s readable name.',
+        artist: 'Display name, falling back to the handle.',
+        artistHandle: 'VGen handle, i.e. vgen.co/<artistHandle>.',
+        userID: 'VGen id for the artist.',
+        basePrice: 'Starting price as the artist set it, in `currency`.',
+        currency: 'ISO code that basePrice is denominated in.',
+        basePriceUSD:
+          'basePrice converted to USD. THIS is what the ranking uses -- ranking ' +
+          'on raw basePrice across mixed currencies produces nonsense.',
+        reviewsInWindow: 'Reviews on this listing inside the requested window.',
+        reviewsTotal: 'Reviews on this listing, all time.',
+        reviewsAsOf: 'When this listing\'s review feed was pulled (ISO 8601).',
+        estRevenueUSD: 'basePriceUSD * reviewsInWindow. Read the block above.',
+      },
+      how_it_was_built: {
+        windows_end_at_reviewsAsOf:
+          'Each row\'s window is measured backwards from its OWN reviewsAsOf, and ' +
+          'feeds are pulled on a rotation, so rows are not all as of the same ' +
+          'moment. Spot-check the spread of reviewsAsOf before presenting the ' +
+          'ranking as a single clean time period.',
+        shortlist:
+          'Listings are shortlisted by the census busy-ness score before their ' +
+          'review feeds are read, so this is a strong approximation of the true ' +
+          'top N rather than a proven one. A cheap listing with a sudden burst ' +
+          'of orders can in principle sit just outside the shortlist.',
+        excluded_rows:
+          'A listing is dropped from the ranking when its review feed was never ' +
+          'pulled, when its currency has no exchange rate, or when it has no ' +
+          'price. `excluded` counts each case. Dropped is NOT the same as zero.',
+        commission_only:
+          'Shop products are absent by necessity, not oversight: shop carries no ' +
+          'windowed counts at all (salesCount is lifetime), so there is nothing ' +
+          'to rank them on over 30 days. Do not fill the gap with lifetime sales ' +
+          '-- that would rank old products above currently busy ones.',
+      },
+      if_you_need_more:
+        'This returns at most ' + RANK_MAX_LIMIT + ' rows. For the full listing ' +
+        'set of one category, including fields not carried here, call the ' +
+        'category endpoint.',
+    }
+  }
+
   return {
     ...shared,
     rows_are: 'One row per category the tool tracks, from both marketplaces.',
@@ -306,17 +408,20 @@ function readme(mode) {
         'ones. A shop product carries per-product ones. Do not compare the two ' +
         'columns as if they measured the same thing.',
       'null means "VGen did not publish this", which is different from zero.',
-      'Every figure in this dataset is a LIFETIME total, never a windowed one. ' +
-        'There is no 30-day or monthly breakdown anywhere, on either endpoint. ' +
-        'Questions of the form "most X in the last N days" cannot be answered ' +
-        'here; say so rather than substituting a lifetime total.',
+      'Almost every figure here is a LIFETIME total. The ONLY time-bounded ones ' +
+        'anywhere are the commission review windows (reviewsLast30/90/365), on ' +
+        'the category and ranking endpoints. Shop has none at all, so "best ' +
+        'selling product this month" is unanswerable; say so rather than ' +
+        'substituting a lifetime count.',
     ],
     next_call:
       'This summary carries no listing-level data at all -- only per-category ' +
-      'counts. Prices, sales, review stats and artist names live on the category ' +
-      'endpoint, whose readme documents every field and the revenue recipes. ' +
-      'Call it with a categoryID from the list above before attempting any ' +
-      'question about individual listings.',
+      'counts. Do not try to answer a question about individual listings from ' +
+      'it. For "top N busiest lately across the whole catalogue", call ' +
+      '?rank=30 (or 90 / 365): it walks every category for you and returns a ' +
+      'finished ranking. For everything about one category -- prices, sales, ' +
+      'review stats, artist names -- call ?categoryID=<id> with an id from the ' +
+      'list above. Both carry their own field glossary.',
   }
 }
 
@@ -461,6 +566,121 @@ async function attachReviewWindows(rows) {
   })
 }
 
+const round2 = (n) => Math.round(n * 100) / 100
+
+/**
+ * Rank every crawled commission listing by price-weighted recent review volume.
+ *
+ * This is the question the dashboard answers instantly and a chat client could
+ * not: the dashboard pulls the whole census into a browser and sorts there,
+ * which is a ~40 MB payload — fine for one tab, impossible for a model's
+ * context and far too many Upstash commands to hand out. Sorting server-side
+ * and sending fifty rows turns the same answer into ~30 KB.
+ *
+ * Three approximations, each documented in the readme rather than hidden:
+ *   - the candidate pool is shortlisted by census score before any review feed
+ *     is read, so the result is a strong approximation of the true top N;
+ *   - rows whose feed was never pulled are EXCLUDED, not scored as zero;
+ *   - each row's window ends at its own reviewsAsOf, so the set is not one
+ *     clean instant.
+ */
+async function buildRanking(windowDays) {
+  const field = RANK_WINDOWS[windowDays]
+  const map = await getCategoryMap()
+  const ids = map.map((c) => (c.categoryID || '').trim()).filter(Boolean)
+  const nameByID = new Map(
+    map.map((c) => [
+      (c.categoryID || '').trim(),
+      (c.categoryName || '').trim() || (c.defaultName || '').trim() || '',
+    ])
+  )
+
+  const [metas, fx] = await Promise.all([
+    getCategoryMetaMany(ids),
+    getExchangeRates(),
+  ])
+  const byCategory = await listCategoryServicesMany(ids, metas)
+
+  const all = []
+  for (const id of ids) all.push(...(byCategory.get(id) || []))
+
+  // serviceScore already rides along on every census row, so narrowing to the
+  // listings worth a lookup costs no extra reads at all.
+  const candidates =
+    all.length > RANK_CANDIDATES
+      ? [...all]
+          .sort((a, b) => serviceScore(b) - serviceScore(a))
+          .slice(0, RANK_CANDIDATES)
+      : all
+
+  const windows = {}
+  const candidateIDs = candidates.map((row) => row.serviceID).filter(Boolean)
+  for (let i = 0; i < candidateIDs.length; i += REVIEW_META_BATCH) {
+    Object.assign(
+      windows,
+      await getMetaMany(candidateIDs.slice(i, i + REVIEW_META_BATCH))
+    )
+  }
+
+  const rates = (fx && fx.rates) || {}
+  const excluded = { no_review_feed: 0, no_exchange_rate: 0, no_price: 0 }
+  const scored = []
+
+  for (const row of candidates) {
+    const meta = windows[row.serviceID]
+    const count = meta ? meta[field] : undefined
+    // Never measured. Scoring it as zero would rank a listing nobody has looked
+    // at alongside one that genuinely had no orders.
+    if (typeof count !== 'number') {
+      excluded.no_review_feed++
+      continue
+    }
+    if (typeof row.basePrice !== 'number') {
+      excluded.no_price++
+      continue
+    }
+    // rates[X] is "one X in USD", the multiplier a price in X needs.
+    const rate = rates[row.currency || 'USD']
+    if (typeof rate !== 'number') {
+      excluded.no_exchange_rate++
+      continue
+    }
+    const basePriceUSD = row.basePrice * rate
+    scored.push({
+      market: 'commission',
+      serviceID: row.serviceID,
+      title: row.serviceName || '',
+      categoryID: row.categoryID || '',
+      categoryName: nameByID.get(row.categoryID) || '',
+      artist: row.displayName || row.username || '',
+      artistHandle: row.username || '',
+      userID: row.userID || null,
+      basePrice: row.basePrice,
+      currency: row.currency || '',
+      basePriceUSD: round2(basePriceUSD),
+      reviewsInWindow: count,
+      reviewsTotal: meta.count ?? null,
+      reviewsAsOf: meta.fetchedAt || null,
+      estRevenueUSD: round2(basePriceUSD * count),
+    })
+  }
+
+  scored.sort((a, b) => b.estRevenueUSD - a.estRevenueUSD)
+
+  return {
+    generated_at: new Date().toISOString(),
+    window_days: windowDays,
+    fx_as_of: (fx && fx.fetchedAt) || null,
+    scanned: all.length,
+    candidates: candidates.length,
+    ranked: scored.length,
+    excluded,
+    // Cached at full depth so every `limit` below the maximum is served from the
+    // same snapshot rather than provoking its own rebuild.
+    rows: scored.slice(0, RANK_MAX_LIMIT),
+  }
+}
+
 export async function GET(request) {
   const authorized = isMaster(request) || (await resolveReadToken(request))
   if (!authorized) return deny('A read token is required.')
@@ -469,8 +689,46 @@ export async function GET(request) {
   const withReadme = searchParams.get('readme') !== '0'
   const categoryID = (searchParams.get('categoryID') || '').trim()
   const market = searchParams.get('market') === 'shop' ? 'shop' : 'commission'
+  const rank = (searchParams.get('rank') || '').trim()
 
   try {
+    if (rank) {
+      // Forgiving on the value: a caller guessing ?rank=recent or ?rank=1 means
+      // "the recent one", and answering that with a 400 helps nobody. The window
+      // actually used is echoed back, so the answer is never ambiguous.
+      const windowDays = RANK_WINDOWS[rank] ? Number(rank) : 30
+      const limit = Math.min(
+        RANK_MAX_LIMIT,
+        Math.max(1, Number(searchParams.get('limit')) || RANK_DEFAULT_LIMIT)
+      )
+
+      const name = String(windowDays)
+      let snapshot = await getRankSnapshot(name)
+      let cached = true
+      if (!snapshot) {
+        cached = false
+        snapshot = await buildRanking(windowDays)
+        try {
+          await setRankSnapshot(name, snapshot, RANK_TTL_SEC)
+        } catch {
+          // Failing to cache is not failing to answer.
+        }
+      }
+
+      return NextResponse.json(
+        {
+          ...(withReadme ? { _readme: readme('rank') } : {}),
+          ...snapshot,
+          returned: Math.min(limit, snapshot.rows.length),
+          limit,
+          rows: snapshot.rows.slice(0, limit),
+          served_from_cache: cached,
+          max_staleness_sec: RANK_TTL_SEC,
+        },
+        { headers: CACHEABLE }
+      )
+    }
+
     if (categoryID) {
       const offset = Math.max(0, Number(searchParams.get('offset')) || 0)
       const limit = Math.min(

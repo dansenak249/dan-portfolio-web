@@ -148,11 +148,6 @@
          behind it. */
       .cat-load.is-remote:disabled { opacity: 0.75; }
       .cat-load.is-loading:hover { color: var(--bad); border-color: var(--bad); }
-      /* Emptying a category is destructive, so the trash reads as such on hover.
-         The row-remove ✕ next to it stays neutral: it drops a mapping, not data. */
-      .cat-purge:hover:not(:disabled) { color: var(--bad); }
-      .cat-purge:disabled { opacity: 0.4; cursor: default; }
-      .cat-purge svg { display: block; }
       .cat-load.is-loading svg { animation: cat-spin 0.9s linear infinite; }
       @keyframes cat-spin { to { transform: rotate(360deg); } }
       @media (prefers-reduced-motion: reduce) {
@@ -821,7 +816,7 @@
           </p>
         </div>
         <!-- Who is signed in. Reading needs nobody; every action that WRITES
-             (crawl, save, purge) asks for an account. -->
+             (crawl, save) asks for an account. -->
         <div class="auth-block">
           <span id="authWho" class="auth-who">Not signed in</span>
           <button type="button" id="authBtn" class="tiny ghost">Sign in</button>
@@ -912,7 +907,6 @@
                     <th class="no-sort" style="width:170px">Category ID</th>
                     <th class="no-sort col-auto" title="Include this category in the automatic rotation">Auto</th>
                     <th class="no-sort" style="width:118px">Services</th>
-                    <th class="no-sort" style="width:48px"></th>
                     <th class="no-sort" style="width:48px"></th>
                     <th class="no-sort" style="width:48px"></th>
                   </tr>
@@ -1013,7 +1007,6 @@
                       <th class="no-sort" style="width:170px">Category ID</th>
                       <th class="no-sort col-auto" title="Include this category in the automatic rotation">Auto</th>
                       <th class="no-sort" style="width:118px">Products</th>
-                      <th class="no-sort" style="width:48px"></th>
                       <th class="no-sort" style="width:48px"></th>
                       <th class="no-sort" style="width:48px"></th>
                     </tr>
@@ -1187,32 +1180,6 @@
 
       <!-- Overwrite prompt: raised when Add/Edit targets an already-declared id.
            Shows the entry about to be overwritten. -->
-      <!-- Purge prompt: emptying a category is not undoable in place, though a
-           fetch rebuilds it. Worth a confirmation, especially for a crawl that
-           took hours. -->
-      <div id="pgModal" class="modal hidden">
-        <div class="modal-card" style="width:min(480px,100%)">
-          <div class="modal-head">
-            <h3>Clear this category&#39;s data?</h3>
-            <button id="pgClose" class="tiny ghost" title="Close">&#10005;</button>
-          </div>
-          <p class="modal-sub">
-            Deletes the crawled services and any unfinished crawl for this
-            category, freeing the space they use. The category row itself &mdash;
-            its name, colour and position &mdash; stays exactly as it is, and
-            pressing fetch rebuilds the data.
-          </p>
-          <div id="pgInfo" class="confirm-info"></div>
-          <div class="modal-foot">
-            <span class="foot-note"></span>
-            <div class="modal-actions">
-              <button id="pgCancel" class="ghost">Cancel</button>
-              <button id="pgConfirm" class="primary">Clear data</button>
-            </div>
-          </div>
-        </div>
-      </div>
-
       <div id="owModal" class="modal hidden">
         <div class="modal-card" style="width:min(480px,100%)">
           <div class="modal-head">
@@ -1320,13 +1287,11 @@
         exchangeRate: '/api/vgen-service-data/exchange-rate',
         collect: '/api/vgen-service-data/categories/collect',
         discover: '/api/vgen-service-data/categories/discover',
-        purge: '/api/vgen-service-data/categories/purge',
         census: '/api/vgen-service-data/census',
         fetchLock: '/api/vgen-service-data/fetch-lock',
         shopCategories: '/api/vgen-shop-data/categories',
         shopDiscover: '/api/vgen-shop-data/categories/discover',
         shopCollect: '/api/vgen-shop-data/categories/collect',
-        shopPurge: '/api/vgen-shop-data/categories/purge',
         shopCensus: '/api/vgen-shop-data/census',
         shopData: '/api/vgen-shop-data/data',
         reviews: '/api/vgen-service-data/reviews/collect',
@@ -1379,9 +1344,6 @@
       // spinner: the row adds .is-loading, which spins it via CSS.
       // Shown in place of the spinner when you hover a running fetch, so the
       // button reads as "stop" rather than "reload again".
-      // Empty a category's crawled data, distinct from removing the row itself.
-      const ICON_TRASH =
-        '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>';
       const ICON_CANCEL =
         '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>';
       const ICON_RELOAD =
@@ -3059,66 +3021,6 @@
         status('Added ' + added + ' categor' + (added === 1 ? 'y' : 'ies') + ' — press Save to keep them.', 'ok');
       }
 
-      // ---- clear one category's crawled data -----------------------------
-      let pgTarget = null;
-
-      // Show what is about to go before it goes: a big crawl represents hours,
-      // and the count is the only cue for how much.
-      async function askPurge(index) {
-        const row = catRows[index];
-        if (!row) return;
-        const categoryID = (row.categoryID || '').trim();
-        if (!categoryID) return;
-        if (catLoading.has(categoryID)) {
-          status('That category is still fetching — cancel it first.', 'err');
-          return;
-        }
-        pgTarget = { categoryID, label: categoryLabel(categoryID) };
-
-        let detail = pgTarget.label;
-        try {
-          const res = await fetch(
-            API.census + '?categoryID=' + encodeURIComponent(categoryID),
-            { cache: 'no-store' }
-          );
-          const json = await res.json();
-          const c = json && json.categories && json.categories[0];
-          if (c) {
-            detail = pgTarget.label + ' — ' +
-              (c.crawled ? c.count + ' service(s) stored' : 'nothing crawled yet') +
-              (c.running ? ', plus an unfinished crawl at ' + c.jobStored + ' service(s)' : '');
-          }
-        } catch {
-          // Counting is a nicety; never block the action on it.
-        }
-        $('pgInfo').textContent = detail;
-        $('pgModal').classList.remove('hidden');
-      }
-
-      async function confirmPurge() {
-        if (!pgTarget) return;
-        const { categoryID, label } = pgTarget;
-        $('pgModal').classList.add('hidden');
-        try {
-          status('Clearing ' + label + '…', 'info');
-          const json = await postJson(API.purge, { categoryID });
-          const mb = (json.freedApprox || 0) / 1048576;
-          status(
-            'Cleared ' + label + ': ' + (json.removedServices || 0) + ' service(s), ' +
-              (json.removedChunks || 0) + ' chunk(s)' +
-              (json.hadJob ? ' and an unfinished crawl' : '') +
-              (mb >= 0.1 ? ' — about ' + mb.toFixed(1) + ' MB freed.' : '.'),
-            'ok'
-          );
-          await loadData(false);
-          loadCensusStats();
-        } catch (e) {
-          status('Clear failed for ' + label + ': ' + e.message, 'err');
-        } finally {
-          pgTarget = null;
-        }
-      }
-
       // ---- category map editor (GUI, server-persisted) ----
       // ---- Photoshop-style HSV color picker (category text color) ----
       // Model: hue 0-360, saturation/value 0-1. The SV square picks s (x-axis) and
@@ -3705,32 +3607,6 @@
         );
       }
 
-      async function purgeShopCategory(categoryID) {
-        const label = shopCategoryLabel(categoryID);
-        const c = shopCensusStats[categoryID];
-        const held = c && c.crawled ? c.count + ' product(s)' : 'nothing crawled yet';
-        // A crawl of a large category is hours of work; say what is about to go.
-        if (!window.confirm('Clear ' + label + '?\n\nStored: ' + held +
-          '\n\nThis only clears the Shop copy. Commission data for the same ' +
-          'category id is untouched.')) return;
-        try {
-          status('Clearing ' + label + '…', 'info');
-          const json = await postJson(API.shopPurge, { categoryID });
-          const mb = (json.freedApprox || 0) / 1048576;
-          status(
-            'Cleared ' + label + ': ' + (json.removedProducts || 0) + ' product(s), ' +
-              (json.removedChunks || 0) + ' chunk(s)' +
-              (json.hadJob ? ' and an unfinished crawl' : '') +
-              (mb >= 0.1 ? ' — about ' + mb.toFixed(1) + ' MB freed.' : '.'),
-            'ok'
-          );
-          loadShopCensusStats();
-          loadShopData();
-        } catch (e) {
-          status('Clear failed for ' + label + ': ' + e.message, 'err');
-        }
-      }
-
       function updateShopCatButtons() {
         const dirty = catSnapshot(shopCatRows) !== shopCatBaseline;
         $('shopSaveCatBtn').disabled = !dirty;
@@ -3786,15 +3662,6 @@
               <td><button class="${loadCls}" data-shopload="${i}"${
                 (!busy && !catId) || blocked ? ' disabled' : ''
               } title="${loadTitle}"><span class="cat-spin">${ICON_RELOAD}</span><span class="cat-x">${ICON_CANCEL}</span></button></td>
-              <td><button class="tiny ghost cat-purge" data-shoppurge="${i}"${
-                !catId || fetchBlocked() ? ' disabled' : ''
-              } title="${
-                !catId
-                  ? 'Enter a category ID first'
-                  : fetchBlocked()
-                  ? 'Locked: ' + leaseHolderLabel() + ' is fetching'
-                  : 'Clear this category&#39;s crawled products'
-              }">${ICON_TRASH}</button></td>
               <td><button class="tiny ghost" data-shopdel="${i}" title="Remove this row from the map">&#10005;</button></td>
             </tr>`;
           })
@@ -3821,13 +3688,6 @@
             // A running row stays clickable, and that click cancels it.
             if (shopCatLoading.has(id)) return cancelShopCollect(id);
             runShopCollect(id, shopCategoryLabel(id), e.shiftKey);
-          });
-        });
-        body.querySelectorAll('[data-shoppurge]').forEach((el) => {
-          el.addEventListener('click', (e) => {
-            const i = Number(e.currentTarget.getAttribute('data-shoppurge'));
-            const id = (shopCatRows[i].categoryID || '').trim();
-            if (id) purgeShopCategory(id);
           });
         });
         body.querySelectorAll('[data-shopdel]').forEach((el) => {
@@ -3954,15 +3814,6 @@
             <td><button class="${loadCls}" data-catload="${i}"${
               (!busy && !catId) || blocked ? ' disabled' : ''
             } title="${loadTitle}"><span class="cat-spin">${ICON_RELOAD}</span><span class="cat-x">${ICON_CANCEL}</span></button></td>
-            <td><button class="tiny ghost cat-purge" data-catpurge="${i}"${
-              !catId || fetchBlocked() ? ' disabled' : ''
-            } title="${
-              !catId
-                ? 'Enter a category ID first'
-                : fetchBlocked()
-                ? 'Locked: ' + leaseHolderLabel() + ' is fetching'
-                : 'Clear this category&#39;s crawled data'
-            }">${ICON_TRASH}</button></td>
             <td><button class="tiny ghost" data-catdel="${i}" title="Remove this row from the map">✕</button></td>
           </tr>`;
           })
@@ -3999,11 +3850,6 @@
             // renderCatEditor also refreshes the Save/Revert buttons.
             renderCatEditor();
           })
-        );
-        body.querySelectorAll('[data-catpurge]').forEach((b) =>
-          b.addEventListener('click', (e) =>
-            askPurge(+e.currentTarget.getAttribute('data-catpurge'))
-          )
         );
         body.querySelectorAll('[data-catdel]').forEach((b) =>
           b.addEventListener('click', (e) => {
@@ -4382,12 +4228,6 @@
 
       $('minReviews').addEventListener('change', () => loadData(false));
       $('discoverBtn').addEventListener('click', () => discoverCategories('commission'));
-      $('pgConfirm').addEventListener('click', confirmPurge);
-      $('pgCancel').addEventListener('click', () => $('pgModal').classList.add('hidden'));
-      $('pgClose').addEventListener('click', () => $('pgModal').classList.add('hidden'));
-      $('pgModal').addEventListener('click', (e) => {
-        if (e.target === $('pgModal')) $('pgModal').classList.add('hidden');
-      });
       $('discConfirm').addEventListener('click', applyDiscover);
       $('discCancel').addEventListener('click', () => $('discModal').classList.add('hidden'));
       $('discClose').addEventListener('click', () => $('discModal').classList.add('hidden'));
