@@ -779,33 +779,6 @@ export async function setExportSnapshot(snapshot, ttlSec) {
   })
 }
 
-// Cross-category leaderboards, one key per window.
-//
-// Kept apart from the summary snapshot above because the two have nothing in
-// common but their shape: the summary is ~200 small rows and rebuilds in six
-// commands, a leaderboard has to walk every stored listing and costs closer to
-// fifty. Sharing one key would make every cheap summary read pay for the
-// expensive rebuild, and would tie both to the same TTL when the leaderboard
-// wants a much longer one.
-const RANK_SNAPSHOT_KEY = (name) => `${NS}:export:rank:${name}`
-
-/** @param {string} name window identifier, e.g. '30' */
-export async function getRankSnapshot(name) {
-  const stored = parseMaybe(await ensureRedis().get(RANK_SNAPSHOT_KEY(name)))
-  return stored && typeof stored === 'object' ? stored : null
-}
-
-/**
- * @param {string} name window identifier, e.g. '30'
- * @param {object} snapshot
- * @param {number} ttlSec how long before the next reader rebuilds it
- */
-export async function setRankSnapshot(name, snapshot, ttlSec) {
-  await ensureRedis().set(RANK_SNAPSHOT_KEY(name), JSON.stringify(snapshot), {
-    ex: ttlSec,
-  })
-}
-
 /**
  * Census summaries for many categories in ONE round trip.
  *
