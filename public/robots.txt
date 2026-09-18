@@ -1,13 +1,24 @@
 # ============================================
 # robots.txt — AI-Friendly Configuration
 # Site: dansenak249.com
-# Last updated: 2026-03-23
+# Last updated: 2026-09-19
 # ============================================
 
 # Default: Allow all bots
 User-agent: *
 Allow: /
 Disallow: /api/
+# Carved back out of the /api/ block above, deliberately. This is the one route
+# meant to be read by an outside agent, and every assistant asked to fetch it
+# (ChatGPT, Gemini) refused with "URL is not accessible" while the server itself
+# answered 200 -- they were reading Disallow: /api/ and stopping before sending
+# anything. The named AI groups further down already permit it, but a fetcher
+# whose user-agent matches none of them lands here, so the exception has to live
+# in this group to have any effect. Longest match wins, so this beats /api/.
+#
+# Safe to expose: the route is token-gated and answers 401 without a valid read
+# token, so allowing the crawl grants no data on its own.
+Allow: /api/vgen-service-data/export
 Disallow: /_next/
 Disallow: /admin/
 
