@@ -52,9 +52,20 @@ const MAX_LIMIT = 5000
 
 const NO_STORE = { 'Cache-Control': 'no-store' }
 // Served from a snapshot that is itself capped at SNAPSHOT_TTL_SEC, so letting
-// a CDN or the caller's own cache hold it for the same window costs nothing in
-// freshness and spares the Redis round trip entirely.
-const CACHEABLE = { 'Cache-Control': `public, max-age=${SNAPSHOT_TTL_SEC}` }
+// the CALLER hold it for the same window costs nothing in freshness and spares
+// the round trip entirely.
+//
+// `private` is load-bearing, not decoration. This response is token-gated, but a
+// shared cache keys on the URL alone -- and the token normally travels in a
+// header. Marked public, Vercel's edge cached one authorised 200 and then served
+// it to every later request for the same URL, token or not: a caller with no
+// credential at all got the full census for the next five minutes. `private`
+// forbids shared caches from storing it while still letting the browser reuse
+// its own copy. Vary is belt and braces for any intermediary that ignores that.
+const CACHEABLE = {
+  'Cache-Control': `private, max-age=${SNAPSHOT_TTL_SEC}`,
+  Vary: 'Authorization, X-Api-Key',
+}
 
 const AUTH_HELP = {
   how_to_authenticate: [
