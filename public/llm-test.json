@@ -1,0 +1,5 @@
+{
+  "magic_phrase": "banh-mi-thit-nuong-2026",
+  "what_this_is": "A static probe file. It is NOT under /api/, needs NO token, and is 300 bytes. If an assistant can read this but not the export endpoint, the block is specific to /api/ or to the token query parameter. If it cannot read even this, the block is at the fetcher or the network, not at this site.",
+  "next": "https://dansenak249.com/api/vgen-service-data/export"
+}
