@@ -116,6 +116,37 @@ export async function setShopCategoryMap(list) {
   await ensureRedis().set(SHOP_CATEGORIES_KEY, JSON.stringify(list))
 }
 
+const DAY_MS = 24 * 60 * 60 * 1000
+
+// Trailing-window review counts, measured at the moment of the pull.
+//
+// Computed HERE, at write time, rather than by whoever reads the data later. The
+// reviews are already in hand, so it costs nothing; deriving it on read means
+// loading every review payload, which is exactly the megabytes-per-batch problem
+// the lightweight meta record exists to avoid. Anything that wants "how busy is
+// this listing lately" can now answer it from a ~200 byte record.
+//
+// Windows are relative to `asOf`, NOT to when someone reads them. A pull from
+// ten days ago describes days -40..-10, so a reader must age it themselves; that
+// is why asOf travels with the counts instead of being left implicit.
+function reviewWindows(reviews, asOf) {
+  const now = Date.parse(asOf)
+  const out = { last30: 0, last90: 0, last365: 0 }
+  if (!Array.isArray(reviews) || !Number.isFinite(now)) return out
+  for (const review of reviews) {
+    const created = Date.parse(review && review.created)
+    if (!Number.isFinite(created)) continue
+    const age = now - created
+    // Future-dated reviews are clock skew, not activity; counting them would
+    // inflate the freshest window, which is the one most likely to be quoted.
+    if (age < 0) continue
+    if (age <= 30 * DAY_MS) out.last30++
+    if (age <= 90 * DAY_MS) out.last90++
+    if (age <= 365 * DAY_MS) out.last365++
+  }
+  return out
+}
+
 /**
  * Cache one service's full review pull (overwrites any previous pull).
  * @param {string} serviceID
@@ -124,17 +155,20 @@ export async function setShopCategoryMap(list) {
  */
 export async function setCachedReviews(serviceID, payload, fetchedAt) {
   const r = ensureRedis()
+  const reviews = Array.isArray(payload.reviews) ? payload.reviews : []
+  const windows = reviewWindows(reviews, fetchedAt)
   const record = {
     serviceID,
     artistUserID: payload.artistUserID ?? null,
-    count: payload.count ?? (payload.reviews ? payload.reviews.length : 0),
-    reviews: Array.isArray(payload.reviews) ? payload.reviews : [],
+    count: payload.count ?? reviews.length,
+    reviews,
     fetchedAt,
     // The census's artist review total AT THE TIME OF THIS PULL. The next run
     // compares it against the fresh census to decide whether anything can have
     // changed, which is what lets an unchanged service be skipped instead of
     // re-fetched and re-written.
     sourceTotalReviews: payload.sourceTotalReviews ?? null,
+    ...windows,
   }
   await r.set(reviewsKey(serviceID), JSON.stringify(record))
   // Lightweight meta lets the dashboard show freshness without loading reviews.
@@ -148,6 +182,9 @@ export async function setCachedReviews(serviceID, payload, fetchedAt) {
       // Mirrored here so a freshness check can read the tiny meta record
       // instead of the full review payload.
       sourceTotalReviews: record.sourceTotalReviews,
+      // Carried on the meta record specifically so the export can attach
+      // recent-activity numbers to a whole category with a handful of MGETs.
+      ...windows,
     })
   )
 }

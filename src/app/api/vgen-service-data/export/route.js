@@ -31,6 +31,7 @@ import {
   getShopCategoryMap,
   getCategoryMetaMany,
   getCategoryMeta,
+  getMetaMany,
   getRotation,
   getExportSnapshot,
   setExportSnapshot,
@@ -106,13 +107,46 @@ function readme(mode) {
         'One row per listing stored for this category. The crawl keeps the ' +
         'busiest listings it found, NOT every listing that exists -- so treat ' +
         'this as a sample of the top of the category, not a complete index.',
+      // VGen's own labels are the main trap here. Several read like ordinary
+      // English but mean something narrower, and two of them look like a
+      // matching pair across the marketplaces while measuring different things.
+      vgen_vocabulary: {
+        service:
+          'A commission LISTING (an offer an artist advertises), not a running ' +
+          'service. "serviceID" identifies a listing.',
+        commission:
+          'One custom order placed against a listing. So "completed comms" ' +
+          'counts orders delivered, not listings.',
+        product: 'A ready-made item on the shop side. Sold as-is, no order negotiated.',
+        basePrice:
+          'The STARTING price of a listing -- the cheapest tier the artist will ' +
+          'take. It is a floor, not a transaction price: real commissions add ' +
+          'options and rush fees, so basePrice systematically UNDERSTATES what ' +
+          'the listing earns. On shop it is much closer to the real price.',
+        artistReviewStats:
+          'VGen\'s name for stats covering the WHOLE ARTIST. Exposed here as the ' +
+          'artist-prefixed fields so the scope is visible at the point of use.',
+        shopReviewStats:
+          'Despite looking like the parallel of the above, this one is PER ' +
+          'PRODUCT. Exposed here as reviewCount / avgRating / stars.',
+        lifetimeServiceStats:
+          'Per-listing lifetime counters. Only serviceCompletedComms is kept.',
+        searchIndex:
+          'VGen\'s internal ranking score. Deliberately NOT exported -- it is ' +
+          'recomputed daily and nothing here displays in that order.',
+      },
       commission_fields: {
         serviceID: 'VGen id for the listing.',
         userID: 'VGen id for the artist.',
+        categoryID: 'The category this listing was crawled under.',
         serviceName: 'Listing title, verbatim.',
         type: 'VGen service type string.',
-        basePrice: 'Starting price in `currency` (minor units are NOT used; this is a plain number).',
-        currency: 'ISO currency code the artist prices in.',
+        basePrice:
+          'Starting price in `currency` (a plain number, NOT minor units). See ' +
+          '`basePrice` in vgen_vocabulary: it is a floor, not what an order costs.',
+        currency:
+          'ISO currency code the artist prices in. Rows in one category mix ' +
+          'several currencies -- never sum or rank basePrice without converting.',
         created: 'When the listing was first published (ISO 8601).',
         modified: 'When the artist last edited it (ISO 8601).',
         artistTotalReviews:
@@ -124,17 +158,38 @@ function readme(mode) {
         serviceCompletedComms:
           'Completed commissions for THIS listing, but only present when the ' +
           'artist opted to publish it (roughly 15% do). null means "not ' +
-          'published", never "zero".',
+          'published", never "zero". It is the only per-listing volume figure ' +
+          'on the commission side, and a truer one than reviews: every order ' +
+          'counts, not just the ones a client bothered to review.',
         username: 'Artist handle.',
         displayName: 'Artist display name.',
         tags: 'The artist\'s own search keywords, verbatim. VGen caps these at 5.',
+        reviewsTotal:
+          'Reviews on THIS listing, counted from its own public review feed. ' +
+          'This is the per-listing number artistTotalReviews is NOT. null means ' +
+          'the feed has not been pulled for this listing (see review_windows).',
+        reviewsLast30:
+          'Reviews on this listing in the 30 days before `reviewsAsOf`. The ' +
+          'closest thing to a recent-activity signal in this dataset.',
+        reviewsLast90: 'Same, over 90 days.',
+        reviewsLast365: 'Same, over 365 days.',
+        reviewsAsOf:
+          'When the review feed was pulled (ISO 8601). The windows are measured ' +
+          'backwards from THIS, not from now -- see review_windows.',
       },
       shop_fields: {
         productID: 'VGen id for the product.',
+        userID: 'VGen id for the seller.',
+        categoryID: 'The category this product was crawled under.',
         productName: 'Product title, verbatim.',
+        basePrice: 'Price in `currency`, a plain number. Same currency warning as above.',
+        currency: 'ISO currency code the seller prices in.',
+        pricingType: 'VGen pricing mode for the product.',
+        created: 'When the product was first listed (ISO 8601).',
+        modified: 'When the seller last edited it (ISO 8601).',
         salesCount: 'Real order count for THIS product, present on every listing.',
         paidSalesCount: 'Of those, the paid ones.',
-        freeSalesCount: 'Of those, the free ones.',
+        freeSalesCount: 'Of those, the free ones. Free orders earn nothing.',
         isNumberOfSalesPublic:
           'Whether the seller displays that count. The count is returned either ' +
           'way; this says whether quoting it publicly is fair.',
@@ -144,7 +199,82 @@ function readme(mode) {
         linkedServiceID:
           'The commission service this product came from, when there is one ' +
           '(about 74% carry one). The only join between the two marketplaces.',
+        username: 'Seller handle.',
+        displayName: 'Seller display name.',
         tags: 'Seller keywords, verbatim. Shop allows up to 20.',
+      },
+      // The one part of this dataset that is NOT a lifetime total, which makes
+      // it the one part a reader is most likely to misuse.
+      review_windows: {
+        what:
+          'reviewsLast30 / reviewsLast90 / reviewsLast365 count reviews left on ' +
+          'THIS listing inside that trailing window. Commission rows only.',
+        measured_from:
+          'Each window is measured backwards from that row\'s `reviewsAsOf`, not ' +
+          'from now. If reviewsAsOf is ten days old, reviewsLast30 describes days ' +
+          '-40 to -10. Check reviewsAsOf before calling a number "the last 30 ' +
+          'days", and prefer comparing rows whose reviewsAsOf are close together.',
+        coverage:
+          'Review feeds are pulled for roughly the busiest 1000 listings per ' +
+          'category, so not every row has them. null means the feed was never ' +
+          'pulled; it does NOT mean zero. Exclude nulls from a ranking rather ' +
+          'than treating them as the quietest listings.',
+        reviews_are_not_orders:
+          'Only some clients leave a review, so these are a LOWER BOUND on real ' +
+          'order volume. They are a sound way to compare listings against each ' +
+          'other and a poor way to state an absolute number of orders.',
+      },
+      // Asked constantly, and answerable only with the caveats attached. Spelled
+      // out as a recipe because the alternative is every reader inventing their
+      // own and getting a different number.
+      estimating_revenue: {
+        shop_lifetime:
+          'basePrice * paidSalesCount, after converting basePrice to one ' +
+          'currency. This is the soundest figure in the dataset: paidSalesCount ' +
+          'is a real per-product order count and shop prices are close to fixed. ' +
+          'Use paidSalesCount, not salesCount -- free orders earn nothing.',
+        commission_recent:
+          'basePrice * reviewsLast30 (or Last90 / Last365), converted to one ' +
+          'currency. This is the recipe for "who earned most lately" on the ' +
+          'commission side. Two independent reasons it UNDERSTATES: basePrice is ' +
+          'the cheapest tier, and not every client reviews. Treat it as a ' +
+          'comparable score between listings, not as an amount of money.',
+        commission_lifetime:
+          'basePrice * serviceCompletedComms, for the ~15% of listings where ' +
+          'serviceCompletedComms is not null -- the truest volume figure here, ' +
+          'since it counts every order rather than only reviewed ones. Where it ' +
+          'is null, fall back to basePrice * reviewsTotal.',
+        do_not:
+          'Do not use artistTotalReviews for a per-listing revenue figure: it is ' +
+          'artist-wide, so for an artist with several listings it double-counts ' +
+          'every one of them. Do not mix the two marketplaces in one ranking, ' +
+          'and do not compare a shop row computed from paidSalesCount against a ' +
+          'commission row computed from reviews -- different units, different ' +
+          'coverage.',
+      },
+      // The absences matter as much as the fields: a reader who assumes a column
+      // exists will quietly substitute a worse one.
+      not_in_this_export: {
+        revenue: 'No earnings figure is published by VGen. See estimating_revenue.',
+        windowed_anything_else:
+          'The review windows above are the ONLY time-bounded numbers here. ' +
+          'Prices, sales counts, ratings and completed-commission counts are all ' +
+          'lifetime totals as of the category\'s finishedAt. There is no monthly ' +
+          'series and no per-review timestamp in this export.',
+        shop_recent_activity:
+          'Shop rows have no windowed counts at all -- salesCount and reviewCount ' +
+          'are lifetime. "Best selling shop product this month" cannot be ' +
+          'answered from this endpoint; say so rather than quoting the lifetime ' +
+          'figure, which would favour old products over currently popular ones.',
+        per_service_reviews_on_commission:
+          'VGen itself publishes review counts per ARTIST on the commission ' +
+          'side. The per-listing reviewsTotal here comes from a separate feed ' +
+          'pull, which is why its coverage is partial.',
+        views_or_rank:
+          'No view counts, no impressions, no search position, no searchIndex.',
+        descriptions_and_images:
+          'Dropped at crawl time: they were 73% of the payload and nothing here ' +
+          'reads them.',
       },
     }
   }
@@ -176,7 +306,17 @@ function readme(mode) {
         'ones. A shop product carries per-product ones. Do not compare the two ' +
         'columns as if they measured the same thing.',
       'null means "VGen did not publish this", which is different from zero.',
+      'Every figure in this dataset is a LIFETIME total, never a windowed one. ' +
+        'There is no 30-day or monthly breakdown anywhere, on either endpoint. ' +
+        'Questions of the form "most X in the last N days" cannot be answered ' +
+        'here; say so rather than substituting a lifetime total.',
     ],
+    next_call:
+      'This summary carries no listing-level data at all -- only per-category ' +
+      'counts. Prices, sales, review stats and artist names live on the category ' +
+      'endpoint, whose readme documents every field and the revenue recipes. ' +
+      'Call it with a categoryID from the list above before attempting any ' +
+      'question about individual listings.',
   }
 }
 
@@ -272,6 +412,55 @@ async function readCategoryRows(key, offset, limit) {
   return { meta, rows }
 }
 
+// Meta records per MGET. They are a couple of hundred bytes each, so this can be
+// far larger than the chunk batch without approaching the request ceiling: a
+// full 5000-row page costs 25 round trips.
+const REVIEW_META_BATCH = 200
+
+/**
+ * Attach trailing-window review counts to commission rows.
+ *
+ * The census itself carries only lifetime figures, which cannot answer "who is
+ * busiest LATELY" — the question everyone actually asks. The windows come from
+ * the review feeds the rotation pulls separately, precomputed at pull time onto
+ * each service's meta record, so this is a few MGETs rather than a walk through
+ * every review payload.
+ *
+ * Coverage is partial by design: the rotation pulls feeds for the busiest ~1000
+ * listings per category. A row with no feed gets nulls, never zeroes — "not
+ * measured" and "measured, nobody ordered" are opposite findings and must not
+ * collapse into the same number.
+ */
+async function attachReviewWindows(rows) {
+  const ids = rows.map((row) => row.serviceID).filter(Boolean)
+  if (!ids.length) return rows
+  const metas = {}
+  for (let i = 0; i < ids.length; i += REVIEW_META_BATCH) {
+    Object.assign(metas, await getMetaMany(ids.slice(i, i + REVIEW_META_BATCH)))
+  }
+  return rows.map((row) => {
+    const meta = metas[row.serviceID]
+    if (!meta) {
+      return {
+        ...row,
+        reviewsLast30: null,
+        reviewsLast90: null,
+        reviewsLast365: null,
+        reviewsTotal: null,
+        reviewsAsOf: null,
+      }
+    }
+    return {
+      ...row,
+      reviewsLast30: meta.last30 ?? null,
+      reviewsLast90: meta.last90 ?? null,
+      reviewsLast365: meta.last365 ?? null,
+      reviewsTotal: meta.count ?? null,
+      reviewsAsOf: meta.fetchedAt || null,
+    }
+  })
+}
+
 export async function GET(request) {
   const authorized = isMaster(request) || (await resolveReadToken(request))
   if (!authorized) return deny('A read token is required.')
@@ -290,6 +479,10 @@ export async function GET(request) {
       )
       const key = market === 'shop' ? shopKey(categoryID) : categoryID
       const { meta, rows } = await readCategoryRows(key, offset, limit)
+      // Shop products carry their own per-product stats in the census already;
+      // only the commission side needs the separate review feed grafted on.
+      const withWindows =
+        market === 'shop' ? rows : await attachReviewWindows(rows)
       return NextResponse.json(
         {
           ...(withReadme ? { _readme: readme('category') } : {}),
@@ -305,7 +498,7 @@ export async function GET(request) {
           // `returned < limit` has to infer it, and inferring it wrongly means
           // either a missed page or an endless loop.
           hasMore: offset + rows.length < ((meta && meta.count) || 0),
-          rows,
+          rows: withWindows,
         },
         { headers: CACHEABLE }
       )
