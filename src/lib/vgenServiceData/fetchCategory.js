@@ -29,6 +29,17 @@
 // User-Agent, so one is always sent. Transient upstream failures (502/503/504)
 // are retried on the SAME cursor, since skipping a page would silently lose 20
 // services.
+//
+// THERE IS NO viewCount ON A SERVICE. Verified 2026-10-04 by enumerating all 40
+// fields of a search payload: every /view/i match was a `totalReviews` /
+// `total5StarReviews` false positive. Do not plan a traffic metric around
+// services - the `viewCount` that exists elsewhere in this repo belongs to
+// SHOWCASES (portfolio artworks, see src/lib/vgen/fetchVgen.js), a different
+// object type served by a different endpoint. The only demand-ish signals a
+// service carries are `lifetimeServiceStats.totalCompletedComms` (per service,
+// but only ~15% of listings opt in to publishing it) and the artist-level
+// `artistReviewStats`. `searchIndex` and `randomSearchIndex` are ordering keys,
+// not popularity.
 
 const SEARCH_URL = 'https://api.vgen.co/commission/services/search'
 const SHOP_SEARCH_URL = 'https://api.vgen.co/shop/products/search'

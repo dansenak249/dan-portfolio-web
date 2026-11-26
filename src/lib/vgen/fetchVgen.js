@@ -10,6 +10,39 @@
 //
 // Field slimming mirrors the in-tab collectors exactly so the snapshot
 // rows are byte-compatible with the existing local viewer payload shape.
+//
+// MEASURED BEHAVIOUR OF THE TRENDING FEED (2026-10-04, 2600 showcases pulled
+// with matchTag=animation, 0 duplicates, all read from the list feed so no
+// counter was touched):
+//
+//   - `matchTag` IS accepted by feed/top and is an EXACT, CASE-SENSITIVE tag
+//     match: `matchTag=animation` returns rows, `matchTag=Animation` returns
+//     zero. It is the only working text filter here - `tag`, `tags`,
+//     `searchQuery`, `textQuery` and `q` all return HTTP 400. On the
+//     per-profile endpoint below `matchTag` is accepted and then SILENTLY
+//     IGNORED, so never use it to filter a profile's portfolio.
+//   - Deep paging works far past the MAX_TRENDING cap used here; skip=10000
+//     still returns rows, so a tag corpus can be enumerated in full.
+//   - The feed is ordered by `searchIndex` DESCENDING and nothing else:
+//     spearman(rank, searchIndex) = -1.0000 exactly, while
+//     spearman(rank, viewCount) = -0.045. "Top" does not mean most-viewed.
+//   - `isFromVerifiedCommission` is the largest lever observed: 28.84 vs 6.30
+//     median views/day, a 4.6x gap. `boostConfig.isEnabled` is INERT (18.31 vs
+//     18.15) - paid boost bought no measurable views in this sample.
+//   - Views are strongly front-loaded and then decay ~36x with age: 85.57 ->
+//     21.18 -> 11.41 -> 8.34 -> 2.34 -> 1.67 median views/day across the
+//     1-14 / 14-30 / 30-90 / 90-180 / 180-365 / 365-730 day buckets. Any
+//     views/day comparison therefore has to be age-matched or it only
+//     measures how old the rows are.
+//   - Population shape for reference: median 18.17 views/day, p25 3.48,
+//     p75 69.71, p90 215.21; lifetime median 564 views. ZERO showcases sat at
+//     0 views. Top 10% of artists held 70.4% of all views.
+//     views correlates with likes at 0.86.
+//
+// These numbers describe showcases, i.e. feed impressions on artwork. They are
+// NOT comparable to commissions.gg service viewCount, which counts opens of a
+// listing page (median there was 0.09 views/day - a ~202x gap that is an
+// artefact of what each platform counts, not of real demand).
 
 const TRENDING_URL =
   'https://api.vgen.co/discoverability/portfolio/showcases/feed/top'

@@ -1,0 +1,501 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>VGen Account Check — DAN</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700&family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --paper:#EDE7F3;
+    --panel:#FCFAFD;
+    --ink:#221A31;
+    --ink-soft:#6C6284;
+    --line:#DAD1E4;
+    --green:#2F8F86;
+    --amber:#C99320;
+    --red:#E1275F;
+    --info:#6C6284;
+    --accent:#6C6284;
+
+    --r:14px;
+    --shadow:0 1px 0 rgba(34,26,49,.05), 0 12px 32px -18px rgba(34,26,49,.45);
+
+    --display:"Bricolage Grotesque",system-ui,sans-serif;
+    --body:"Be Vietnam Pro",system-ui,-apple-system,sans-serif;
+    --mono:"IBM Plex Mono",ui-monospace,monospace;
+  }
+
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0}
+
+  body{
+    background:var(--paper);
+    background-image:
+      radial-gradient(circle at 12% 8%, rgba(47,143,134,.10), transparent 42%),
+      radial-gradient(circle at 88% 92%, rgba(225,39,95,.09), transparent 46%);
+    color:var(--ink);
+    font-family:var(--body);
+    font-size:15px;
+    line-height:1.55;
+    -webkit-font-smoothing:antialiased;
+    padding:32px 16px 64px;
+    min-height:100vh;
+  }
+
+  .wrap{max-width:880px;margin:0 auto}
+
+  .eyebrow{
+    font-family:var(--mono);font-size:11px;font-weight:500;letter-spacing:.18em;
+    text-transform:uppercase;color:var(--ink-soft);display:flex;align-items:center;gap:10px;
+  }
+  .eyebrow::after{content:"";flex:1;height:1px;background:var(--line)}
+
+  h1{
+    font-family:var(--display);font-weight:800;font-size:clamp(28px,5vw,42px);
+    line-height:1.05;letter-spacing:-.02em;margin:14px 0 6px;
+  }
+  .sub{color:var(--ink-soft);margin:0 0 24px;max-width:60ch}
+
+  /* ---------- search ---------- */
+  form.search{
+    display:flex;gap:10px;background:var(--panel);border:1px solid var(--line);
+    border-radius:var(--r);box-shadow:var(--shadow);padding:10px;
+  }
+  .field{flex:1;min-width:0;display:flex;align-items:center;gap:4px}
+  .icon-btn{
+    flex:none;width:36px;height:36px;display:grid;place-items:center;border:none;
+    border-radius:8px;background:transparent;color:var(--ink-soft);cursor:pointer;
+    transition:color .15s ease, background .15s ease;
+  }
+  .icon-btn:hover{color:var(--ink);background:var(--paper)}
+  .icon-btn:focus-visible{outline:2px solid var(--ink-soft);outline-offset:1px}
+  .icon-btn .ico-done{display:none;color:var(--green)}
+  .icon-btn.done .ico-paste{display:none}
+  .icon-btn.done .ico-done{display:block}
+  form.search input{
+    flex:1;min-width:0;border:none;background:transparent;font:500 15px var(--mono);
+    color:var(--ink);padding:10px 12px;outline:none;
+  }
+  form.search input::placeholder{color:var(--ink-soft);opacity:.7}
+  form.search:focus-within{border-color:var(--ink-soft)}
+  form.search button[type="submit"]{
+    border:none;border-radius:10px;background:var(--ink);color:var(--panel);
+    font:600 13px var(--mono);letter-spacing:.1em;text-transform:uppercase;
+    padding:0 20px;cursor:pointer;transition:transform .15s ease, opacity .15s ease;
+  }
+  form.search button[type="submit"]:hover{transform:translateY(-1px)}
+  form.search button[type="submit"]:active{transform:translateY(0)}
+  form.search button[type="submit"]:disabled{opacity:.5;cursor:wait}
+  .hint{font-size:12px;color:var(--ink-soft);margin:8px 4px 0}
+
+  .status{margin-top:20px;font-family:var(--mono);font-size:13px;color:var(--ink-soft)}
+  .status.error{color:var(--red)}
+
+  /* ---------- verdict ---------- */
+  .verdict{
+    margin-top:22px;background:var(--panel);border:1px solid var(--line);
+    border-left:6px solid var(--accent);border-radius:var(--r);box-shadow:var(--shadow);
+    padding:20px 22px;display:grid;grid-template-columns:64px 1fr;gap:18px;align-items:center;
+  }
+  .verdict[data-level="red"]{--accent:var(--red)}
+  .verdict[data-level="amber"]{--accent:var(--amber)}
+  .verdict[data-level="green"]{--accent:var(--green)}
+  .avatar{
+    width:64px;height:64px;border-radius:50%;object-fit:cover;background:var(--line);
+    border:2px solid var(--accent);
+  }
+  .verdict-label{
+    font-family:var(--display);font-weight:800;font-size:clamp(22px,4vw,30px);
+    line-height:1.1;letter-spacing:-.02em;color:var(--accent);
+  }
+  .who{margin-top:4px;color:var(--ink-soft);font-size:14px;overflow-wrap:anywhere}
+  .who a{color:var(--ink);font-weight:600}
+  .who code{font-family:var(--mono);font-size:12px}
+
+  /* ---------- cards ---------- */
+  .card{
+    background:var(--panel);border:1px solid var(--line);border-radius:var(--r);
+    box-shadow:var(--shadow);margin-top:18px;padding:18px 20px;
+  }
+  .card-title{
+    font-family:var(--mono);font-size:11px;letter-spacing:.16em;text-transform:uppercase;
+    color:var(--ink-soft);margin:0 0 12px;
+  }
+
+  .flags{list-style:none;margin:0;padding:0;display:grid;gap:10px}
+  .flag{display:grid;grid-template-columns:auto 1fr;gap:12px;align-items:start}
+  .dot{
+    margin-top:6px;width:10px;height:10px;border-radius:50%;background:var(--info);
+  }
+  .flag[data-level="red"] .dot{background:var(--red);box-shadow:0 0 0 4px color-mix(in srgb, var(--red) 18%, transparent)}
+  .flag[data-level="amber"] .dot{background:var(--amber)}
+  .flag[data-level="green"] .dot{background:var(--green)}
+  .flag-title{font-weight:600}
+  .flag-detail{font-size:13px;color:var(--ink-soft)}
+
+  .facts{display:grid;grid-template-columns:1fr;gap:0}
+  .fact:last-child{border-bottom:none}
+  .fact{display:flex;justify-content:space-between;gap:12px;padding:8px 0;border-bottom:1px dashed var(--line)}
+  .fact-key{color:var(--ink-soft);font-size:13px}
+  .fact-val{font-family:var(--mono);font-size:13px;font-weight:500;text-align:right;overflow-wrap:anywhere}
+  .yes{color:var(--green)}
+  .no{color:var(--red)}
+
+  .reviews{list-style:none;margin:0;padding:0;display:grid;gap:10px}
+  .review{border:1px solid var(--line);border-radius:10px;padding:10px 12px;font-size:13px}
+  .review[data-bad="1"]{border-color:var(--red);background:color-mix(in srgb, var(--red) 6%, transparent)}
+  .review-head{display:flex;justify-content:space-between;gap:10px;font-family:var(--mono);font-size:12px;color:var(--ink-soft)}
+  .review-text{margin-top:4px}
+  .tags{margin-top:6px;display:flex;flex-wrap:wrap;gap:6px}
+  .tag{font-family:var(--mono);font-size:11px;padding:2px 8px;border-radius:999px;background:var(--paper);color:var(--ink-soft)}
+  .tag.bad{background:color-mix(in srgb, var(--red) 14%, transparent);color:var(--red)}
+  .empty{color:var(--ink-soft);font-size:13px}
+
+  details summary{cursor:pointer;font-family:var(--mono);font-size:12px;color:var(--ink-soft)}
+  pre{
+    margin:12px 0 0;padding:12px;border-radius:10px;background:var(--ink);color:#EDE7F3;
+    font:12px/1.5 var(--mono);overflow:auto;max-height:420px;
+  }
+
+  .disclaimer{margin-top:22px;font-size:12px;color:var(--ink-soft);max-width:70ch}
+
+  .two{display:grid;grid-template-columns:1fr 1fr;gap:18px}
+  .two .card{margin-top:18px}
+  @media (max-width:720px){
+    .two{grid-template-columns:1fr;gap:0}
+    form.search{flex-direction:column}
+    form.search button[type="submit"]{padding:12px}
+  }
+</style>
+</head>
+<body>
+<main class="wrap">
+  <div class="eyebrow">VGen &middot; Tools</div>
+  <h1>Account Check</h1>
+  <p class="sub">Paste a VGen user ID, username or profile link. Everything shown comes from VGen's public API &mdash; the same data you would read at <code>api.vgen.co/user/&hellip;</code>, sorted into signals.</p>
+
+  <form class="search" id="form" autocomplete="off">
+    <div class="field">
+      <input id="q" name="q" placeholder="6d981811-abab-... / Rezami / https://vgen.co/Rezami" aria-label="VGen user ID, username or link" required>
+      <button id="paste" class="icon-btn" type="button" aria-label="Replace with clipboard" title="Replace with clipboard">
+        <svg class="ico-paste" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="8" y="2" width="8" height="4" rx="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/></svg>
+        <svg class="ico-done" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12l5 5L20 7"/></svg>
+      </button>
+    </div>
+    <button id="go" type="submit">Check</button>
+  </form>
+  <p class="hint">Tip: add <code>?q=&lt;username&gt;</code> to this page's URL to share a check.</p>
+
+  <div id="status" class="status" role="status" aria-live="polite"></div>
+  <div id="result"></div>
+
+  <p class="disclaimer">Signals, not a verdict. A clean result means nothing suspicious is public &mdash; scammers can use aged or bought accounts. Never pay or deliver outside VGen's own checkout, and reverse-image-search any "reference" or "portfolio" sent in chat.</p>
+</main>
+
+<script>
+(function () {
+  'use strict'
+
+  var form = document.getElementById('form')
+  var input = document.getElementById('q')
+  var button = document.getElementById('go')
+  var statusEl = document.getElementById('status')
+  var resultEl = document.getElementById('result')
+
+  // Every string from VGen is user-controlled, so nothing is ever assigned via
+  // innerHTML. el() builds nodes and sets text through textContent only.
+  function el(tag, attrs, children) {
+    var node = document.createElement(tag)
+    if (attrs) {
+      Object.keys(attrs).forEach(function (k) {
+        var v = attrs[k]
+        if (v === null || v === undefined || v === false) return
+        if (k === 'text') node.textContent = String(v)
+        else if (k === 'class') node.className = v
+        else node.setAttribute(k, String(v))
+      })
+    }
+    ;(children || []).forEach(function (c) {
+      if (c === null || c === undefined || c === false) return
+      node.appendChild(typeof c === 'string' ? document.createTextNode(c) : c)
+    })
+    return node
+  }
+
+  function day(iso) {
+    return iso ? String(iso).slice(0, 10) : '-'
+  }
+
+  // `matters` false renders the answer uncoloured, for a NO that is not a
+  // warning in context (e.g. no payout when PayPal is already connected).
+  function yesNo(v, matters) {
+    return el('span', { class: matters ? (v ? 'yes' : 'no') : null, text: v ? 'YES' : 'NO' })
+  }
+
+  function utc(mins) {
+    if (typeof mins !== 'number') return '-'
+    var sign = mins < 0 ? '-' : '+'
+    var abs = Math.abs(mins)
+    var h = Math.floor(abs / 60)
+    var m = abs % 60
+    return 'UTC' + sign + h + (m ? ':' + String(m).padStart(2, '0') : '')
+  }
+
+  // Only ever link to https URLs; a javascript: social link must not become a live link.
+  function safeHref(url) {
+    try {
+      var u = new URL(url)
+      return u.protocol === 'https:' || u.protocol === 'http:' ? u.href : null
+    } catch (e) {
+      return null
+    }
+  }
+
+  function fact(key, value) {
+    var val = typeof value === 'string' || typeof value === 'number' ? el('span', { text: value }) : value
+    return el('div', { class: 'fact' }, [
+      el('span', { class: 'fact-key', text: key }),
+      el('span', { class: 'fact-val' }, [val]),
+    ])
+  }
+
+  function renderVerdict(data) {
+    var s = data.summary
+    var avatarSrc = safeHref(s.avatarURL)
+    var profileHref = s.username ? 'https://vgen.co/' + encodeURIComponent(s.username) : null
+    return el('section', { class: 'verdict', 'data-level': data.verdict.level }, [
+      avatarSrc ? el('img', { class: 'avatar', src: avatarSrc, alt: '' }) : el('div', { class: 'avatar' }),
+      el('div', null, [
+        el('div', { class: 'verdict-label', text: data.verdict.label }),
+        el('div', { class: 'who' }, [
+          profileHref
+            ? el('a', { href: profileHref, target: '_blank', rel: 'noopener noreferrer', text: (s.displayName || s.username) + ' (@' + s.username + ')' })
+            : el('span', { text: s.displayName || '(no name)' }),
+          ' · ',
+          el('code', { text: s.userID }),
+        ]),
+      ]),
+    ])
+  }
+
+  function renderFlags(flags) {
+    return el('section', { class: 'card' }, [
+      el('h2', { class: 'card-title', text: 'Overview' }),
+      el('ul', { class: 'flags' }, flags.map(function (f) {
+        return el('li', { class: 'flag', 'data-level': f.level }, [
+          el('span', { class: 'dot', 'aria-label': f.level }),
+          el('div', null, [
+            el('div', { class: 'flag-title', text: f.title }),
+            el('div', { class: 'flag-detail', text: f.detail }),
+          ]),
+        ])
+      })),
+    ])
+  }
+
+  function renderFacts(data) {
+    var s = data.summary
+    var cs = s.clientReviewStats || {}
+    var as = s.artistReviewStats || {}
+    var roleSince = s.roleTimestamps && s.role && s.roleTimestamps[s.role]
+    var hasPayout = s.hasCompletedPayoutOnboarding || s.stripePayoutsEnabled
+    // Either payment method is enough, so a missing one is only red when the
+    // other is missing too.
+    var payMatters = function (v) { return v || !(hasPayout || s.hasCompletedPayPalOnboarding) }
+    var socials = el('span', null, s.socials.length ? [] : ['none'])
+    s.socials.forEach(function (soc, i) {
+      var href = safeHref(soc && soc.link)
+      if (i) socials.appendChild(document.createTextNode(', '))
+      socials.appendChild(href
+        ? el('a', { href: href, target: '_blank', rel: 'noopener noreferrer', text: soc.name || 'link' })
+        : el('span', { text: (soc && soc.name) || 'link' }))
+    })
+
+    return el('section', { class: 'card' }, [
+      el('h2', { class: 'card-title', text: 'Account' }),
+      el('div', { class: 'facts' }, [
+        fact('Created', day(s.created)),
+        fact('Age', s.accountAgeDays === null ? '-' : s.accountAgeDays + ' days'),
+        fact('Role', (s.role || '-') + (roleSince ? ' since ' + day(roleSince) : '')),
+        fact('Services', s.servicesStatus || '-'),
+        fact('Restricted', s.hasRestriction ? el('span', { class: 'no', text: 'YES' }) : el('span', { class: 'yes', text: 'NO' })),
+        fact('Public portfolio', data.hasPortfolio === null ? '?' : yesNo(data.hasPortfolio, true)),
+        fact('Profile onboarding', yesNo(s.hasCompletedProfileOnboarding, true)),
+        fact('PayPal onboarding', yesNo(s.hasCompletedPayPalOnboarding, payMatters(s.hasCompletedPayPalOnboarding))),
+        fact('Payout onboarding (Stripe/Wise)', yesNo(hasPayout, payMatters(hasPayout))),
+        fact('Client reviews', (cs.totalReviews || 0) + ' (' + (cs.totalNegativeReviews || 0) + ' neg)'),
+        fact('Artist reviews', (as.totalReviews || 0) + (as.totalReviews ? ' · ' + as.averageRating + '★' : '')),
+        fact('Timezone', utc(s.utcOffsetMinutes)),
+        fact('Currency', s.defaultCurrency || '-'),
+        fact('Languages', s.languages.length ? s.languages.join(', ') : '-'),
+        fact('Badges', s.badges.length ? s.badges.join(', ') : '-'),
+        fact('Socials', socials),
+      ]),
+    ])
+  }
+
+  // The feed returns up to 20, but often fewer, so the title states no count.
+  function reviewTitle(items, role) {
+    var noun = items && items.length === 1 ? 'Review' : 'Reviews'
+    return 'Recent ' + noun + ' as ' + role
+  }
+
+  function reviewList(items, error, mapItem) {
+    if (error) return el('p', { class: 'empty', text: 'Could not load: ' + error })
+    if (!items || !items.length) return el('p', { class: 'empty', text: 'None yet.' })
+    return el('ul', { class: 'reviews' }, items.map(mapItem))
+  }
+
+  function renderClientReviews(data) {
+    return el('section', { class: 'card' }, [
+      el('h2', { class: 'card-title', text: reviewTitle(data.clientReviews, 'Client') }),
+      reviewList(data.clientReviews, data.errors.clientReviews, function (r) {
+        var bad = r.wouldRecommend === false
+        return el('li', { class: 'review', 'data-bad': bad ? '1' : null }, [
+          el('div', { class: 'review-head' }, [
+            el('span', { text: (r.isAnonymous ? 'anonymous' : '@' + (r.artistUsername || '?')) + (bad ? ' · would NOT recommend' : '') }),
+            el('span', { text: day(r.created) }),
+          ]),
+          r.serviceName ? el('div', { class: 'review-text', text: r.serviceName }) : null,
+          r.reviewText ? el('div', { class: 'review-text', text: '“' + r.reviewText + '”' }) : null,
+          el('div', { class: 'tags' }, r.difficulties.map(function (t) { return el('span', { class: 'tag bad', text: t }) })
+            .concat(r.notables.map(function (t) { return el('span', { class: 'tag', text: t }) }))),
+        ])
+      }),
+    ])
+  }
+
+  function renderArtistReviews(data) {
+    return el('section', { class: 'card' }, [
+      el('h2', { class: 'card-title', text: reviewTitle(data.artistReviews, 'Artist') }),
+      reviewList(data.artistReviews, data.errors.artistReviews, function (r) {
+        var bad = typeof r.rating === 'number' && r.rating <= 2
+        return el('li', { class: 'review', 'data-bad': bad ? '1' : null }, [
+          el('div', { class: 'review-head' }, [
+            el('span', { text: (r.isAnonymous ? 'anonymous' : '@' + (r.clientUsername || '?')) + ' · ' + (r.rating === null ? '?' : r.rating + '★') }),
+            el('span', { text: day(r.created) }),
+          ]),
+          r.serviceName ? el('div', { class: 'review-text', text: r.serviceName }) : null,
+          r.reviewText ? el('div', { class: 'review-text', text: '“' + r.reviewText + '”' }) : null,
+          el('div', { class: 'tags' }, (r.notables || []).map(function (t) { return el('span', { class: 'tag', text: t }) })),
+        ])
+      }),
+    ])
+  }
+
+  function renderRaw(data) {
+    return el('section', { class: 'card' }, [
+      el('details', null, [
+        el('summary', { text: 'Raw /user response' }),
+        el('pre', { text: JSON.stringify(data.raw, null, 2) }),
+      ]),
+    ])
+  }
+
+  function render(data) {
+    resultEl.replaceChildren(
+      renderVerdict(data),
+      renderFlags(data.flags),
+      renderFacts(data),
+      el('div', { class: 'two' }, [renderClientReviews(data), renderArtistReviews(data)]),
+      renderRaw(data)
+    )
+  }
+
+  function setStatus(text, isError) {
+    statusEl.textContent = text
+    statusEl.className = 'status' + (isError ? ' error' : '')
+  }
+
+  function syncUrl(q) {
+    var params = new URLSearchParams({ q: q })
+    try {
+      // Inside the /tools iframe, keep the shareable ?q= on the parent page.
+      var target = window.parent !== window ? window.parent : window
+      target.history.replaceState(null, '', target.location.pathname + '?' + params)
+    } catch (e) {
+      // Cross-origin parent or blocked history: sharing is a convenience only.
+    }
+  }
+
+  function check(q) {
+    var query = String(q || '').trim()
+    if (!query) return
+    button.disabled = true
+    setStatus('Checking ' + query + ' …')
+    resultEl.replaceChildren()
+
+    fetch('/api/vgen-user-check?q=' + encodeURIComponent(query))
+      .then(function (res) {
+        return res.json().then(function (body) {
+          if (!res.ok) throw new Error(body && body.error ? body.error : 'HTTP ' + res.status)
+          return body
+        })
+      })
+      .then(function (data) {
+        setStatus('Checked at ' + new Date(data.fetchedAt).toLocaleString())
+        render(data)
+        syncUrl(query)
+      })
+      .catch(function (err) {
+        setStatus(err.message || 'Check failed', true)
+      })
+      .then(function () {
+        button.disabled = false
+      })
+  }
+
+  form.addEventListener('submit', function (e) {
+    e.preventDefault()
+    check(input.value)
+  })
+
+  // Replace (not append) the field with the clipboard, so checking account
+  // after account is one click instead of select-all, delete, Ctrl+V.
+  var pasteBtn = document.getElementById('paste')
+  var pasteTimer = null
+  pasteBtn.addEventListener('click', function () {
+    var canRead = navigator.clipboard && typeof navigator.clipboard.readText === 'function'
+    if (!canRead) {
+      input.focus()
+      input.select()
+      setStatus('This browser blocks clipboard reading -- press Ctrl+V instead.', true)
+      return
+    }
+    navigator.clipboard.readText()
+      .then(function (text) {
+        input.value = String(text || '').trim()
+        input.focus()
+        pasteBtn.classList.add('done')
+        clearTimeout(pasteTimer)
+        pasteTimer = setTimeout(function () { pasteBtn.classList.remove('done') }, 1200)
+      })
+      .catch(function () {
+        input.focus()
+        input.select()
+        setStatus('Clipboard access was denied -- press Ctrl+V instead.', true)
+      })
+  })
+
+  function initialQuery() {
+    var own = new URLSearchParams(window.location.search).get('q')
+    if (own) return own
+    try {
+      return new URLSearchParams(window.parent.location.search).get('q')
+    } catch (e) {
+      return null
+    }
+  }
+
+  var start = initialQuery()
+  if (start) {
+    input.value = start
+    check(start)
+  }
+})()
+</script>
+</body>
+</html>
